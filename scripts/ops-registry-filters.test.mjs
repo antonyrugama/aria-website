@@ -117,7 +117,6 @@ const HONOURED = {
   history: { range: 'read' },
   alerts: { range: 'answer' },
   analytics: { scope: 'read', range: 'read', env: 'read' },
-  users: { scope: 'read' },
   spend: { range: 'read' },
 };
 
@@ -294,45 +293,6 @@ function usage() {
   };
 }
 
-function lookupResult() {
-  return {
-    recorded: { at: at(1000), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
-    matchCount: 1,
-    matches: [
-      {
-        reference: 'ath_2277',
-        maskedEmail: 'a•••@example.invalid',
-        state: { key: 'active', label: 'Active', tone: 'ok' },
-        tier: { key: 'pro', label: 'Athlete Pro', brand: true },
-        platforms: [{ key: 'mobile', label: 'Mobile' }],
-        lastActiveAt: at(3 * HOUR),
-        flags: [],
-      },
-    ],
-  };
-}
-
-function accountDetail() {
-  return {
-    reference: 'ath_2277',
-    kind: 'athlete',
-    state: { key: 'active', label: 'Active', tone: 'ok' },
-    tier: { key: 'pro', label: 'Athlete Pro', brand: true },
-    memberSince: at(400 * DAY),
-    recorded: { at: at(500), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
-    summary: {
-      fields: [
-        { key: 'locale', label: 'Locale', masked: false, value: 'es-ES' },
-      ],
-    },
-    activity: { windowDays: 7, events: [] },
-    devices: [],
-    billing: { fields: [] },
-    access: { windowDays: 90, entries: [] },
-    supportActions: { available: [] },
-  };
-}
-
 /* ============================ booting a pane =========================== */
 
 /* What each pane needs on the page, which scripts it loads after the
@@ -387,28 +347,6 @@ const PAGES = {
     answer: (endpoint, o) => (endpoint === '/api/ops/costs'
       ? { range: (o && o.query && o.query.range) || null, availability: { state: 'ready' } }
       : undefined),
-  },
-  users: {
-    file: 'users.html',
-    scripts: ['assets/pane-users.js'],
-    answer: (endpoint) => {
-      if (/\/api\/ops\/users\/lookup$/.test(endpoint)) return lookupResult();
-      /* One match is not a choice, so the pane opens the account itself. That
-         second read has to answer or the pane lands in its degraded state,
-         which would still carry the filter but would be reading a filter off
-         an error path. */
-      if (/\/api\/ops\/users\//.test(endpoint)) return accountDetail();
-      return undefined;
-    },
-    /* The only pane here that reads nothing until it is asked to. Its filter
-       travels on the lookup, so the lookup has to be run for there to be a
-       recorded call to read. */
-    act: async (dom) => {
-      dom.doc.getElementById('lookupIdentifier').value = 'ath_2277';
-      dom.doc.getElementById('lookupReason').value = 'SUP-4471';
-      dom.doc.querySelector('.hunt-form').dispatch('submit');
-      await settle();
-    },
   },
 };
 
@@ -490,7 +428,6 @@ async function bootPane(paneId, search) {
   }
 
   await settle();
-  if (page.act) await page.act(dom);
 
   return { ...dom, body, calls, applied, paneId };
 }

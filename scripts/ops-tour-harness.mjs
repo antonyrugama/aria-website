@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 import { makeDom } from './ops-dom-harness.mjs';
-import { ADMIN, stub } from './ops-api-stub.mjs';
+import { ADMIN, USER_REF, stub } from './ops-api-stub.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 export const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -213,9 +213,9 @@ export async function bootPage(paneId, options = {}) {
   await settle();
 
   if (options.lookup) {
-    dom.doc.getElementById('lookupIdentifier').value = 'ath_123';
+    dom.doc.getElementById('lookupIdentifier').value = USER_REF;
     dom.doc.getElementById('lookupReason').value = 'support request';
-    dom.doc.querySelector('.hunt-form').dispatch('submit');
+    dom.doc.querySelector('.u-find').dispatch('submit');
     await settle();
   }
 

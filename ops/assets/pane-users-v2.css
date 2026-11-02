@@ -1,457 +1,394 @@
-/* Look up a user — the shapes this pane needs on top of assets/aria.css and
+/* Look up a user: the shapes this pane needs on top of assets/aria.css and
    assets/shell-pane-v2.css.
 
-   One stylesheet per pane, holding only what that pane draws. Three panes were
-   remodelled onto the v2 system at the same time and a shared sheet would have
-   been three concurrent branches editing one file; the duplication between
-   them is cheap and a later change can fold it back in.
+   Flat, on the same tokens Today is drawn from. No second card, tile or retry
+   system: the cards are .card, the states are the shell's .state-block, the
+   dot is .dot. What is here is the search strip, the result head, the rows and
+   the two tables, and nothing introduces a colour or a custom property.
 
-   Nothing here introduces a colour. Every value is a token from aria.css,
-   which is WCAG AA by construction, or a color-mix of one. */
+   Scoped under .users because aria.css sizes the dense control scale for a
+   mouse (12.5px buttons, 13px inputs) and this pane is read on a phone too.
+   Body text is 14px or more everywhere; every control is 44px on a phone. */
 
-/* ------------------------------------------------------------ the search
+.users { gap: 18px; }
+.users h2, .users h3, .users p, .users dl, .users dd, .users ul { margin: 0; }
+.users ul { padding: 0; list-style: none; }
 
-   The one control this pane is built around, so it is a panel rather than a
-   row in a card. */
-.hunt {
-  position: relative;
+.hidden { display: none; }
+.users .hidden { display: none; }
+
+/* The date under the title, in the voice Today writes it in. */
+#pageSub { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.sub-date { color: var(--ink-2); font-size: 15px; }
+
+/* ------------------------------------------------------------ the search */
+
+.u-find { display: flex; flex-direction: column; gap: 6px; }
+
+.u-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.u-field {
+  display: flex; align-items: stretch;
+  min-width: 0; min-height: 46px;
   overflow: hidden;
-  border-radius: var(--r-xl);
-  padding: 22px 24px 20px;
-  background:
-    radial-gradient(620px 220px at 10% 0%, color-mix(in srgb, var(--cyan) 14%, transparent), transparent 70%),
-    linear-gradient(168deg, var(--surface-2), var(--surface) 60%);
-  box-shadow: inset 0 0 0 1px var(--line), var(--shadow-2);
+  border-radius: var(--r);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  cursor: text;
 }
-.hunt::before {
-  content: '';
-  position: absolute; inset: 0 0 auto; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--edge) 20%, var(--edge) 80%, transparent);
+.u-field:focus-within { outline: 2px solid var(--cyan-ink); outline-offset: -2px; }
+.u-label {
+  flex: none;
+  display: flex; align-items: center;
+  padding: 0 16px;
+  font-size: 14px; color: var(--ink-2);
 }
-.hunt-title { font-size: 17px; font-weight: 600; letter-spacing: -.018em; }
-.hunt-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+.u-field .u-label {
+  border-right: 1px solid var(--line-2);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.u-field input {
+  flex: 1; min-width: 0;
+  padding: 0 16px;
+  border: 0; outline: 0; background: transparent;
+  font-size: 16px; color: var(--ink);
+}
+.u-field input::placeholder { color: var(--ink-3); }
 
-.hunt-form { display: flex; flex-direction: column; gap: 11px; margin-top: 16px; }
-.hunt-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.hunt-line > .field { flex: 1 1 260px; min-width: 0; }
-.hunt-line > .sel { flex: 0 0 auto; }
+.users .btn { min-height: 38px; padding: 6px 14px; font-size: 14px; border-radius: var(--r-sm); }
+.users .btn-sm { font-size: 14px; }
+.users .btn-primary { background: var(--cyan); box-shadow: none; }
+.users .btn-primary:hover { filter: brightness(1.07); box-shadow: none; }
+.u-go {
+  min-width: 172px; min-height: 46px;
+  justify-content: center;
+  border-radius: var(--r);
+  font-size: 17px; font-weight: 600;
+}
 
-.field-lg { padding: 13px 16px; border-radius: var(--r-lg); }
-.field-lg svg { width: 18px; height: 18px; }
-.field-lg input { font-size: 15.5px; font-weight: 500; }
+.u-sub { display: flex; align-items: center; gap: 6px 18px; flex-wrap: wrap; min-height: 28px; }
 
-/* Not this pane's markup and deliberately not deleted with the rest of the
-   mock's unused form rules: session.js writes `field-label` into the
-   re-authentication modal it can raise over any ops page, and a v2 page loads
-   no ops.css, so on THIS page this sheet is the only thing styling it.
-   Stadiora/Aria#10447 covers the rest of that modal on v2 pages; it needs
-   shell-pane-v2.css and so cannot be fixed from a pane. */
-.field-label { font-size: 11.5px; font-weight: 540; color: var(--ink-3); }
+/* A text control: no fill, no ring, so it reads as a link to a place rather
+   than a second button beside the one that searches. */
+.u-link {
+  padding: 4px 0;
+  border: 0; background: none;
+  font-size: 14px; font-weight: 520;
+  color: var(--cyan-ink);
+  cursor: pointer;
+}
+.u-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+a.u-link { padding: 0; }
+
+.u-narrow { display: flex; flex-wrap: wrap; gap: 14px 16px; padding: 4px 0 6px; }
+.u-narrow-field { display: flex; flex-direction: column; gap: 6px; min-width: 168px; }
+.u-narrow-field .u-label { padding: 0; font-size: 14px; }
+.u-narrow-field .sel { display: flex; }
+.users .sel select {
+  width: 100%; min-height: 40px;
+  padding: 8px 34px 8px 12px;
+  font-size: 15px;
+}
+.users .sel svg { right: 12px; }
+
+/* Not this pane's markup and deliberately kept: session.js writes
+   `field-label` into the re-authentication modal it can raise over any ops
+   page, and a v2 page loads no ops.css, so on this page this sheet is the only
+   thing styling it. */
+.field-label { font-size: 13px; font-weight: 540; color: var(--ink-3); }
 
 /* A form-level complaint. Never colour alone: the caller puts a glyph in it. */
 .field-error {
   display: flex; align-items: center; gap: 7px;
-  font-size: 12px; color: var(--rose-ink);
+  font-size: 14px; color: var(--rose-ink);
 }
 .field-error:empty { display: none; }
-.field-error svg { width: 13px; height: 13px; flex: none; }
+.field-error svg { width: 15px; height: 15px; flex: none; }
 
 /* aria.css gives .note one tone, the informational blue. A note that reports
    something unconfirmed is not information, so it takes the amber the rest of
-   the system warns in — and it always carries a glyph, so the tone is never
-   the only thing saying so. */
+   the system warns in, and it always carries a glyph. */
+.users .note { font-size: 14px; }
 .note-warn {
   background: color-mix(in srgb, var(--amber) 9%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amber) 22%, transparent);
 }
 .note-warn svg { color: var(--amber-ink); }
 
-/* ----------------------------------------------------------- the privilege
-   strip
+/* -------------------------------------------------------------- the cards */
 
-   What the signed-in role may do here, and the two standing promises, as one
-   fact per pill. */
-.privilege { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.users .card-head { padding: 18px 22px 8px; }
+.users .card-title { font-size: 19px; font-weight: 600; letter-spacing: -.015em; }
+.users .card-body { padding: 4px 22px 18px; }
+.u-win { font-size: 14px; color: var(--ink-3); }
 
-/* ----------------------------------------------------------- locked value
+.users .dot { width: 9px; height: 9px; box-shadow: none; animation: none; }
+.u-dotword { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.u-dim { color: var(--ink-3); }
+.u-strong { font-weight: 600; }
+.u-empty { padding: 10px 0 4px; font-size: 15px; color: var(--ink-2); }
 
-   A personal field that exists and is not shown. Hatched rather than blank, so
-   it reads as withheld rather than as missing, and carrying the word "Hidden"
-   or the API's own mask so it is never the hatching alone that says so. */
-.locked {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 9px;
-  border-radius: 7px;
-  font-size: 11.5px; font-weight: 520;
-  color: var(--ink-2);
-  background: repeating-linear-gradient(135deg,
-    color-mix(in srgb, var(--ink) 7%, transparent) 0 5px,
-    transparent 5px 10px);
-  box-shadow: inset 0 0 0 1px var(--line-2);
-}
-.locked svg { width: 12px; height: 12px; flex: none; color: var(--ink-3); }
-
-/* ------------------------------------------------------- the mask itself
-
-   Stadiora/Aria#10643. `masked` is the class ops.css dimmed a redacted value
-   with, ops/users.html deliberately loads no ops.css, and so on this page the
-   class sat in the DOM and painted nothing — Stadiora/Aria#10456's shape, on
-   the values this pane exists to keep back.
-
-   It is not a second .locked. This page draws .locked on two different
-   things: the API's standing mask of an address in the match table, which is
-   simply how that value is shown here and always will be, and the stand-in
-   for a field in the account record that is hidden RIGHT NOW and that the
-   reveal control swaps out. Only the second carries `masked`. So `masked` is
-   the class that says which of the two is in front of you, and what it has to
-   say is "a value belongs here and you are not being shown it".
-
-   Two channels, and neither of them is colour:
-
-     the type  the value's own monospace, tracked out. The mask then stands
-               where the value stands — .reveal-value is the same family, so a
-               recorded reveal reads as one value changing form rather than a
-               chip being swapped for a different kind of thing — and the dots
-               the API masks with line up as a redaction rather than running
-               together as a word.
-     the edge  dashed where .locked's is solid: an outline deliberately not
-               whole. border-style is among the few things a forced-colours
-               mode keeps, and box-shadow is not, so this is the channel that
-               survives the display setting that flattens the hatching.
-
-   The edge is the full --ink-3 token rather than a faded mix of it, and that
-   is measured rather than chosen. .locked's own background is a 135deg
-   repeating-linear-gradient, so the surface the dash sits on is not one
-   colour but two alternating every 5px, and the loud stripe is the one a 3:1
-   claim has to clear. A 70% mix of --ink-3 reads 2.98:1 dark and 2.90:1 light
-   against that stripe — under the floor, while measuring 3.53:1 against the
-   quiet one, which is how a single-pixel sample of a hatched surface reports
-   a number that is not true. The whole token reads 4.57:1 dark and 5.14:1
-   light against the loud stripe and 5.42:1 / 5.97:1 against the card outside.
-   scripts/ops-users-rendered.test.mjs scans the band for its worst pixel, so
-   the hatch cannot hide under an average again.
-
-   The border REPLACES .locked's ring rather than joining it, and the padding
-   gives back the pixel the border takes, so the chip is the size it was and
-   nothing around it moves. Written as .locked.masked rather than .masked so
-   it outranks .locked whatever order the two end up in: a tie broken by
-   source position is a rule that stops applying when somebody sorts the file.
-
-   Nothing here reveals anything. The text in the chip is whatever the API
-   already masked, unchanged; this only draws it as the redaction it is. */
-.locked.masked {
-  padding: 2px 8px;
-  border: 1px dashed var(--ink-3);
-  box-shadow: none;
-  font-family: var(--mono);
-  letter-spacing: .04em;
-}
-
-/* -------------------------------------------------------------- key/value */
-.kv { display: flex; flex-direction: column; }
-.kv > div {
-  display: flex; align-items: center; gap: 14px;
-  padding: 8px 0;
+/* Label and value, a row at a time. */
+.u-rows { display: flex; flex-direction: column; }
+.u-row {
+  display: grid;
+  grid-template-columns: minmax(104px, 30%) minmax(0, 1fr);
+  column-gap: 16px; align-items: center;
+  min-height: 46px; padding: 6px 0;
   border-top: 1px solid var(--line);
-  font-size: 12.5px;
+  font-size: 15px;
 }
-.kv > div:first-child { border-top: 0; padding-top: 0; }
-.kv > div:last-child { padding-bottom: 0; }
-.kv .k { color: var(--ink-3); flex: none; }
-.kv .v {
-  margin-left: auto; text-align: right;
+.u-k { color: var(--ink-2); }
+.u-v { min-width: 0; overflow-wrap: anywhere; color: var(--ink); }
+
+.u-tick {
+  display: inline-grid; place-items: center;
+  width: 20px; height: 20px; flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--emerald) 22%, transparent);
+  color: var(--emerald-ink);
+}
+.u-tick svg { width: 12px; height: 12px; }
+
+.u-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px 16px; flex-wrap: wrap;
+  padding-top: 14px;
+}
+.u-foot-end { justify-content: flex-end; padding-top: 10px; }
+.u-fine {
   display: flex; align-items: center; gap: 8px;
-  justify-content: flex-end; flex-wrap: wrap;
-  min-width: 0;
+  font-size: 14px; color: var(--ink-3);
 }
+.u-fine svg { width: 16px; height: 16px; flex: none; }
+.u-extra { padding-top: 6px; }
 
-/* ------------------------------------------------------------ inset panel */
-.inset {
-  border-radius: var(--r);
-  padding: 12px 13px;
-  background: color-mix(in srgb, var(--bg) 42%, transparent);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.inset-title { font-size: 12.5px; font-weight: 560; }
+/* --------------------------------------------------------- the reveal
 
-/* -------------------------------------------------------------- the reveal
+   The row a masked field draws. The mask stands where the value stands and
+   the control sits at the end of the line; revealed, the value takes the
+   mask's place and the note and "Hide" follow it. */
 
-   The row a masked field draws. Everything in it is inline so that the mask,
-   the value that replaces it, the countdown note and the controls read as one
-   line rather than as a stack of separate facts. */
 .reveal-row {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  justify-content: flex-end;
+  display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap;
   min-width: 0;
 }
-.reveal-value {
-  font-family: var(--mono); font-size: 12px;
-  color: var(--ink);
-  word-break: break-word;
-}
-.reveal-note { font-size: 11px; color: var(--amber-ink); }
+.masked { letter-spacing: .08em; color: var(--ink); }
+.reveal-value { font-family: var(--mono); font-size: 14px; overflow-wrap: anywhere; }
+.reveal-note { font-size: 14px; color: var(--ink-2); }
 .reveal-never {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11px; color: var(--ink-3);
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; color: var(--ink-3);
 }
-.reveal-never svg { width: 12px; height: 12px; flex: none; }
+
+.u-act {
+  margin-left: auto;
+  padding: 6px 2px;
+  border: 0; background: none;
+  font-size: 15px; font-weight: 560;
+  color: var(--cyan-ink);
+  cursor: pointer;
+}
+.u-act:hover { text-decoration: underline; text-underline-offset: 3px; }
+.u-act:disabled { color: var(--ink-3); cursor: not-allowed; text-decoration: none; }
 
 /* The reason a reveal needs before it happens. Full width under the row it
    belongs to, because a one-line box invites one word. */
 .reveal-form {
-  display: flex; flex-direction: column; gap: 7px;
-  width: 100%;
-  padding: 10px 11px;
-  border-radius: var(--r);
-  background: color-mix(in srgb, var(--bg) 42%, transparent);
-  box-shadow: inset 0 0 0 1px var(--line);
-  text-align: left;
+  display: flex; flex-direction: column; gap: 10px;
+  flex: 1 1 100%;
+  padding: 8px 0 6px;
 }
-.reveal-form .row { flex-wrap: wrap; }
+.reveal-form .field { padding: 0 14px; min-height: 44px; border-radius: var(--r); }
+.reveal-form .field input { font-size: 16px; }
+.u-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reveal-problem { font-size: 14px; color: var(--rose-ink); }
+.reveal-problem:empty { display: none; }
 
-.hidden { display: none; }
+/* ---------------------------------------------------- the match being picked */
 
-/* ------------------------------------------------------------- danger zone */
-.srow {
-  display: flex; align-items: center; gap: 14px;
-  padding: 11px 0;
+.u-matches { padding-bottom: 8px; }
+.match-row {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 22px;
   border-top: 1px solid var(--line);
 }
-.srow:first-child { border-top: 0; padding-top: 0; }
-.srow:last-child { padding-bottom: 0; }
-.srow .s-main { font-size: 12.5px; font-weight: 540; }
-
-/* -------------------------------------------------------------- tick list */
-.list-tick { display: flex; flex-direction: column; gap: 9px; }
-.list-tick li {
-  display: flex; gap: 9px; align-items: flex-start;
-  list-style: none;
-  font-size: 12.5px; line-height: 1.55;
-  color: var(--ink-2);
+.match-id { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.u-facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px;
+  font-size: 14px; color: var(--ink-2);
 }
-.list-tick li svg { width: 13px; height: 13px; margin-top: 3px; flex: none; color: var(--ink-3); }
 
-/* A table that follows a card head needs the top padding the head does not
-   give it; a table flush at the top of a card does not. */
-.card-head + .tbl th { padding-top: 14px; }
-
-/* A table narrower than its card scrolls rather than pushing the page wide.
-   scripts/check-ops-narrow-overflow.mjs is what decides whether that worked. */
-/* Positioned, because `overflow-x` clips only a descendant whose containing
-   block is this box. An absolutely positioned one resolves its containing
-   block to the nearest positioned ancestor, so while this box was static the
-   nearest was the page: a `caption.sr` inside a table wider than the phone sat
-   at its static position in page coordinates, escaped this clip and took the
-   document sideways while the table around it scrolled correctly. ops.css
-   carried this on .table-wrap and the v2 sheets dropped it when they were
-   written from the template. Stadiora/Aria#10706. */
-.tbl-wrap { overflow-x: auto; position: relative; }
-
-/* aria.css styles .tbl th as a column header: uppercase, 9.5px, tracked out.
-   A row header is a row's NAME, and on this pane one of those names is a
-   masked email. Uppercasing it changes what the API sent into something else
-   and then shows that to an administrator as the record, which is the one
-   thing a masked value must not do. So a body header reads as the cell it is. */
-.tbl tbody th {
-  text-align: left;
-  padding: 11px 14px;
-  border-top: 1px solid var(--line);
-  font-size: 13px; font-weight: 520; letter-spacing: 0;
-  text-transform: none; color: var(--ink);
-  white-space: normal;
-}
-/* A timestamp is one token; wrapping it mid-date reads as two. */
-.tbl tbody th.num { white-space: nowrap; }
-
-/* ------------------------------------------------- the match being described
-
-   Stadiora/Aria#10456: pane-users.js wrote `is-selected` onto the picked row
-   and no stylesheet users.html loads had a rule for it, so picking a match
-   changed nothing a sighted operator could see — on the one control that
-   decides which account the whole column underneath is about. Measured at the
-   filing: identical background, border and weight against an unpicked row, in
-   both themes.
-
-   Three channels, because one of them is colour:
-
-     the wash   a cyan tint over every cell in the row
-     the rail   a 3px bar down the row's leading edge, which is a SHAPE where
-                there was none rather than a recolouring of one
-     the word   "Selected", written into the row by pane-users.js, which is
-                the channel that survives a monochrome screen and a reader
-
-   The wash is on the CELLS and not on the row: .tbl is border-collapse:
-   collapse, a cell background paints over a row background, and a row-level
-   wash would therefore be what the hover rule in aria.css covers rather than
-   the other way round. Putting it on the cells makes the picked state the
-   stronger of the two, which is what it is. Hover still moves, one step
-   further into the same tint, so the row under the pointer is still saying
-   something. */
-.tbl tbody tr.is-selected > th,
-.tbl tbody tr.is-selected > td {
-  background: color-mix(in srgb, var(--cyan) 10%, transparent);
-  border-top-color: color-mix(in srgb, var(--cyan) 28%, transparent);
-}
-.tbl tbody tr.is-selected:hover > th,
-.tbl tbody tr.is-selected:hover > td {
-  background: color-mix(in srgb, var(--cyan) 15%, transparent);
-}
-.tbl tbody tr.is-selected > th:first-child {
+/* Selection is the word, the ring and the wash: three channels, and colour is
+   only the last of them. The row carries the wash and the rail; the control
+   carries the ring, so a pressed and focused control are never the same shape.
+   Stadiora/Aria#10456, #10648. */
+.match-row.is-selected {
+  background: color-mix(in srgb, var(--cyan) 9%, transparent);
   box-shadow: inset 3px 0 0 0 var(--cyan);
-}
-
-/* ------------------------------------------- what the wash does to the ink
-
-   Stadiora/Aria#10754. The wash above was chosen for how a picked row should
-   READ and never measured for what it does to the text standing on it,
-   because nothing in this repository could: check-ops-contrast.mjs composes
-   sites on a fixture page and never drives a pane to a selection, and the
-   hover sweep that arrived with #5501 swept a pane with no wash of its own.
-
-   Measured on rendered pixels once an instrument existed, at 1440px in both
-   themes, worst frequent pixel under each ink:
-
-     selected, no pointer        dark  4.662  .muted on #0F262D   -- clears
-     selected, no pointer        light 5.256  .locked on #D4E2E7  -- clears
-     selected AND hovered        dark  3.849  .muted on #17353F   -- BELOW AA
-     selected AND hovered        dark  4.214  .locked on #28434D  -- BELOW AA
-     selected AND hovered        light 4.632  .locked on #C1D7DD  -- clears
-
-   So the wash on its own is fine and the COMPOUND state is not, in the dark
-   theme only, and the cause is that two lifts land on one cell: aria.css
-   tints the ROW with `--ink 4%` on hover, this sheet tints the CELL five
-   points further into the cyan, and the cell is translucent so both arrive.
-   Dropping the hovered wash back to the unhovered 10% does not fix it --
-   recomputed at 4.13, still under -- because the row's own tint is enough on
-   its own. The wash is not the thing that is wrong.
-
-   What is wrong is the RANK. `--ink-3` is the palest ink in the system and it
-   was tuned against the card, which is the darkest thing a row sits on. On a
-   washed cell it is one rank too pale, so on a washed cell it is one rank
-   less pale. Written as a token override rather than a list of classes
-   because a list can miss a carrier and this cannot: .muted, .tbl .t-sub and
-   the lock glyph inside .locked all take it, and each of them is lifted by
-   the same wash for the same reason.
-
-   Applied to the selected row rather than only to its hovered half, although
-   only the hovered half measures unsafe: text that changes colour when a
-   pointer crosses it is a worse artefact than a 0.16 margin, and the
-   unhovered half gains the same step (4.662 -> 6.07). */
-.tbl tbody tr.is-selected > th,
-.tbl tbody tr.is-selected > td {
   --ink-3: var(--ink-2);
 }
-
-/* The mask chip is lifted TWICE: once by the wash under it and again by its
-   own hatch, which is `--ink 7%` laid over whatever it is standing on. On an
-   unwashed row that lands on the card and the address reads at 5.15; on a
-   washed and hovered cell it lands on the wash and the address reads at 4.21.
-
-   The chip gets its own base back, rather than the address getting a louder
-   ink: the masked value is the quietest thing in the row and should stay
-   that way, and a chip that keeps its own surface under a tinted row is also
-   more obviously a chip. The mix is toward --surface, so it pulls DOWN in the
-   dark theme and UP in the light one -- in both, back toward the page's own
-   ground and away from the row's tint. The hatch and the hairline ring are
-   untouched, so nothing about the redaction signal is softened. */
-.tbl tbody tr.is-selected > th .locked,
-.tbl tbody tr.is-selected > td .locked {
-  background-color: color-mix(in srgb, var(--surface) 60%, transparent);
+.match-row-btn {
+  display: inline-flex; align-items: center;
+  min-height: 38px; padding: 0 10px; margin-left: -10px;
+  border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--ink);
+  cursor: pointer;
 }
-
-/* The word, on the line the coded reference is on. */
-.match-id { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-
-/* ------------------------------------------------------------ the row's name
-
-   Stadiora/Aria#10643. The cell holding the account's identity: the coded
-   reference the operator acts on, and under it the API's mask of the address.
-   It was added by the Stadiora/Aria#10456 change in the same edit as
-   .match-id; .match-id got its rule and this one never did, so the class
-   named the cell and drew nothing.
-
-   Two jobs the `.tbl tbody th` rule above cannot take, because a row header
-   on this pane is also a timestamp in the activity table, a timestamp in the
-   access table and a device name:
-
-     the floor   the identity is two chips, neither of which wraps inside
-                 itself, and a column in an auto-laid-out table squeezes to
-                 whatever the widest of them needs. Measured at 1280px: the
-                 pick control is 81.4px, the "Selected" mark is 81.4px, the
-                 gap between them 8px and the cell's own padding 28px, so 200
-                 is where the mark stops being pushed onto a line of its own —
-                 which is what it did at 375px, leaving the mark stranded
-                 under the reference it marks. Past that the table is wider
-                 than the card and .tbl-wrap scrolls, which is the job it was
-                 given.
-     the rhythm  aria.css sets .t-sub 2px under its main line. That is right
-                 for a caption and tight for a hatched chip carrying a
-                 hairline of its own, which is what the address is here. */
-.match-name { min-width: 200px; }
-.match-name .t-sub { margin-top: 5px; }
-
-/* --------------------------------------------------- the control's own state
-
-   Stadiora/Aria#10648. applySelection sets aria-pressed on the pick control,
-   no sheet this page loads had a rule for it, and the measurement at the
-   filing found the pressed button identical to the unpressed one on every
-   property compared: same colour, same background, same ring, same weight,
-   no pseudo-element of its own. The control told a screen reader it was
-   pressed and told a sighted operator nothing.
-
-   Stadiora/Aria#10456 painted the ROW, and that is a different fact: the row
-   is the account the whole column below describes, the button is the toggle
-   the operator pressed to get there. A reader on the button hears the second
-   one; until this rule, that was the only way to know it.
-
-   Three channels on the control, two of which are not colour:
-
-     the ring    an inset hairline where a ghost button has none. An edge that
-                 is either there or not survives a monochrome screen, and it
-                 is INSIDE the box, where :focus-visible in aria.css puts a
-                 2px outline 2px outside it — so pressed and focused are never
-                 the same shape, and a control that is both shows both.
-     the weight  the coded reference goes from .code's 520 to 620, and from
-                 --ink-2 to --ink.
-     the fill    a cyan tint, one step above the wash the row already carries.
-
-   and beside it, already, the word "Selected" that applySelection writes into
-   the same line. Hover still moves, so the pressed control under the pointer
-   is still answering. */
+.match-row-btn .code { font-size: 15px; background: none; padding: 0; color: var(--ink); }
+.match-row-btn:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .match-row-btn[aria-pressed="true"] {
   background: color-mix(in srgb, var(--cyan) 16%, transparent);
   box-shadow: inset 0 0 0 1px var(--cyan-ink);
 }
-.match-row-btn[aria-pressed="true"]:hover {
-  background: color-mix(in srgb, var(--cyan) 23%, transparent);
+.match-row-btn[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--cyan) 23%, transparent); }
+.match-row-btn[aria-pressed="true"] .code { font-weight: 620; }
+.sel-mark {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; font-weight: 560; color: var(--cyan-ink);
 }
-.match-row-btn[aria-pressed="true"] .code {
-  font-weight: 620;
-  color: var(--ink);
+.sel-mark svg { width: 15px; height: 15px; }
+
+/* -------------------------------------------------------- the result head */
+
+.u-head { display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap; min-width: 0; }
+.u-av {
+  display: grid; place-items: center;
+  width: 72px; height: 72px; flex: none;
+  border-radius: 50%;
+  font-size: 26px; font-weight: 600; color: var(--ink);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
+.u-av svg { width: 32px; height: 32px; color: var(--ink-2); }
+.u-id { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.u-ref {
+  font-size: 30px; font-weight: 620; letter-spacing: -.025em; line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+.u-meta { display: flex; align-items: center; flex-wrap: wrap; font-size: 15px; color: var(--ink-2); }
+.u-meta > * + * { margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line-2); }
+.u-ro { display: flex; align-items: center; gap: 10px; margin-left: auto; flex: none; font-size: 15px; color: var(--ink-2); }
+.u-ro svg { width: 18px; height: 18px; }
+
+/* ------------------------------------------------------- devices, activity */
+
+.u-devices { display: flex; flex-direction: column; gap: 6px; }
+.u-dev-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 4px 20px; flex-wrap: wrap;
+  padding: 6px 0 12px;
+}
+.u-dev-name { display: flex; flex-direction: column; font-size: 15px; }
+.u-dev-name .u-strong { font-size: 17px; }
+.u-dev-seen { font-size: 15px; color: var(--ink-2); }
+.u-dev .u-rows { margin-top: 0; }
+
+.users .u-list { padding: 0 22px 12px; }
+.u-list li {
+  display: grid;
+  grid-template-columns: minmax(104px, 30%) minmax(0, 1fr);
+  column-gap: 16px; align-items: center;
+  min-height: 46px; padding: 6px 0;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+}
+.u-when { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.u-what { min-width: 0; overflow-wrap: anywhere; }
+
+/* --------------------------------------------------------- access history */
+
+.u-log { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+.u-log th {
+  padding: 8px 12px;
+  text-align: left; font-size: 14px; font-weight: 500;
+  letter-spacing: 0; text-transform: none; color: var(--ink-2);
+}
+.u-log td {
+  padding: 11px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 15px; vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.u-log th:first-child, .u-log td:first-child { padding-left: 22px; }
+.u-log th:last-child, .u-log td:last-child { padding-right: 22px; }
+.u-log td.u-when { white-space: nowrap; }
+.u-who { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.u-who .who-av { width: 32px; height: 32px; font-size: 14px; }
+.u-actor { min-width: 0; }
+.u-revealed { display: inline-flex; align-items: center; gap: 6px; font-weight: 560; color: var(--amber-ink); }
+.u-revealed svg { width: 16px; height: 16px; flex: none; }
+
+/* ------------------------------------------------------------- the states */
+
+.users .state-block { padding: 34px 16px; }
+.users .state-title { font-size: 17px; }
+.users .state-desc { font-size: 14px; }
 
 /* ------------------------------------------------------------- responsive */
-@media (max-width: 720px) {
-  .hunt { padding: 18px 16px 16px; border-radius: var(--r-lg); }
-  .hunt-line > .sel, .hunt-line > .field { flex: 1 1 100%; }
 
-  /* A key and its value stop competing for one line once the line is this
-     short: the value wraps under its own key rather than squeezing it. */
-  .kv > div { align-items: flex-start; flex-direction: column; gap: 4px; }
-  .kv .v { margin-left: 0; text-align: left; justify-content: flex-start; }
-  .reveal-row { justify-content: flex-start; }
+@media (max-width: 980px) {
+  .users { gap: 16px; }
 
-  .srow { align-items: flex-start; flex-direction: column; gap: 9px; }
+  /* The date stacks at the right of the title, as Today's does. */
+  .page-sub { margin-left: auto; text-align: right; }
+  #pageSub { display: block; }
+  .sub-date { display: block; font-size: 15px; font-weight: 520; color: var(--ink); }
+
+  .u-bar { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .u-field { min-height: 48px; }
+  .u-go { width: 100%; min-height: 48px; }
+  .u-link { min-height: 44px; padding: 0 2px; }
+  .u-act { min-height: 44px; padding: 0 4px; }
+  .u-narrow-field { flex: 1 1 140px; }
+  .users .sel select { min-height: 44px; }
+  .users .btn { min-height: 44px; }
+  .match-row-btn { min-height: 44px; }
+
+  .users .card-head { padding: 16px 16px 6px; }
+  .users .card-body { padding: 4px 16px 16px; }
+  .match-row { padding: 10px 16px; }
+  .users .u-list { padding: 0 16px 10px; }
+  .u-av { width: 56px; height: 56px; font-size: 22px; }
+  .u-av svg { width: 26px; height: 26px; }
+  .u-ref { font-size: 26px; }
 }
 
-/* Two of this pane's card heads carry a title, a note AND a pill, and the
-   pills are sentences rather than words: "Shown to the athlete on request" is
-   promise 4 and "Re-authentication required" is the whole point of the danger
-   zone, so neither can be shortened to fit. Below this width the row cannot
-   hold both, and a flex row that cannot hold both squeezes the TITLE, which
-   at 320px wrapped "Who has looked at this account" to five lines beside an
-   intact pill. The head stacks instead, and the pill keeps its sentence. */
-@media (max-width: 460px) {
-  .card-head { align-items: flex-start; flex-direction: column; gap: 7px; }
-  .card-end { margin-left: 0; flex-wrap: wrap; }
+@media (max-width: 720px) {
+  /* A four column table stops fitting. Each row becomes one block: who and
+     when on the first line, then what was opened and why. The header row stays
+     in the tree for a reader and leaves the screen. */
+  .u-log, .u-log tbody, .u-log tr, .u-log td { display: block; }
+  .u-log thead {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .u-log tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "who when" "fields fields" "reason reason";
+    gap: 2px 12px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--line);
+  }
+  .u-log td { padding: 0; border: 0; }
+  .u-log td:nth-child(1) { grid-area: when; }
+  .u-log td:nth-child(2) { grid-area: who; }
+  .u-log td:nth-child(3) { grid-area: fields; }
+  .u-log td:nth-child(4) { grid-area: reason; color: var(--ink-2); }
+  .u-log td:first-child, .u-log td:last-child { padding: 0; }
+  .u-log td.u-when { font-size: 14px; align-self: center; }
+}
+
+@media (max-width: 420px) {
+  .u-row, .u-list li { grid-template-columns: minmax(0, 1fr); row-gap: 0; padding: 8px 0; }
+  .u-k { font-size: 14px; }
+  .u-act { margin-left: 0; }
+  .reveal-row { gap: 0 12px; }
+  .u-ro { margin-left: 0; }
 }

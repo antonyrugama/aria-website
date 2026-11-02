@@ -1,120 +1,38 @@
 /* Look up a user, measured in a browser rather than read out of a file.
  *
- * WHY THIS FILE EXISTS
+ * scripts/ops-users-v2.test.mjs is a node:vm harness with no layout engine: it
+ * cannot tell a rule that applies from one that is overridden, and it cannot
+ * see a pixel. Three things on this pane are only true as drawn, and each has
+ * shipped broken before with every other check green (Stadiora/Aria#10456, the
+ * picked row painted nothing; #10648, the pressed control looked like the one
+ * beside it; the 14px / 44px floors, which a stylesheet can state and a
+ * later rule can undo):
  *
- * scripts/ops-users-v2.test.mjs is a node:vm harness with no layout engine. It
- * says so itself, under NOT COVERED: nothing in it reads a computed style, so
- * nothing in it can tell a rule that applies from one that is overridden, or a
- * class that is painted from one that is merely written. That is the exact
- * hole three issues have now come through:
+ *   1. the account picker: every state of the pick control, resting and under
+ *      the pointer, picked and not, reads at WCAG AA over the paint that is
+ *      really behind it, in both themes;
+ *   2. selection is not colour alone: the picked control differs from the
+ *      other one in weight and carries the word "Selected";
+ *   3. the layout: at 320, 360, 375 and 390 the pane does not run past the
+ *      screen, every control is 44px tall and no text is under 14px, and at
+ *      1536 the cards sit two to a row.
  *
- *   Stadiora/Aria#10456  the picked row gained `is-selected` and no sheet
- *                        ops/users.html loads had a rule for it
- *   Stadiora/Aria#10643  `masked` is styled in ops.css, which this page
- *                        deliberately does not load, and `match-name` was
- *                        defined nowhere at all
- *   Stadiora/Aria#10648  the pick control announced aria-pressed="true" and
- *                        was drawn pixel-for-pixel like the control beside it
+ * It serves the real page, answers the operations API from
+ * scripts/ops-api-stub.mjs (the "many matches" scene, so what is measured is
+ * what the screenshots show), drives a lookup and a pick, and reads computed
+ * geometry and rendered PIXELS back out of Chrome. Contrast is measured on a
+ * screenshot with every glyph lifted, so what is sampled is the paint UNDER
+ * the text, composited by the browser, wash and all. Nothing is cloned or
+ * re-parented.
  *
- * Every one of those passed every check in the repository. A source-grep for
- * `.masked {` would have passed too, in ops.css, for a sheet the page does not
- * load. So this file asserts nothing about source text: it serves the real
- * page over HTTP, answers the operations API from a fixture, drives the pane
- * to a populated match list with a match picked, and reads resolved computed
- * styles and rendered PIXELS back out of Chrome.
+ * FAILS CLOSED. No Chrome, no stub answer, a pane that never reaches the picked
+ * state: each throws while this module loads and node --test reports the file
+ * as failed. There is no skip path.
  *
- * FAILS CLOSED. There is no skip path. No Chrome, no fixture, a pane that
- * never reaches the picked state — each of those throws while this module is
- * being loaded, and node --test reports the file as failed. A rendered guard
- * that exits green having measured nothing is the defect it was written to
- * remove. CI runs it through `node --test scripts/*.test.mjs` in
- * .github/workflows/ops-pane-tests.yml, on ubuntu-latest, which ships
- * google-chrome-stable — the same browser .github/workflows/ops-contrast.yml
- * and ops-shell-v2.yml already drive on that image.
- *
- * MEASURED IN PLACE. Nothing here is cloned and nothing is re-parented. A node
- * copied to document.body loses every descendant selector styling it and every
- * ancestor background, and comes out wrong in both directions at once — the
- * monorepo published a "overruns by 26.3px" proof that way for an overflow
- * that did not exist. Every element is measured where it is drawn.
- *
- * BOTH ARMS, ALWAYS. Each claim is asserted on the element that should carry
- * it AND on the nearest element that should not. `.locked.masked` is mono and
- * dashed; the plain `.locked` chip in the match table, same class minus one,
- * is neither. `th.match-name` carries the floor; the `tbody th` in the devices
- * table does not. Otherwise a rule widened to `*` — every chip mono, every row
- * header 200px — would satisfy a one-armed assertion while destroying the
- * distinction the class exists to draw.
- *
- * COLOUR IS NEVER THE CLAIM. The contrast figures below are WCAG relative
- * luminance, which discards hue by construction, so "the ring reads at 5.8:1
- * against the fill it encloses" is a statement about a greyscale screen as
- * much as a colour one. The pressed control is additionally asserted to differ
- * from the unpressed one in font-weight, which carries no colour at all.
- *
- * EVERY GRAPHIC RATIO IS A WORST PIXEL, NOT A PIXEL. The first version of this
- * file sampled each surface at ONE point, and that is not a measurement of a
- * surface — it is a measurement of a point that may or may not be on it.
- * `.locked`'s background is a 135° repeating-linear-gradient, so the mask
- * chip's interior is two alternating colours; the single sample landed in a
- * gap, came back holding the CARD showing through, and this file published
- * 3.55:1 for an edge whose true worst-case neighbour was 2.97:1 — under the
- * 3:1 it was asserting. It stayed green through a mutation that made the hatch
- * loud enough to drop the real figure to 1.44:1.
- *
- * So `stripProbe` walks the whole edge instead. For a given side it collects
- * three bands — the border line itself, four pixels of interior inboard of it,
- * three pixels of the surface outboard — skipping ceil(border-radius)+3 at
- * each end so the corner arc is never sampled, and every ratio reported is the
- * MINIMUM over each band. The sample counts are asserted, because a band that
- * silently collapses to one pixel is the original defect returning, and the
- * interior and outside worst pixels are asserted to be more than rounding
- * apart, because their coming back near enough to identical is the tell that
- * one band is not where it is named. On the real page they sit 16 of 255
- * apart in dark and 18 in light; flatten the chip and they close to 1 and 0.
- *
- * Stadiora/Aria#10713 then found the walk was run on ONE side of each
- * four-sided shape — the ring on its left, the mask on its top — while the
- * test names certified the shape. Reducing `inset 0 0 0 1px` to
- * `inset 1px 0 0 0` left a ring that is no longer a ring fully certified, and
- * a `border-bottom-color` at 20% alpha left a mask edge reading ~1.2:1
- * against the card fully certified. Every shape is now walked on all four
- * sides and reports its WORST side, with the losing side named in the
- * failure, and each side's edge sample count carries its own floor so that a
- * short side walked over nothing cannot hide inside a healthy total.
- *
- * NOT COVERED, stated rather than implied:
- *
- *   - forced-colours / prefers-contrast. The mask's dashed border is chosen
- *     partly because border-style survives a forced-colours mode and
- *     box-shadow does not. Nothing here emulates that mode, so that sentence
- *     is a reason for the choice and not a measured fact.
- *   - the reveal flow. This file drives a lookup and a pick, never a reveal.
- *     The masking floors, the reason form and the re-mask are covered in
- *     scripts/ops-pane-users.test.mjs and scripts/ops-users-v2.test.mjs.
- *   - every text site on the pane. Four are measured, named in TEXT_SITES,
- *     and they are the four this change moves. scripts/check-ops-contrast.mjs
- *     sweeps /ops/shell-v2.html only and does not reach this pane at all.
- *   - hover. The pressed control's hover step is not measured here; the
- *     selected row's hovered cells are, in scripts/ops-hover-contrast.test.mjs
- *     (Stadiora/Aria#10754). The :focus-visible outline the pressed ring must
- *     not be mistaken for is unmeasured in both.
- *   - the hatch on the mask chip, as a texture. Nothing asserts the chip is
- *     hatched RATHER than flat; what is asserted is that its interior is not
- *     the card surface. Removing the hatch raises every figure here, so it is
- *     the loud direction the band scan exists to catch, not the quiet one.
- *   - any width but 1280 and 375. The name cell's floor is bound at 375 from
- *     both sides: enough that the "Selected" mark is still on the reference's
- *     line, and little enough that the name still fits the visible width of
- *     .tbl-wrap. 1280 is where the colours are measured; the floor is not
- *     bound there, because the cell takes 345px of its own accord and the
- *     sibling columns absorb any floor raised under that without clipping.
- *     Page-level sideways scroll is not asserted here — .tbl-wrap absorbs it,
- *     so a document-width assertion in this file cannot fail from anything
- *     this change owns. scripts/check-ops-narrow-overflow.mjs sweeps all ten
- *     panes at 375px and 360px in both themes and does check it, though it
- *     never runs a lookup and so never sees a match table.
- *   - the account record beyond its masked chips, and every card below it.
+ * NOT COVERED: forced-colours; the reveal request itself (scripts/ops-users-v2
+ * and ops-diagnostic-mask-sweep own it); the focus ring (scripts/
+ * ops-focus-ring-census.test.mjs); any width between the four phone widths and
+ * 1536.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -123,16 +41,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { stub, USER_REF } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = '/ops/users.html';
 const THEMES = ['dark', 'light'];
-
-/* WCAG AA for body text. The large-text allowance is deliberately not
-   implemented: every site measured here is 11.5px or smaller. */
+const PHONES = [320, 360, 375, 390];
+const DESKTOP = 1536;
 const AA_TEXT = 4.5;
-/* WCAG 1.4.11 for the visual information that identifies a control's state. */
-const AA_GRAPHIC = 3;
+const MIN_TAP = 44;
+const MIN_TEXT = 14;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -140,118 +58,28 @@ const MIME = {
   '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
 };
 
-/* ------------------------------------------------------------- the fixture
-
-   Every address is .invalid and every masked value is already a mask. This
-   file never writes a personal value into the page, because the pane's first
-   promise is that it does not show one: a fixture carrying a real-looking
-   address would put the thing under guard into a world-readable directory to
-   test that it is kept back. */
-const NOW = Date.now();
-const ago = (ms) => new Date(NOW - ms).toISOString();
-const HOUR = 3_600_000;
-const DAY = 24 * HOUR;
-
-const ADMIN = { id: 'adm_1', email: 'owner@example.invalid', name: 'Owner', role: 'owner' };
-const SESSION = { id: 'ses_1', createdAt: ago(600_000), lastSeenAt: ago(1000), userAgent: 'test' };
-
-/* Two matches of the same shape, differing only in the reference and the
-   masked address, so that a comparison between the picked row's control and
-   the other one cannot pick up a difference that has nothing to do with being
-   picked. */
-const PICKED_REF = 'ath_2277';
-const OTHER_REF = 'ath_2419';
-const LOOKUP = {
-  recorded: { at: ago(1000), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
-  matchCount: 2,
-  matches: [
-    { reference: PICKED_REF, maskedEmail: 'a•••@example.invalid',
-      state: { key: 'active', label: 'Active', tone: 'ok' },
-      tier: { key: 'pro', label: 'Athlete Pro', brand: true },
-      platforms: [{ key: 'mobile', label: 'Mobile' }],
-      lastActiveAt: ago(3 * HOUR), flags: [] },
-    { reference: OTHER_REF, maskedEmail: 'b•••@example.invalid',
-      state: { key: 'active', label: 'Active', tone: 'ok' },
-      tier: { key: 'pro', label: 'Athlete Pro', brand: true },
-      platforms: [{ key: 'mobile', label: 'Mobile' }],
-      lastActiveAt: ago(30 * HOUR), flags: [] },
-  ],
-};
-
-const MASKED_EMAIL = 'a•••@example.invalid';
-const DETAIL = {
-  reference: PICKED_REF, kind: 'athlete',
-  state: { key: 'active', label: 'Active', tone: 'ok' },
-  tier: { key: 'pro', label: 'Athlete Pro', brand: true },
-  memberSince: ago(400 * DAY),
-  recorded: { at: ago(500), actor: 'ops_owner_1', fields: 'summary', reason: 'SUP-4471' },
-  summary: { fields: [
-    { key: 'email', label: 'Email', masked: true, maskedValue: MASKED_EMAIL, reveal: 'allowed' },
-    { key: 'displayName', label: 'Name', masked: true, maskedValue: 'A••• R•••', reveal: 'allowed' },
-    { key: 'weight', label: 'Weight', masked: true, reveal: 'never' },
-    { key: 'locale', label: 'Locale', masked: false, value: 'es-ES' },
-  ] },
-  activity: { windowDays: 7, events: [
-    { occurredAt: ago(3 * HOUR), label: 'Chat reply', tone: 'ok', reference: 'run_88214' },
-  ] },
-  devices: [{ label: 'iPhone', appVersion: '1.1.2', os: 'iOS 18.2', lastSeenAt: ago(2 * HOUR) }],
-  billing: { fields: [{ key: 'tier', label: 'Tier', masked: false, value: 'Athlete Pro' }] },
-  access: { windowDays: 90, entries: [
-    { occurredAt: ago(2 * DAY), actor: 'ops_owner_1', fields: 'email', reason: 'SUP-4471', revealed: true },
-  ] },
-  supportActions: { available: [{ key: 'resend', label: 'Resend verification email' }] },
-};
-
-function api(pathname) {
-  if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
-    return { data: { accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
-      refreshTokenRotated: true, authTime: Math.floor(NOW / 1000), reauthWindowSeconds: 900,
-      admin: ADMIN, session: SESSION } };
-  }
-  if (pathname.startsWith('/api/ops/auth/session')) {
-    return { data: { admin: ADMIN, session: SESSION,
-      authTime: Math.floor(NOW / 1000), reauthWindowSeconds: 900 } };
-  }
-  if (pathname.startsWith('/api/ops/users/lookup')) return { data: LOOKUP };
-  if (/^\/api\/ops\/users\/[^/]+$/.test(pathname)) return { data: DETAIL };
-  return { data: {} };
-}
-
-/* --------------------------------------------------------------- colour */
-
 function luminance([r, g, b]) {
   const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 }
-function contrast(a, b) {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+function ratio(a, b) {
+  const [hi, lo] = [a, b].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
 /* Chromium serialises a color-mix() as color(srgb r g b / a). A parser that
-   understands only rgb() drops those sites in silence, which is how ten real
-   AA failures went missing in the monorepo. Anything unreadable is refused by
-   name rather than skipped. */
-function parseColor(value) {
+   understands only rgb() drops those in silence, so anything unreadable is
+   refused by name. Ink with alpha is refused too: its contrast depends on
+   what is behind it, and reading it as solid errs in the direction that hides
+   a defect. */
+function opaqueInk(value) {
+  const alpha = /^rgba?\([^)]*[\s,/]+([\d.]+)\s*\)$/i.exec(value)
+    || /^color\(srgb[^)]*\/\s*([\d.]+)\s*\)$/i.exec(value);
+  if (alpha && Number(alpha[1]) < 1) throw new Error('the ink ' + value + ' is translucent');
   let m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(value);
   if (m) return [Number(m[1]), Number(m[2]), Number(m[3])];
   m = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i.exec(value);
   if (m) return [Number(m[1]) * 255, Number(m[2]) * 255, Number(m[3]) * 255];
   throw new Error('cannot resolve colour: ' + value);
-}
-/* Ink with alpha in it is composited against whatever is behind it before a
-   reader sees it, so measuring the uncomposited value reports a contrast the
-   screen never shows — and it errs in the direction that HIDES a defect,
-   because a faded ink read as solid clears AA. Nothing on this pane resolves a
-   translucent ink today; if something starts to, this refuses to measure it
-   rather than quietly flattering it. */
-function opaqueInk(value) {
-  const alpha = /^rgba?\([^)]*[\s,/]+([\d.]+)\s*\)$/i.exec(value)
-    || /^color\(srgb[^)]*\/\s*([\d.]+)\s*\)$/i.exec(value);
-  if (alpha && Number(alpha[1]) < 1) {
-    throw new Error('the ink ' + value + ' is translucent, so its contrast depends on what ' +
-      'is behind it. Composite it before measuring rather than reading it as solid.');
-  }
-  return parseColor(value);
 }
 const round = (n) => Math.round(n * 100) / 100;
 
@@ -328,12 +156,13 @@ function connect(url) {
 
 /* ------------------------------------------------------ in-page programmes */
 
-/* From the pane's landing state to a populated match list with the first match
-   picked. The form is filled through the native value setter and a real submit
-   event, and the control is clicked, so everything the pane does on a pick —
-   applySelection, the account read, the repaint — actually happens. */
+/* From the landing state to a populated match list with the first match
+   picked and its record drawn. The form is filled through the native value
+   setter and submitted with requestSubmit, and the control is clicked, so
+   everything the pane does on a pick actually happens. */
 const DRIVE = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const until = async (sel) => { for (let i = 0; i < 160; i++) { if (document.querySelector(sel)) return true; await sleep(50); } return false; };
   const id = document.getElementById('lookupIdentifier');
   const reason = document.getElementById('lookupReason');
   if (!id || !reason) return 'the lookup form is not on the page';
@@ -341,301 +170,143 @@ const DRIVE = `(async () => {
     Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value').set.call(el, v);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   };
-  set(id, ${JSON.stringify(PICKED_REF)});
-  set(reason, 'SUP-4471');
-  id.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-  for (let i = 0; i < 120; i++) { await sleep(50); if (document.querySelector('.match-row-btn')) break; }
-  const btn = document.querySelector('.match-row-btn');
-  if (!btn) return 'the lookup drew no matches';
-  btn.click();
-  for (let i = 0; i < 120; i++) { await sleep(50); if (document.querySelector('.match-row.is-selected')) break; }
-  await sleep(700);
-  if (!document.querySelector('.match-row.is-selected')) return 'the pick never selected a row';
-  if (!document.querySelector('.locked.masked')) return 'the account record drew no masked field';
+  set(id, ${JSON.stringify(USER_REF)});
+  set(reason, 'Support ticket 1042');
+  id.form.requestSubmit();
+  if (!(await until('.match-row-btn'))) return 'the lookup drew no matches';
+  if (document.querySelectorAll('.match-row-btn').length < 2) return 'the scene drew one match, so there is nothing to compare a pick with';
+  document.querySelector('.match-row-btn').click();
+  if (!(await until('.match-row.is-selected'))) return 'the pick never selected a row';
+  if (!(await until('.u-head'))) return 'the pick never drew the account';
+  await sleep(500);
   return 'ok';
 })()`;
 
-/* Lift every glyph, so a screenshot of the page is the paint UNDER the text.
-   A constructed stylesheet rather than a <style> element: users.html sends
-   style-src 'self' with no 'unsafe-inline', and an injected <style> would be
-   refused — silently, from the check's point of view. */
+/* Open what a phone has to be able to reach: the filters and the reveal form.
+   Clicked, never forced, so the controls drawn are the ones a person gets. */
+const OPEN_EVERYTHING = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const filters = document.querySelector('.u-link[aria-controls="lookupFilters"]');
+  if (filters && filters.getAttribute('aria-expanded') !== 'true') filters.click();
+  const reveal = document.querySelector('.u-act:not([disabled])');
+  if (reveal && !document.querySelector('.reveal-form')) reveal.click();
+  await sleep(300);
+  return JSON.stringify({
+    filters: !!filters && filters.getAttribute('aria-expanded') === 'true',
+    reveal: !!document.querySelector('.reveal-form')
+  });
+})()`;
+
 const LIFT_GLYPHS = `(() => {
   const sheet = new CSSStyleSheet();
   sheet.replaceSync('*, *::before, *::after { color: transparent !important;' +
     ' -webkit-text-fill-color: transparent !important; text-shadow: none !important; }');
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-  return document.adoptedStyleSheets.length;
+  globalThis.__lift = sheet;
+})()`;
+const DROP_GLYPHS = `(() => {
+  document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== globalThis.__lift);
 })()`;
 
-/* Read a PNG Chrome has just produced, inside Chrome: users.html allows
-   img-src data:, and a canvas reads the decoded pixels back. No PNG decoder
-   lives in this file, so there is no PNG decoder here to get wrong. */
-const loadPlate = (b64) => `(async () => {
+const SITE = (selector) => `(() => {
+  const el = document.querySelector(${JSON.stringify(selector)});
+  if (!el) return null;
+  el.scrollIntoView({ block: 'center' });
+  const r = el.getBoundingClientRect();
+  const btn = el.closest('.match-row-btn') || el;
+  const b = btn.getBoundingClientRect();
+  return JSON.stringify({
+    x: r.x + scrollX, y: r.y + scrollY, w: r.width, h: r.height,
+    cx: b.x + b.width / 2, cy: b.y + b.height / 2,
+    ink: getComputedStyle(el).color, text: el.textContent.trim(),
+    hovered: btn.matches(':hover')
+  });
+})()`;
+
+/* The worst pixel under the text, as a luminance. Read inside Chrome from the
+   PNG Chrome just produced: users.html allows img-src data:, and a canvas
+   reads the decoded pixels back, so no PNG decoder lives in this file. */
+const WORST_UNDER = (b64, inkLum) => `(async () => {
   const img = new Image();
   img.src = 'data:image/png;base64,' + ${JSON.stringify(b64)};
   await img.decode();
-  const canvas = document.createElement('canvas');
-  canvas.width = img.width; canvas.height = img.height;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0);
-  globalThis.__plate = ctx;
-  return img.width + 'x' + img.height;
-})()`;
-
-/* A 1px edge and the two surfaces it sits between, read as BANDS rather than
-   as points.
- *
- * A point is not enough, and the reason is specific rather than theoretical.
- * .locked's background is a 135deg repeating-linear-gradient — a hatch — so
- * "the mask chip interior" is two colours alternating every 5px, not one.
- * Sampling it at one coordinate lands in whichever stripe that coordinate
- * happens to fall in; landing in the quiet one reported the mask's edge at
- * 3.55:1 against an interior whose loud stripe put it at 2.98:1, under the
- * floor the check was asserting. It also, tellingly, returned a value
- * byte-identical to the surface OUTSIDE the chip, because the gap it sampled
- * was the card showing through. An oracle that reports the same number for
- * two different surfaces has measured one of them twice.
- *
- * So: walk the edge, take every pixel of both neighbouring bands, and claim
- * the WORST of them. The corner arc is skipped — border-radius curves the
- * edge away from the straight line being walked, and a naive full-width band
- * picks up the arc's antialiasing as if it were the surface.
- */
-const stripProbe = (selector, side) => `(() => {
-  const el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  const cs = getComputedStyle(el);
-  const side = ${JSON.stringify(side)};
-  /* The two corners that actually bound THIS side, so a shape with uneven
-     corners does not get the top-left one's skip applied to its bottom edge. */
-  const corner = {
-    top: ['borderTopLeftRadius', 'borderTopRightRadius'],
-    right: ['borderTopRightRadius', 'borderBottomRightRadius'],
-    bottom: ['borderBottomLeftRadius', 'borderBottomRightRadius'],
-    left: ['borderTopLeftRadius', 'borderBottomLeftRadius']
-  }[side];
-  const radius = Math.max(...corner.map((p) => parseFloat(cs[p]) || 0));
-  const ctx = globalThis.__plate;
-  const px = (x, y) => { const d = ctx.getImageData(x, y, 1, 1).data; return [d[0], d[1], d[2]]; };
-  /* One walk, four sides. \`inward\` flips the offset so that a positive d is
-     always INTO the box and a negative d always out of it, whichever edge is
-     being read; the fixed coordinate is the last pixel row or column that is
-     still inside. Getting this backwards on the far sides would report the
-     surface outside as the interior and vice versa — and both bands would
-     still be full, so nothing about the sample counts would show it. */
-  const vertical = side === 'left' || side === 'right';
-  const inward = (side === 'top' || side === 'left') ? 1 : -1;
-  const fixed = side === 'top' ? Math.round(r.y)
-    : side === 'bottom' ? Math.round(r.bottom) - 1
-    : side === 'left' ? Math.round(r.x)
-    : Math.round(r.right) - 1;
-  const from = vertical ? Math.round(r.y) : Math.round(r.x);
-  const to = vertical ? Math.round(r.bottom) : Math.round(r.right);
-  const span = to - from;
-  const skip = Math.min(Math.ceil(radius) + 3, Math.floor(span / 3));
-  const out = { side, edgeLine: [], interior: [], outside: [], radius, skip,
-    box: { w: r.width, h: r.height } };
-  for (let t = from + skip; t < to - skip; t++) {
-    const at = (d) => {
-      const o = fixed + d * inward;
-      return vertical ? px(o, t) : px(t, o);
-    };
-    out.edgeLine.push(at(0));
-    for (let d = 2; d <= 5; d++) out.interior.push(at(d));
-    for (let d = -4; d <= -2; d++) out.outside.push(at(d));
+  const d = ctx.getImageData(0, 0, img.width, img.height).data;
+  const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const ink = ${inkLum};
+  let worst = Infinity, worstLum = 0, n = 0, lo = 1, hi = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const L = 0.2126 * lin(d[i]) + 0.7152 * lin(d[i + 1]) + 0.0722 * lin(d[i + 2]);
+    const r = (Math.max(L, ink) + 0.05) / (Math.min(L, ink) + 0.05);
+    if (r < worst) { worst = r; worstLum = L; }
+    if (L < lo) lo = L; if (L > hi) hi = L;
+    n++;
   }
-  if (!out.edgeLine.length) throw new Error('the edge band was empty for ${selector}');
-  return JSON.stringify(out);
+  return JSON.stringify({ worst, worstLum, n, lo, hi });
 })()`;
-
-/* The edge's own colour, read as the pixel of the walked line that is furthest
-   in luminance from what the interior typically is. A 1px hairline sampled at
-   a fixed coordinate lands beside itself as often as on itself — read that way
-   the pressed ring once reported 1.00:1 against the fill it encloses, which is
-   a measurement saying "there is no ring" about a ring that is there. */
-function readStrip(raw, where) {
-  if (!raw) throw new Error('nothing matched ' + where + ' on the drawn page');
-  const strip = JSON.parse(raw);
-  const interiorLum = strip.interior.map(luminance).sort((a, b) => a - b);
-  const median = interiorLum[Math.floor(interiorLum.length / 2)];
-  const edge = strip.edgeLine.slice()
-    .sort((a, b) => Math.abs(luminance(b) - median) - Math.abs(luminance(a) - median))[0];
-  const worst = (band) => band.reduce((lo, p) => Math.min(lo, contrast(edge, p)), Infinity);
-  const distinct = (band) => new Set(band.map((p) => p.join(','))).size;
-  return { edge,
-    vsInterior: round(worst(strip.interior)), vsOutside: round(worst(strip.outside)),
-    worstInterior: strip.interior.reduce((w, p) =>
-      contrast(edge, p) < contrast(edge, w) ? p : w, strip.interior[0]),
-    worstOutside: strip.outside.reduce((w, p) =>
-      contrast(edge, p) < contrast(edge, w) ? p : w, strip.outside[0]),
-    samples: { edge: strip.edgeLine.length,
-      interior: strip.interior.length, outside: strip.outside.length },
-    colours: { interior: distinct(strip.interior), outside: distinct(strip.outside) },
-    radius: strip.radius, skip: strip.skip, box: strip.box,
-    edgeLine: strip.edgeLine };
-}
-
-const SIDES = ['top', 'right', 'bottom', 'left'];
-
-/* Stadiora/Aria#10713. A ring and a dashed border are four-sided shapes, and
-   until this they were each measured on ONE side — the ring on its left, the
-   mask on its top. Both claims ("clears 3:1 against both surfaces it sits
-   between") were therefore true of a quarter of the shape and asserted of all
-   of it. The proofs on the issue: reduce `inset 0 0 0 1px` to `inset 1px 0 0
-   0` and the ring certification survived for something that is no longer a
-   ring; give the mask a `border-bottom-color` at 20% alpha and the mask
-   certification survived for an edge reading ~1.2:1 against the card.
-
-   Every side is walked, and the SHAPE's figure is the worst side's. Which
-   side lost is carried through to the assertion message, because "3.1:1 on
-   the bottom" and "3.1:1 on the left" send a reader to different rules. */
-function readShape(perSide, where) {
-  const sides = {};
-  for (const side of SIDES) sides[side] = readStrip(perSide[side], `${where} (${side})`);
-  const worstSideBy = (key) =>
-    SIDES.reduce((w, s) => (sides[s][key] < sides[w][key] ? s : w), SIDES[0]);
-  const inSide = worstSideBy('vsInterior');
-  const outSide = worstSideBy('vsOutside');
-  const total = (key) => SIDES.reduce((n, s) => n + sides[s].samples[key], 0);
-  return {
-    sides,
-    interiorSide: inSide, outsideSide: outSide,
-    vsInterior: sides[inSide].vsInterior, vsOutside: sides[outSide].vsOutside,
-    /* The edge colour reported is the one the losing side actually read, so
-       the pair printed in a failure is the pair that produced the figure. */
-    edge: sides[inSide].edge, edgeOutside: sides[outSide].edge,
-    worstInterior: sides[inSide].worstInterior,
-    worstOutside: sides[outSide].worstOutside,
-    samples: { edge: total('edge'), interior: total('interior'), outside: total('outside') },
-    perSideSamples: SIDES.reduce((o, s) => (o[s] = sides[s].samples, o), {}),
-    colours: {
-      interior: Math.max(...SIDES.map((s) => sides[s].colours.interior)),
-      outside: Math.max(...SIDES.map((s) => sides[s].colours.outside))
-    },
-    box: sides.top.box
-  };
-}
-
-/* The worst reading of one shape's edge against ANOTHER shape's edge, side by
-   corresponding side. Left against left, top against top: a ring's left edge
-   compared with a plain button's bottom edge would be comparing two different
-   rules and reporting the difference as a state difference. */
-function shapeVsShape(a, b) {
-  return round(SIDES.reduce((lo, s) => Math.min(lo,
-    b.sides[s].edgeLine.reduce((m, p) => Math.min(m, contrast(a.sides[s].edge, p)), Infinity)), Infinity));
-}
-
-/* The rects an element's own TEXT occupies, not its box: a chip that is part
-   lock glyph has its words on none of the glyph. */
-const textRuns = (selector) => `(() => {
-  const el = document.querySelector(${JSON.stringify(selector)});
-  if (!el) return null;
-  const rects = [];
-  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-  let node;
-  while ((node = walk.nextNode())) {
-    if (!node.nodeValue.trim()) continue;
-    if (node.parentElement.closest('.sr')) continue;
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    for (const r of range.getClientRects()) {
-      if (r.width > 0 && r.height > 0) rects.push({ x: r.x, y: r.y, w: r.width, h: r.height });
-    }
-  }
-  const cs = getComputedStyle(el);
-  return JSON.stringify({ color: cs.color, fontSize: cs.fontSize, rects,
-    text: el.textContent.trim().slice(0, 40) });
-})()`;
-
-const sampleRects = (rects) => `(() => {
-  let r = 0, g = 0, b = 0, n = 0;
-  for (const q of ${JSON.stringify(rects)}) {
-    const d = globalThis.__plate.getImageData(Math.round(q.x), Math.round(q.y),
-      Math.max(1, Math.round(q.w)), Math.max(1, Math.round(q.h))).data;
-    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
-  }
-  if (!n) throw new Error('no text pixels sampled');
-  return JSON.stringify([r / n, g / n, b / n, n]);
-})()`;
-
-/* Every computed style this file compares, in one place, so the two sides of a
-   comparison can never be read with different property lists. */
-/* Every sideways scroller the pane has drawn, and the three facts that decide
-   whether a keyboard can use it. Read on .tbl-wrap itself, the element that
-   clips: on an ancestor of a clipping box the two widths agree and the
-   overflow is invisible, which is the second of the two blind spots
-   CLAUDE.md records for this comparison. The first -- both values being
-   integers -- is not dodgeable here and is declared under NOT COVERED.
-
-   accessibleName is read the way a reader resolves it, aria-label first, so a
-   role that names nothing cannot pass as a named region.
-
-   fresh is read off the ABSENCE of the marker the pick arm writes, so it is
-   true everywhere until that pass runs and means "drawn after it" only once it
-   has. The one arm that reads it reads it after the pass, and asserts it found
-   some. */
-const SCROLLERS_LIST = `[...document.querySelectorAll('#lookupResult .tbl-wrap')].map((wrap) => {
-    const caption = wrap.querySelector('caption');
-    return {
-      caption: caption ? caption.textContent.trim() : null,
-      clientWidth: wrap.clientWidth,
-      scrollWidth: wrap.scrollWidth,
-      overflows: wrap.scrollWidth > wrap.clientWidth,
-      hasTabindex: wrap.hasAttribute('tabindex'),
-      tabIndex: wrap.tabIndex,
-      role: wrap.getAttribute('role'),
-      accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
-      fresh: !wrap.hasAttribute('data-gen'),
-    };
-  })`;
-
-const SCROLLERS = `JSON.stringify(${SCROLLERS_LIST})`;
 
 const STYLE = (selector) => `(() => {
   const el = document.querySelector(${JSON.stringify(selector)});
   if (!el) return null;
   const cs = getComputedStyle(el);
-  const rect = el.getBoundingClientRect();
-  const out = { text: el.textContent.trim().slice(0, 40),
-    rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height } };
-  for (const p of ['color', 'background-color', 'box-shadow', 'border-top-style',
-    'border-top-width', 'border-left-style', 'font-family', 'font-weight', 'font-size',
-    'letter-spacing', 'text-transform', 'min-width', 'margin-top', 'padding-top',
-    'padding-left', 'vertical-align']) out[p] = cs.getPropertyValue(p);
-  return JSON.stringify(out);
+  const r = el.getBoundingClientRect();
+  return JSON.stringify({
+    fontWeight: Number(cs.fontWeight), display: cs.display,
+    visible: cs.visibility !== 'hidden' && r.width > 0 && r.height > 0,
+    ariaPressed: el.getAttribute('aria-pressed'), text: el.textContent.trim()
+  });
 })()`;
 
-/* The four text sites this change moves. Named here so the count below is read
-   off the list rather than typed beside it. */
-const TEXT_SITES = [
-  ['.locked.masked', 'the mask chip in the account record'],
-  ['tr.is-selected .match-row-btn .code', 'the coded reference inside the pressed pick control'],
-  ['tr:not(.is-selected) .match-row-btn .code', 'the coded reference inside an unpressed pick control'],
-  ['tr.is-selected .t-sub .locked', 'the masked address under the picked reference'],
-];
-
-/* Elements read per theme, each with the element it is compared against. */
-const PAIRS = {
-  pressedBtn: 'tr.is-selected .match-row-btn',
-  unpressedBtn: 'tr:not(.is-selected) .match-row-btn',
-  pressedCode: 'tr.is-selected .match-row-btn .code',
-  unpressedCode: 'tr:not(.is-selected) .match-row-btn .code',
-  maskedChip: '.locked.masked',
-  plainLockedChip: 'tr.is-selected .t-sub .locked',
-  nameCell: 'tr.is-selected th.match-name',
-  otherRowHeader: '#accountColumn .tbl tbody th.t-main',
-  nameSub: 'th.match-name .t-sub',
-  otherSub: '#accountColumn .tbl .t-sub',
-};
+/* What overflows, what is too small to hit and what is too small to read, in
+   the pane as it stands. The pane has no scroll box of its own, so anything
+   that sits past the screen's edge is a defect and not a scrolled-away
+   column. Visually hidden nodes are 1px by design and are skipped. */
+const MEASURE = `(() => {
+  const root = document.querySelector('.users');
+  const vw = document.documentElement.clientWidth;
+  const shown = (el) => {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 1 && r.height > 1 ? r : null;
+  };
+  const name = (el) => el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\\s+/).join('.') : '');
+  const out = { vw, docScroll: document.documentElement.scrollWidth, beyond: [], short: [], tiny: [], controls: 0, texts: 0 };
+  for (const el of root.querySelectorAll('*')) {
+    const r = shown(el);
+    if (!r) continue;
+    if (r.right > vw + 0.5 || r.left < -0.5) out.beyond.push(name(el) + ' ' + Math.round(r.left) + '..' + Math.round(r.right));
+  }
+  for (const el of root.querySelectorAll('button, a[href], input:not([type=hidden]), select, textarea')) {
+    const r = shown(el);
+    if (!r) continue;
+    out.controls++;
+    if (r.height < ${MIN_TAP} - 0.5) out.short.push(name(el) + ' ' + Math.round(r.height * 10) / 10);
+  }
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (!n.data.trim() || !n.parentElement || !shown(n.parentElement)) continue;
+    out.texts++;
+    const fs = parseFloat(getComputedStyle(n.parentElement).fontSize);
+    if (fs < ${MIN_TEXT} - 0.01) out.tiny.push(name(n.parentElement) + ' ' + fs + 'px "' + n.data.trim().slice(0, 24) + '"');
+  }
+  const g2 = [...root.querySelectorAll('.grid.g2')].map((g) => [...g.children].map((c) => {
+    const r = c.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width };
+  }));
+  out.g2 = g2;
+  return JSON.stringify(out);
+})()`;
 
 /* --------------------------------------------------------------- the run */
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
+    const body = stub(url.pathname, url.search, { scene: 'users-many' });
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(api(url.pathname)));
+    res.end(JSON.stringify(body));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -646,6 +317,18 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(abs).pipe(res);
 });
 
+/* The pick control in every state, and the text beside it that sits on the
+   same wash. `hover` names the element the pointer rests on, or null. */
+const PICK_SITES = {
+  'unpicked, at rest': { site: '.match-row:not(.is-selected) .match-row-btn .code', hover: null },
+  'unpicked, under the pointer': { site: '.match-row:not(.is-selected) .match-row-btn .code', hover: true },
+  'picked, at rest': { site: '.match-row.is-selected .match-row-btn .code', hover: null },
+  'picked, under the pointer': { site: '.match-row.is-selected .match-row-btn .code', hover: true },
+  'picked row, the word Selected': { site: '.match-row.is-selected .sel-mark', hover: null },
+  'picked row, its facts': { site: '.match-row.is-selected .u-dim', hover: null },
+  'unpicked row, its facts': { site: '.match-row:not(.is-selected) .u-dim', hover: null },
+};
+
 const census = {};
 let browser = null;
 let cdp = null;
@@ -654,7 +337,7 @@ let profile = null;
 try {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  profile = fs.mkdtempSync(path.join(ROOT, '.ops-users-rendered-'));
+  profile = fs.mkdtempSync(path.join(process.env.TMPDIR || ROOT, '.ops-users-rendered-'));
   browser = spawn(chromePath(), [
     '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
     '--no-first-run', '--no-default-browser-check', '--no-sandbox', '--disable-gpu',
@@ -663,8 +346,8 @@ try {
   ], { stdio: 'ignore' });
 
   const port = await devtoolsPort(profile);
-  const page = (await devtoolsJson(port, '/json/list')).find((t) => t.type === 'page');
-  cdp = connect(page.webSocketDebuggerUrl);
+  const target = (await devtoolsJson(port, '/json/list')).find((t) => t.type === 'page');
+  cdp = connect(target.webSocketDebuggerUrl);
   await cdp.ready;
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
@@ -677,84 +360,44 @@ try {
     }
     return res.result.value;
   };
-  const styleOf = async (selector) => {
-    const raw = await evaluate(STYLE(selector));
-    if (!raw) throw new Error('nothing matched ' + selector + ' on the drawn page');
-    return JSON.parse(raw);
+  const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+  const viewport = async (width, height, mobile) => {
+    await cdp.send('Emulation.setDeviceMetricsOverride',
+      { width, height, deviceScaleFactor: 1, mobile });
+    await settle(400);
   };
 
-  /* The consequence, driven rather than inferred.
-     `tabindex="0"` is a statement about the tab sequence; this is the thing a
-     keyboard user actually wants, which is for the columns past the edge to
-     come into view. The scroll is driven with real key events through CDP: a
-     synthetic KeyboardEvent would not scroll anything, because the browser
-     scrolls on the default action of a TRUSTED key press and dispatchEvent
-     produces an untrusted one. Same reason CSS :hover needs
-     Input.dispatchMouseEvent.
-
-     activeElement landing on the wrap is NOT evidence that the pane did
-     anything. Chrome has focused scroll containers natively since 127, so a
-     bare .tbl-wrap with no tabindex focuses, scrolls on ArrowRight and matches
-     :focus-visible on this harness browser -- the whole outcome is supplied by
-     the browser. The arms below therefore read the attribute as well, and the
-     confound is named under NOT COVERED. */
-  const driveScroller = async () => {
-    const found = await evaluate(`(() => {
-      for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
-        if (wrap.scrollWidth > wrap.clientWidth) {
-          wrap.id = 'kbdScroller';
-          wrap.scrollLeft = 0;
-          wrap.focus();
-          return JSON.stringify({
-            caption: (wrap.querySelector('caption') || {}).textContent || null,
-            focused: document.activeElement === wrap,
-            tabIndex: wrap.tabIndex,
-            hasTabindex: wrap.hasAttribute('tabindex'),
-            role: wrap.getAttribute('role'),
-            before: wrap.scrollLeft,
-            room: wrap.scrollWidth - wrap.clientWidth,
-          });
-        }
-      }
-      return null;
-    })()`);
-    if (!found) return { present: false };
-
-    for (let i = 0; i < 8; i += 1) {
-      for (const type of ['rawKeyDown', 'keyUp']) {
-        await cdp.send('Input.dispatchKeyEvent',
-          { type, key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39,
-            nativeVirtualKeyCode: 39 });
-      }
-    }
-    await new Promise((r) => setTimeout(r, 400));
-
-    const after = await evaluate(`(() => {
-      const wrap = document.getElementById('kbdScroller');
-      const cs = getComputedStyle(wrap);
-      const rect = wrap.getBoundingClientRect();
-      return JSON.stringify({ after: wrap.scrollLeft,
-        stillFocused: document.activeElement === wrap,
-        /* Read after real key events, not after the .focus() above: whether a
-           box is drawing a focus ring at all is a decision the browser makes
-           from how focus arrived. */
-        focusVisible: wrap.matches(':focus-visible'),
-        outlineStyle: cs.outlineStyle,
-        outlineWidth: Number.parseFloat(cs.outlineWidth),
-        outlineOffset: Number.parseFloat(cs.outlineOffset),
-        right: rect.right,
-        viewportWidth: document.documentElement.clientWidth });
-    })()`);
-    return { present: true, ...JSON.parse(found), ...JSON.parse(after) };
+  /* The paint under one site's glyphs, in the pointer state asked for. The
+     pointer is moved with a real mouse event: CSS :hover answers to nothing
+     else, and the page reports back whether it is hovered so a pointer that
+     missed fails here rather than measuring the resting state twice. */
+  const paintUnder = async (name, { site, hover }) => {
+    const first = await evaluate(SITE(site));
+    if (!first) throw new Error(`no element for "${name}" (${site})`);
+    const at = JSON.parse(first);
+    if (hover) await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.cx, y: at.cy });
+    else await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+    await settle(250);
+    const probe = JSON.parse(await evaluate(SITE(site)));
+    assert.equal(probe.hovered, Boolean(hover), `"${name}": the pointer is ${hover ? 'not on' : 'still on'} the control`);
+    const ink = opaqueInk(probe.ink);
+    await evaluate(LIFT_GLYPHS);
+    await settle(100);
+    const shot = await cdp.send('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: probe.x, y: probe.y, width: Math.ceil(probe.w), height: Math.ceil(probe.h), scale: 1 },
+    });
+    await evaluate(DROP_GLYPHS);
+    const read = JSON.parse(await evaluate(WORST_UNDER(shot.data, luminance(ink))));
+    return { text: probe.text, ink: probe.ink, hovered: probe.hovered, ...read,
+      ratio: round(ratio(luminance(ink), read.worstLum)) };
   };
 
   let initScript = null;
   for (const theme of THEMES) {
-    if (initScript) {
-      await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: initScript });
-    }
+    if (initScript) await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: initScript });
     /* The theme and the API base have to be in storage before the document's
-       first script runs. Emulated media is set to the OPPOSITE theme, because
+       first script runs. Emulated media is the OPPOSITE theme, because
        theme.js falls back to prefers-color-scheme and matching the two would
        make a failed storage write look like a success. */
     initScript = (await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
@@ -767,504 +410,43 @@ try {
     await cdp.send('Emulation.setEmulatedMedia', {
       features: [{ name: 'prefers-color-scheme', value: theme === 'dark' ? 'light' : 'dark' }],
     });
-    await cdp.send('Emulation.setDeviceMetricsOverride',
-      { width: 1280, height: 1600, deviceScaleFactor: 1, mobile: false });
-
+    await viewport(DESKTOP, 1400, false);
     cdp.reset();
-
-    /* The second pass renders nothing without this, and says so quietly.
-       After the first navigation the target stops being frontmost, so its
-       document is visibilityState "hidden" -- and a hidden document produces
-       no animation frames. Layout and getComputedStyle still answer, which is
-       why everything measured here kept working, but anything delivered on a
-       frame stops: requestAnimationFrame, ResizeObserver, IntersectionObserver
-       and the window `resize` event. Measured: 24 rAF ticks in the first pass
-       against 0 in the second, over the same 400ms, both at innerWidth 375. */
+    /* A hidden document produces no animation frames, so the second pass
+       would render nothing without this. */
     await cdp.send('Page.bringToFront');
     await cdp.send('Page.navigate', { url: origin + PAGE });
     await cdp.once('Page.loadEventFired');
-    await new Promise((r) => setTimeout(r, 800));
+    await settle(800);
 
     const drove = await evaluate(DRIVE);
     if (drove !== 'ok') throw new Error(`[${theme}] ${PAGE}: ${drove}`);
-    const drawnTheme = await evaluate('document.documentElement.getAttribute("data-theme")');
-    if (drawnTheme !== theme) {
-      throw new Error(`[${theme}] the page drew with data-theme="${drawnTheme}"`);
-    }
+    const drawn = await evaluate('document.documentElement.getAttribute("data-theme")');
+    if (drawn !== theme) throw new Error(`[${theme}] the page drew with data-theme="${drawn}"`);
 
-    const styles = {};
-    for (const [key, selector] of Object.entries(PAIRS)) styles[key] = await styleOf(selector);
-
-    /* The wide arm of the scroller question. At 1280 these four tables fit
-       their cards, so this is where a tab stop that should not exist shows up. */
-    const scrollersWide = JSON.parse(await evaluate(SCROLLERS));
-
-    /* Text-run geometry is read from the DOM before the glyphs go, because
-       afterwards there is nothing left to measure the extent of. */
-    const texts = [];
-    for (const [selector, where] of TEXT_SITES) {
-      const raw = await evaluate(textRuns(selector));
-      if (!raw) throw new Error(`[${theme}] no element for text site ${selector}`);
-      texts.push({ ...JSON.parse(raw), selector, where });
-    }
-
-    /* One plate, with the glyphs lifted, and both kinds of measurement taken
-       off it. Text wants the paint UNDER it. The graphics want the same
-       thing: a mask chip's interior is the surface its dashed edge sits on,
-       and the letters of the masked value standing on that surface are not
-       the surface — sampling them would make the edge's contrast against its
-       own background depend on how tall the address happens to be. */
-    await evaluate(LIFT_GLYPHS);
-    await new Promise((r) => setTimeout(r, 250));
-    const plate = await cdp.send('Page.captureScreenshot', { format: 'png' });
-    await evaluate(loadPlate(plate.data));
-
-    /* Every side of every shape. A four-sided ring and a four-sided dashed
-       border are only as strong as the side that reads worst, and reading one
-       side certified the other three by assumption — Stadiora/Aria#10713. */
-    const probeShape = async (selector, where) => {
-      const perSide = {};
-      for (const side of SIDES) perSide[side] = await evaluate(stripProbe(selector, side));
-      return readShape(perSide, where);
+    const styles = {
+      picked: JSON.parse(await evaluate(STYLE('.match-row.is-selected .match-row-btn .code'))),
+      unpicked: JSON.parse(await evaluate(STYLE('.match-row:not(.is-selected) .match-row-btn .code'))),
+      button: JSON.parse(await evaluate(STYLE('.match-row.is-selected .match-row-btn'))),
+      mark: JSON.parse(await evaluate(STYLE('.match-row.is-selected .sel-mark'))),
+      otherMark: await evaluate('document.querySelectorAll(".match-row:not(.is-selected) .sel-mark").length'),
+      pressedCount: await evaluate('document.querySelectorAll(\'.match-row-btn[aria-pressed="true"]\').length'),
     };
-    const ring = await probeShape(PAIRS.pressedBtn, 'the pressed control');
-    const mask = await probeShape(PAIRS.maskedChip, 'the mask chip');
-    const unpressed = await probeShape(PAIRS.unpressedBtn, 'the unpressed control');
-    /* Worst case, not corresponding case: every pixel of the unpressed
-       control's edge line on the same side, and the one that reads closest to
-       the pressed ring wins. */
-    const ringVsUnpressed = shapeVsShape(ring, unpressed);
 
-    const textContrast = [];
-    for (const t of texts) {
-      const [r, g, b, n] = JSON.parse(await evaluate(sampleRects(t.rects)));
-      textContrast.push({ where: t.where, selector: t.selector, text: t.text,
-        ink: t.color, backdrop: [r, g, b], pixels: n,
-        ratio: round(contrast(opaqueInk(t.color), [r, g, b])) });
+    const paint = {};
+    for (const [name, spec] of Object.entries(PICK_SITES)) paint[name] = await paintUnder(name, spec);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+
+    const wide = JSON.parse(await evaluate(MEASURE));
+
+    const phones = {};
+    for (const width of PHONES) {
+      await viewport(width, 900, true);
+      const opened = JSON.parse(await evaluate(OPEN_EVERYTHING));
+      await settle(200);
+      phones[width] = { opened, ...JSON.parse(await evaluate(MEASURE)) };
     }
-
-    /* Stadiora/Aria#10713. The floor on .match-name was bound only from
-       below, by the 375px pass: it proves 200px is ENOUGH to keep the mark on
-       the reference's line. Nothing proved it is not too MUCH — raising it to
-       360px survived the whole suite.
-
-       The first attempt at the other arm was itself a false green and is
-       recorded here because the shape is worth keeping: it read
-       `scrollWidth > clientWidth` on .tbl-wrap at 1280px, on the theory that
-       an oversized floor drags the table past the card. Measured, it does
-       not. At 1280 the table stays at 984px either way and the four sibling
-       columns absorb the floor — 164/184/179/112 at a 200px floor,
-       128/144/139/88 at 360 — with scrollWidth equal to clientWidth in every
-       one of them. Nothing clips, the text wraps, and the assertion could not
-       fail from the thing it named. scripts/check-ops-narrow-overflow.mjs does
-       not see it either: it never runs a lookup, so there is no match table on
-       the page it sweeps.
-
-       Where the floor IS load-bearing is 375px, where the cell takes the
-       floor exactly and the wrap is already scrolling sideways (570px of
-       content in a 343px window at the 200px floor). So the arm binds the one
-       thing that is both measurable and user-visible: the match's own name —
-       the row header that says which person this row is — must fit inside the
-       visible width of the wrap without the operator scrolling sideways to
-       reach the end of it. 200px leaves 143px of headroom; 360px does not fit
-       at all. The floor's measured window is [200, 343].
-
-       Read on .tbl-wrap, the element that actually clips (`overflow-x: auto`,
-       pane-users-v2.css:240). Reading it on <html> cannot fail, because the
-       wrap absorbs the overflow by scrolling — the narrow arm below already
-       reports documentScrollWidth for exactly that reason and does not assert
-       on it. */
-
-    /* The narrow pass. Two questions: is the "Selected" mark still on the line
-       the reference is on, and does the cell the floor sets still fit in the
-       window the operator is looking through? */
-    await cdp.send('Emulation.setDeviceMetricsOverride',
-      { width: 375, height: 1600, deviceScaleFactor: 1, mobile: false });
-    await new Promise((r) => setTimeout(r, 400));
-
-    /* Collected AFTER the viewport change and after the pane's 140ms settle,
-       with nothing repainted in between: at this point the only thing that can
-       have moved these attributes is the pane's ResizeObserver, since no
-       paint, click or navigation happened between the width change and this
-       read. That is what binds the observer rather than merely the writes. */
-    const scrollersNarrow = JSON.parse(await evaluate(SCROLLERS));
-    const keyboard = await driveScroller();
-    const narrow = JSON.parse(await evaluate(`(() => {
-      const th = document.querySelector('tr.is-selected th.match-name');
-      const wrap = th.closest('.tbl-wrap');
-      const btn = th.querySelector('.match-row-btn').getBoundingClientRect();
-      const mark = th.querySelector('.sel-mark').getBoundingClientRect();
-      const overlap = Math.min(btn.bottom, mark.bottom) - Math.max(btn.top, mark.top);
-      return JSON.stringify({
-        cellWidth: th.getBoundingClientRect().width,
-        floor: Number.parseFloat(getComputedStyle(th).minWidth),
-        wrapClientWidth: wrap.clientWidth, wrapScrollWidth: wrap.scrollWidth,
-        sameLine: overlap > Math.min(btn.height, mark.height) / 2,
-        documentScrollWidth: document.documentElement.scrollWidth,
-        documentClientWidth: document.documentElement.clientWidth,
-      });
-    })()`));
-
-    /* Stadiora/Aria#10706. `overflow-x` clips a descendant only when this box
-       is that descendant's containing block, and an absolutely positioned one
-       resolves its containing block to the nearest POSITIONED ancestor -- so a
-       static wrapper scrolls its table, clips its table, and lets a
-       `caption.sr` inside it sit in page coordinates at the table's real
-       width. The table scrolls correctly inside its card and the document
-       scrolls sideways behind it.
-
-       Measured as the consequence, not read off the sheet. The box is scrolled
-       and a descendant it contains moves with it by exactly what the box
-       scrolled; one positioned against a card outside does not move at all.
-       `scrolledBy` is read back rather than assumed, because a box that
-       refused to scroll reports every descendant as having moved zero, which
-       is what a CONTAINED descendant looks like when nothing happened.
-
-       scripts/ops-scroll-containment.test.mjs sweeps this across the panes its
-       shared stub can render; its own NOT COVERED says People's `.tbl-wrap`
-       needs a search it does not drive. This harness drives that search. */
-    const containment = JSON.parse(await evaluate(`(() => {
-      const out = [];
-      for (const wrap of document.querySelectorAll('#lookupResult .tbl-wrap')) {
-        const cap = wrap.querySelector('caption');
-        const abs = [...wrap.querySelectorAll('*')]
-          .filter((el) => getComputedStyle(el).position === 'absolute');
-        const before = abs.map((el) => el.getBoundingClientRect().left);
-        const was = wrap.scrollLeft;
-        /* Whichever direction has room. An earlier probe in this run leaves the
-           match table parked at its maximum, and a box that cannot go further
-           right reports scrolledBy 0 -- which drops it out of the arm below
-           without saying so. The step is capped at the room available for the
-           same reason: a box with eight pixels of overflow cannot move
-           twenty-four in either direction. The comparison is signed. */
-        const room = wrap.scrollWidth - wrap.clientWidth;
-        const step = Math.min(24, room);
-        wrap.scrollLeft = was + step <= room ? was + step : was - step;
-        const scrolledBy = wrap.scrollLeft - was;
-        const after = abs.map((el) => el.getBoundingClientRect().left);
-        wrap.scrollLeft = was;
-        out.push({
-          caption: cap ? cap.textContent.trim() : null,
-          position: getComputedStyle(wrap).position,
-          overflows: wrap.scrollWidth > wrap.clientWidth,
-          scrolledBy,
-          descendants: abs.map((el, i) => ({
-            what: el.tagName.toLowerCase() +
-              (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : ''),
-            position: getComputedStyle(el).position,
-            shift: Math.round((after[i] - before[i]) * 100) / 100,
-          })),
-        });
-      }
-      return JSON.stringify(out);
-    })()`));
-
-    /* Binds the MutationObserver, which nothing above can reach. Picking the
-       second match replaces the account column with a detail the stub serves
-       identically, so no box that is already observed changes size and the
-       ResizeObserver has nothing to report -- but three wrap elements are new
-       and unobserved. Only a watcher of the tree itself can see them.
-       The wraps standing before the pick are marked, so "new" is read off the
-       DOM rather than assumed. */
-    const repick = JSON.parse(await evaluate(`(async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      for (const w of document.querySelectorAll('#lookupResult .tbl-wrap')) {
-        w.setAttribute('data-gen', 'before');
-      }
-      const rows = [...document.querySelectorAll('.match-row')];
-      const other = rows.find((r) => !r.classList.contains('is-selected'));
-      if (!other) return JSON.stringify({ error: 'only one match row was drawn' });
-      other.querySelector('.match-row-btn').click();
-      for (let i = 0; i < 60; i++) {
-        await sleep(50);
-        if (other.classList.contains('is-selected')) break;
-      }
-      await sleep(700);
-      if (!other.classList.contains('is-selected')) {
-        return JSON.stringify({ error: 'the second pick never selected' });
-      }
-      return JSON.stringify({ wraps: ${SCROLLERS_LIST} });
-    })()`));
-    if (repick.error) throw new Error(`[${theme}] ${repick.error}`);
-
-    /* Isolates the MutationObserver, which the arm above cannot: every natural
-       render also moves layout, so the ResizeObserver covers those paths too
-       and removing the watcher of the tree breaks nothing visible. This one
-       adds a wrap that changes the size of no box already observed -- taken
-       out of flow, sized from a constructed sheet, since users.html sends
-       style-src 'self' with no 'unsafe-inline' and a style= attribute would be
-       refused. A synthetic node, stated as such: the claim it binds is that
-       the pane notices a scroll box appearing in its result region, not that
-       this is how one appears. */
-    const injected = JSON.parse(await evaluate(`(async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync('#injectedWrap { position: absolute; left: -9999px; top: 0;' +
-        ' width: 120px; overflow-x: auto; }' +
-        '#injectedWrap table { width: 900px; table-layout: fixed; }');
-      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-
-      const wrap = document.createElement('div');
-      wrap.className = 'tbl-wrap';
-      wrap.id = 'injectedWrap';
-      wrap.setAttribute('data-gen', 'injected');
-      const table = document.createElement('table');
-      const caption = document.createElement('caption');
-      caption.className = 'sr';
-      caption.textContent = 'An injected table, not a rendered one';
-      const row = document.createElement('tr');
-      const cell = document.createElement('td');
-      cell.textContent = 'x';
-      row.appendChild(cell);
-      table.appendChild(caption);
-      table.appendChild(row);
-      wrap.appendChild(table);
-
-      const before = { clientWidth: 0, scrollWidth: 0 };
-      document.getElementById('lookupResult').appendChild(wrap);
-      before.clientWidth = wrap.clientWidth;
-      before.scrollWidth = wrap.scrollWidth;
-      /* Read before anything could have run: the pane has no call site on this
-         path, so an attribute here would mean the probe dressed it itself. */
-      const atBirth = wrap.getAttribute('tabindex');
-      await sleep(600);
-      const out = {
-        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
-        overflows: wrap.scrollWidth > wrap.clientWidth,
-        atBirth,
-        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
-        role: wrap.getAttribute('role'),
-        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
-      };
-      wrap.remove();
-      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
-      return JSON.stringify(out);
-    })()`));
-
-    /* How long a clipping table stays unreachable after a repaint. The pane
-       has no synchronous call site -- it had one and it was measured doing
-       nothing, because a table is appended before its rows are -- so this is
-       the whole chain end to end: paint, MutationObserver, settle, measure,
-       attribute. Polled ten times faster than the settle so the arrival is
-       located rather than assumed, and it leaves the pane back in the picked
-       state the arm after it reads. */
-    const immediate = JSON.parse(await evaluate(`(async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const id = document.getElementById('lookupIdentifier');
-      id.form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      let seen = null;
-      for (let i = 0; i < 400; i++) {
-        const wrap = document.querySelector('#lookupResult .tbl-wrap');
-        if (wrap && wrap.scrollWidth > wrap.clientWidth) {
-          seen = { pollsWaited: i, timeline: [],
-            clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
-            tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
-            role: wrap.getAttribute('role') };
-          for (let j = 0; j < 80; j++) {
-            seen.timeline.push([j * 10, wrap.hasAttribute('tabindex'),
-              wrap.tabIndex, wrap.getAttribute('role')]);
-            if (wrap.hasAttribute('tabindex')) break;
-            await sleep(10);
-          }
-          break;
-        }
-        await sleep(10);
-      }
-      const btn = document.querySelector('.match-row-btn');
-      if (btn) btn.click();
-      await sleep(900);
-      return JSON.stringify(seen || { missing: true });
-    })()`));
-
-    /* Isolates the observation of the TABLE, which every rendered arm leaves
-       redundant: on a rendered path the tree moves too, so the tree watcher
-       covers it.
-
-       Measured, not reasoned: the first version of this arm grew a cell in the
-       real Devices table and the pane still marked it with the table's
-       observation deleted. The reason is worth keeping. A box that starts
-       clipping grows a horizontal scrollbar, and in this browser that
-       scrollbar takes 17.25px of the WRAP's own height (85.75 -> 103), so the
-       wrap's own observation sees every fits-to-clips transition a real table
-       can make. Isolation by geometry has to hold in both dimensions, and the
-       check that missed it read clientWidth only.
-
-       So: overflow-x: scroll, which reserves the gutter up front and leaves
-       the wrap's box still while the table inside it grows. The growth is a
-       write to an existing Text node's .data, a characterData record, and the
-       pane's MutationObserver takes childList and subtree only. Synthetic and
-       stated as such; out of flow and sized from a constructed sheet because
-       users.html sends style-src 'self' with no 'unsafe-inline'.
-
-       The isolation is then asserted rather than inferred: the arm runs its
-       own ResizeObserver over the same two elements and reports which of them
-       actually fired. */
-    const grown = JSON.parse(await evaluate(`(async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync('#growWrap { position: absolute; left: -9999px; top: 0;' +
-        ' width: 300px; overflow-x: scroll; }' +
-        '#growWrap table { table-layout: auto; white-space: nowrap; }');
-      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-
-      const wrap = document.createElement('div');
-      wrap.className = 'tbl-wrap';
-      wrap.id = 'growWrap';
-      const table = document.createElement('table');
-      const caption = document.createElement('caption');
-      caption.className = 'sr';
-      caption.textContent = 'A table that grew inside a still box';
-      const row = document.createElement('tr');
-      const cell = document.createElement('td');
-      cell.textContent = 'x';
-      row.appendChild(cell);
-      table.appendChild(caption);
-      table.appendChild(row);
-      wrap.appendChild(table);
-      document.getElementById('lookupResult').appendChild(wrap);
-      await sleep(600);
-
-      const rect = (el) => {
-        const r = el.getBoundingClientRect();
-        return { w: Math.round(r.width * 100) / 100, h: Math.round(r.height * 100) / 100 };
-      };
-      const before = {
-        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
-        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
-        wrap: rect(wrap), table: rect(table),
-      };
-
-      const fired = { wrap: 0, table: 0 };
-      const spy = new ResizeObserver((entries) => {
-        for (const e of entries) {
-          if (e.target === wrap) fired.wrap++;
-          else if (e.target === table) fired.table++;
-        }
-      });
-      spy.observe(wrap);
-      spy.observe(table);
-      await sleep(200);
-      fired.wrap = 0;
-      fired.table = 0;
-
-      const text = [...cell.childNodes].find((n) => n.nodeType === 3);
-      /* Non-breaking spaces so the cell cannot answer by wrapping. */
-      text.data = 'W\u00a0'.repeat(120);
-      await sleep(600);
-      spy.disconnect();
-
-      const out = {
-        before, fired,
-        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
-        wrap: rect(wrap), table: rect(table),
-        overflows: wrap.scrollWidth > wrap.clientWidth,
-        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
-        role: wrap.getAttribute('role'),
-        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
-      };
-      out.boxMoved = out.wrap.w !== before.wrap.w || out.wrap.h !== before.wrap.h;
-      wrap.remove();
-      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
-      return JSON.stringify(out);
-    })()`));
-
-    /* The other half of the same isolation. watchScroller observes the wrap
-       AND the table inside it, and on every rendered path both boxes move at
-       once -- a viewport change resizes the card and re-lays the table -- so
-       either observation alone covers the other and neither is bound by a
-       rendered arm. The arm above moves the table under a still wrap; this one
-       moves the wrap under a still table, which only the wrap's own
-       observation can see.
-
-       Synthetic, and stated as such, because no real width does this: a card
-       narrow enough to clip also re-lays the table inside it. Out of flow and
-       sized from a constructed sheet for the same reason the injected arm is
-       -- users.html sends style-src 'self' with no 'unsafe-inline'. It is
-       appended wide and left to be seen (the tree watcher's job), then
-       narrowed with no tree change at all, which is the ResizeObserver's. */
-    const squeezed = JSON.parse(await evaluate(`(async () => {
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const sheet = new CSSStyleSheet();
-      const at = (w) => '#squeezeWrap { position: absolute; left: -9999px; top: 0;' +
-        ' width: ' + w + 'px; overflow-x: auto; }' +
-        '#squeezeWrap table { width: 900px; table-layout: fixed; }';
-      sheet.replaceSync(at(1200));
-      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
-
-      const wrap = document.createElement('div');
-      wrap.className = 'tbl-wrap';
-      wrap.id = 'squeezeWrap';
-      const table = document.createElement('table');
-      const caption = document.createElement('caption');
-      caption.className = 'sr';
-      caption.textContent = 'A table whose box was squeezed, not a rendered one';
-      const row = document.createElement('tr');
-      const cell = document.createElement('td');
-      cell.textContent = 'x';
-      row.appendChild(cell);
-      table.appendChild(caption);
-      table.appendChild(row);
-      wrap.appendChild(table);
-      document.getElementById('lookupResult').appendChild(wrap);
-
-      await sleep(600);
-      const wide = {
-        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
-        tableWidth: table.getBoundingClientRect().width,
-        tableHeight: table.getBoundingClientRect().height,
-        overflows: wrap.scrollWidth > wrap.clientWidth,
-        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
-      };
-      /* Same instrument as the arm above: which observation could have seen
-         this, measured rather than argued. */
-      const fired = { wrap: 0, table: 0 };
-      const spy = new ResizeObserver((entries) => {
-        for (const e of entries) {
-          if (e.target === wrap) fired.wrap++;
-          else if (e.target === table) fired.table++;
-        }
-      });
-      spy.observe(wrap);
-      spy.observe(table);
-      await sleep(200);
-      fired.wrap = 0;
-      fired.table = 0;
-      /* No node added, removed or re-parented: the tree watcher cannot see
-         this, and the table's own box is fixed at 900px so its observation has
-         nothing to report either. */
-      sheet.replaceSync(at(120));
-      await sleep(600);
-      spy.disconnect();
-      const out = {
-        wide, fired,
-        clientWidth: wrap.clientWidth, scrollWidth: wrap.scrollWidth,
-        tableWidth: table.getBoundingClientRect().width,
-        tableMoved: table.getBoundingClientRect().width !== wide.tableWidth
-          || table.getBoundingClientRect().height !== wide.tableHeight,
-        overflows: wrap.scrollWidth > wrap.clientWidth,
-        tabIndex: wrap.tabIndex, hasTabindex: wrap.hasAttribute('tabindex'),
-        role: wrap.getAttribute('role'),
-        accessibleName: (wrap.getAttribute('aria-label') || '').trim(),
-      };
-      wrap.remove();
-      document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
-      return JSON.stringify(out);
-    })()`));
-
-    /* Back to the width the affordance is not supposed to exist at. Nothing
-       else in this run goes from clipping to fitting, and an invariant
-       asserted only in the direction that adds the attribute is half an
-       invariant: the arm that takes it off again has to be driven too. */
-    await cdp.send('Emulation.setDeviceMetricsOverride',
-      { width: 1280, height: 1600, deviceScaleFactor: 1, mobile: false });
-    await new Promise((r) => setTimeout(r, 400));
-    const scrollersRewide = JSON.parse(await evaluate(SCROLLERS));
-
-    census[theme] = { styles, textContrast, narrow,
-      scrollers: { wide: scrollersWide, narrow: scrollersNarrow, keyboard,
-        repick: repick.wraps, injected, immediate, grown, squeezed,
-        containment, rewide: scrollersRewide },
-      graphics: { ring, mask, unpressed, ringVsUnpressed } };
+    census[theme] = { styles, paint, wide, phones };
   }
 } catch (err) {
   await shutdown();
@@ -1273,14 +455,7 @@ try {
 
 await shutdown();
 
-/* The figures published on the pull request come out of here rather than off a
-   notepad: OPS_RENDERED_CENSUS=1 node --test scripts/ops-users-rendered.test.mjs
-   prints every colour, ratio and rect this run actually measured. A contrast
-   table typed by hand beside a check that measures something else is the same
-   defect as a green test for a broken behaviour, one step further out. */
-if (process.env.OPS_RENDERED_CENSUS) {
-  process.stdout.write(JSON.stringify(census, null, 2) + '\n');
-}
+if (process.env.OPS_RENDERED_CENSUS) process.stdout.write(JSON.stringify(census, null, 2) + '\n');
 
 async function shutdown() {
   if (cdp) cdp.close();
@@ -1296,597 +471,83 @@ async function shutdown() {
   await new Promise((r) => server.close(r));
 }
 
-/* ---------------------------------------------------------------- the census
+/* ---------------------------------------------------------------- the checks */
 
-   Asserted before anything is read off it: a run that drew one theme and
-   measured the other's leftovers would otherwise agree with itself. */
-test('both themes reached a populated match list with a match picked', () => {
+test('both themes reached a picked account and every probe read something', () => {
   assert.deepEqual(Object.keys(census).sort(), [...THEMES].sort());
   for (const theme of THEMES) {
-    assert.equal(census[theme].textContrast.length, TEXT_SITES.length,
-      `[${theme}] measured ${census[theme].textContrast.length} text sites, ` +
-      `TEXT_SITES names ${TEXT_SITES.length}`);
-    assert.equal(Object.keys(census[theme].styles).length, Object.keys(PAIRS).length);
+    const c = census[theme];
+    assert.deepEqual(Object.keys(c.paint), Object.keys(PICK_SITES));
+    for (const [name, p] of Object.entries(c.paint)) {
+      assert.ok(p.n >= 100, `[${theme}] "${name}" sampled ${p.n} pixels, too few to be a surface`);
+      assert.ok(p.text, `[${theme}] "${name}" read no text`);
+    }
+    assert.deepEqual(Object.keys(c.phones).map(Number), PHONES);
+    for (const width of PHONES) {
+      assert.deepEqual(c.phones[width].opened, { filters: true, reveal: true },
+        `[${theme}] ${width}px: the filters and the reveal form were not both open`);
+      assert.ok(c.phones[width].controls >= 8, `[${theme}] ${width}px measured ${c.phones[width].controls} controls`);
+      assert.ok(c.phones[width].texts >= 30, `[${theme}] ${width}px measured ${c.phones[width].texts} text runs`);
+      assert.equal(c.phones[width].vw, width, `[${theme}] the viewport is ${c.phones[width].vw}, not ${width}`);
+    }
   }
 });
 
-/* --------------------------------------------- Stadiora/Aria#10648, the pick */
-
 for (const theme of THEMES) {
-  test(`[${theme}] the pressed pick control is drawn differently from the unpressed one`, () => {
-    const { pressedBtn, unpressedBtn } = census[theme].styles;
-
-    /* The shape. A ring where a ghost button has none, asserted in both
-       directions: a rule that put the ring on every .match-row-btn would
-       satisfy the first half and fail the second. */
-    assert.notEqual(pressedBtn['box-shadow'], 'none',
-      'the pressed control carries no box-shadow, so nothing rings it');
-    assert.equal(unpressedBtn['box-shadow'], 'none',
-      'the unpressed control has grown a ring, so the ring no longer marks the pressed one');
-    assert.match(pressedBtn['box-shadow'], /inset/,
-      'the pressed ring is not inset, so it is not the shape inside the box ' +
-      'that :focus-visible sits outside');
-
-    /* The fill. */
-    assert.notEqual(parseColor(pressedBtn['background-color']).join(),
-      parseColor(unpressedBtn['background-color']).join(),
-      'the pressed and unpressed controls resolve the same background colour');
-    assert.equal(unpressedBtn['background-color'], 'rgba(0, 0, 0, 0)',
-      'the unpressed control is no longer a ghost button');
-  });
-
-  test(`[${theme}] the pressed pick control differs from the unpressed one WITHOUT colour`, () => {
-    const c = census[theme];
-    const { pressedCode, unpressedCode } = c.styles;
-
-    /* Weight carries no colour at all. Magnitude, not just direction:
-       Stadiora/Aria#10713 proved `620` -> `521` survived a bare `>`, which is
-       a 21-unit step no reader can see and, under forced-colours where the
-       ring and the fill both resolve away, the only channel left. The floor is
-       one full CSS weight rank. */
-    const pressedWeight = Number(pressedCode['font-weight']);
-    const unpressedWeight = Number(unpressedCode['font-weight']);
-    assert.ok(pressedWeight - unpressedWeight >= 100,
-      `the pressed reference is set at ${pressedWeight} and the unpressed one at ` +
-      `${unpressedWeight}, a step of ${pressedWeight - unpressedWeight}: under a full ` +
-      'weight rank, weight is not carrying the state');
-
-    /* Luminance discards hue, so a ratio here is what a greyscale screen sees.
-       The ring against the unpressed control's own edge line is the "these two
-       controls do not look alike" claim with colour taken out of it, and it is
-       the WORST pixel of that line, on every side, rather than a corresponding
-       one on one side. */
-    const { ring, unpressed, ringVsUnpressed } = c.graphics;
-    assert.ok(ringVsUnpressed >= AA_GRAPHIC,
-      `the pressed control's edge reads at ${ringVsUnpressed}:1 in luminance against the ` +
-      `closest pixel of the unpressed control's edge (${ring.edge} vs ${unpressed.edge}), ` +
-      `under ${AA_GRAPHIC}:1`);
-  });
-
-  test(`[${theme}] the pressed ring clears 3:1 on every side, against both surfaces it sits between`, () => {
-    const { ring } = census[theme].graphics;
-    for (const side of SIDES) {
-      assert.ok(ring.sides[side].samples.edge >= 4,
-        `the ring's ${side} edge was walked over ${ring.sides[side].samples.edge} pixel(s), ` +
-        'too few for its figure below to be an assertion about the edge rather than a corner');
-    }
-    assert.ok(ring.vsInterior >= AA_GRAPHIC,
-      `the ring reads ${ring.vsInterior}:1 on its ${ring.interiorSide} side against the worst ` +
-      `pixel of the 4px band of pressed fill inboard of it (${ring.edge} vs ` +
-      `${ring.worstInterior}), over ${ring.samples.interior} samples across four sides`);
-    assert.ok(ring.vsOutside >= AA_GRAPHIC,
-      `the ring reads ${ring.vsOutside}:1 on its ${ring.outsideSide} side against the worst ` +
-      `pixel of the 3px band of picked row cell outboard of it (${ring.edgeOutside} vs ` +
-      `${ring.worstOutside}), over ${ring.samples.outside} samples across four sides`);
-  });
-}
-
-/* -------------------------------------------- Stadiora/Aria#10643, the mask */
-
-for (const theme of THEMES) {
-  test(`[${theme}] a masked value is drawn as a redaction and not as a plain locked chip`, () => {
-    const { maskedChip, plainLockedChip } = census[theme].styles;
-
-    /* The type: the mask stands in the value's own family, so a reveal reads
-       as one value changing form. Both arms — the plain locked chip, which is
-       the API's standing mask of an address in the match table, stays in the
-       page's sans. */
-    assert.match(maskedChip['font-family'], /mono/i,
-      'the mask is not set in the monospace the value it stands for uses');
-    assert.doesNotMatch(plainLockedChip['font-family'], /mono/i,
-      'every locked chip is now mono, so the mask is no longer distinguishable from one');
-    /* Magnitude, not just presence: `letter-spacing: .0005em` is not 'normal'
-       and separates nothing, so the old shape of this check passed on tracking
-       a reader cannot see. The floor is a third of a pixel at this type size,
-       which is the smallest step Chrome will actually lay out differently. */
-    const tracking = parseFloat(maskedChip['letter-spacing']);
-    assert.ok(tracking >= 0.3,
-      `the mask is tracked out by only ${maskedChip['letter-spacing']}, which does not ` +
-      'separate its dots enough to stop them running together as a word');
-    assert.equal(plainLockedChip['letter-spacing'], 'normal',
-      'every locked chip is now tracked, so tracking no longer marks the mask');
-
-    /* The edge: dashed where the plain chip's is a solid box-shadow ring. */
-    assert.equal(maskedChip['border-top-style'], 'dashed',
-      'the mask has no dashed edge, so nothing about its outline says withheld');
-    assert.equal(maskedChip['border-left-style'], 'dashed');
-    assert.equal(plainLockedChip['border-top-style'], 'none',
-      'the plain locked chip has grown a border, so dashed no longer marks the mask');
-    assert.equal(maskedChip['box-shadow'], 'none',
-      'the mask carries the dashed border AND the solid ring, so it is drawn twice over');
-    assert.notEqual(plainLockedChip['box-shadow'], 'none',
-      'the plain locked chip has lost its ring');
-
-    /* The border replaces the ring rather than joining it, and the padding
-       gives back the pixel the border takes, so the row does not move. */
-    assert.equal(round(maskedChip.rect.h), round(plainLockedChip.rect.h),
-      `the mask is ${maskedChip.rect.h}px tall against the plain chip's ` +
-      `${plainLockedChip.rect.h}px: the border changed the chip's size`);
-  });
-
-  test(`[${theme}] painting the mask did not change what the API masked`, () => {
-    const { maskedChip, nameCell } = census[theme].styles;
-    /* A masked value re-cased on screen is an administrator being shown a
-       record that is not the record. The sheet says so beside .tbl tbody th;
-       this is that sentence measured. */
-    assert.equal(maskedChip['text-transform'], 'none');
-    assert.equal(nameCell['text-transform'], 'none');
-    assert.ok(maskedChip.text.includes('•'),
-      `the mask chip reads "${maskedChip.text}", which carries no mask characters`);
-    assert.ok(census[theme].textContrast.some((t) => t.text === MASKED_EMAIL),
-      'the masked address the fixture sent is not on screen verbatim');
-  });
-
-  test(`[${theme}] the mask's dashed edge clears 3:1 on every side, against both surfaces`, () => {
-    const { mask } = census[theme].graphics;
-    /* .locked's background is a hatch, so the interior is two alternating
-       colours and the claim is about the LOUD one. The sample counts are
-       asserted because a band that collapses to one pixel is how this check
-       reported 3.55:1 for a surface that measured 2.98:1. Now counted across
-       four sides, with a per-side floor as well, so a short side walked over
-       nothing cannot hide inside a healthy total — a dashed border sampled
-       over nine pixels can land entirely in its own gaps. */
-    for (const side of SIDES) {
-      assert.ok(mask.sides[side].samples.edge >= 4,
-        `the mask's ${side} edge was walked over ${mask.sides[side].samples.edge} pixel(s), ` +
-        'too few to have found a dash rather than the gaps between them');
-    }
-    assert.ok(mask.samples.interior >= 40 && mask.samples.outside >= 30,
-      `the mask's neighbouring bands were read at ${mask.samples.interior} interior and ` +
-      `${mask.samples.outside} outside samples, which is too few to have walked the edge`);
-    const separation = Math.max(...mask.worstInterior.map((v, i) => Math.abs(v - mask.worstOutside[i])));
-    assert.ok(separation >= 3,
-      `the worst pixel inside the mask chip (${mask.worstInterior}) and the worst pixel ` +
-      `outside it (${mask.worstOutside}) are ${separation} of 255 apart, which is rounding ` +
-      'rather than a difference. Either the chip has lost the surface that distinguishes ' +
-      'it from the card it sits on, or one of the two bands is not where it is named — and ' +
-      'that near-identity is precisely how a single-pixel sample of a hatched interior came ' +
-      'back holding the card surface and published it as the interior');
-    assert.ok(mask.vsInterior >= AA_GRAPHIC,
-      `the dashed edge reads ${mask.vsInterior}:1 on its ${mask.interiorSide} side against ` +
-      `the worst pixel of the mask chip interior (${mask.edge} vs ${mask.worstInterior}), ` +
-      `over ${mask.samples.interior} samples across four sides`);
-    assert.ok(mask.vsOutside >= AA_GRAPHIC,
-      `the dashed edge reads ${mask.vsOutside}:1 on its ${mask.outsideSide} side against the ` +
-      `worst pixel of the card surface outside it (${mask.edgeOutside} vs ` +
-      `${mask.worstOutside}), over ${mask.samples.outside} samples across four sides`);
-  });
-}
-
-/* --------------------------------------- Stadiora/Aria#10643, the name cell */
-
-for (const theme of THEMES) {
-  test(`[${theme}] the match's name cell carries a floor the pane's other row headers do not`, () => {
-    const { nameCell, otherRowHeader, nameSub, otherSub } = census[theme].styles;
-
-    const floor = Number.parseFloat(nameCell['min-width']);
-    assert.ok(Number.isFinite(floor) && floor > 0,
-      `th.match-name resolves min-width: ${nameCell['min-width']}, so the column has no floor`);
-    assert.equal(otherRowHeader['min-width'], '0px',
-      'the devices table\'s row header has the floor too, so the rule is not on .match-name');
-
-    const gap = Number.parseFloat(nameSub['margin-top']);
-    const otherGap = Number.parseFloat(otherSub['margin-top']);
-    assert.ok(gap > otherGap,
-      `the address under the reference sits ${gap}px below it and a caption elsewhere on ` +
-      `the pane sits ${otherGap}px below its own line: the rhythm is not the cell's`);
-  });
-
-  /* Stadiora/Aria#10713: the floor's other arm. The 375px test below proves
-     the floor is enough to keep the mark on the reference's line; this proves
-     it is not so much that the name itself stops fitting in the window the
-     operator is looking through. Both are measured at 375px, because that is
-     the width at which the floor is load-bearing — at 1280 the cell takes
-     345px of its own accord and the sibling columns absorb any floor raised
-     under that. The long comment above the narrow probe records what was
-     measured at 1280 and why no assertion is made there. */
-  test(`[${theme}] the match's own name fits the window at 375px, floor and all`, () => {
-    const { narrow } = census[theme];
-    assert.ok(narrow.floor >= 200,
-      `the floor resolves to ${narrow.floor}px, under the 200px the line test needs`);
-    assert.equal(narrow.cellWidth, narrow.floor,
-      `at 375px the cell should be squeezed onto its floor, so that this arm binds the ` +
-      `floor and not the content: the floor is ${narrow.floor}px and the cell ` +
-      `${narrow.cellWidth}px`);
-    assert.ok(narrow.cellWidth <= narrow.wrapClientWidth,
-      `at 375px th.match-name is ${narrow.cellWidth}px wide — its ${narrow.floor}px floor — ` +
-      `inside a .tbl-wrap only ${narrow.wrapClientWidth}px of which is on screen, so the ` +
-      'operator has to scroll sideways to reach the end of the name of the row they are ' +
-      `looking at (the wrap already holds ${narrow.wrapScrollWidth}px of table)`);
-  });
-
-  test(`[${theme}] at 375px the "Selected" mark is still on the reference's line`, () => {
-    const { narrow } = census[theme];
-    assert.ok(narrow.sameLine,
-      `at a ${narrow.cellWidth}px name cell the "Selected" mark has been pushed onto a ` +
-      'line of its own, away from the reference it marks');
-    /* The floor is a floor, not a shove. .tbl-wrap scrolls, so a floor set too
-       high does not widen the document at all — it widens the CELL, and an
-       operator scrolls sideways inside the card to find the mark that is
-       supposed to sit beside the reference. Asserting the document width here
-       instead reads like the same claim and binds nothing: raising the floor
-       to 2000px leaves it green (battery row M21). Page-level sideways scroll
-       is checked for all ten panes at 375px and 360px in both themes by
-       scripts/check-ops-narrow-overflow.mjs, which runs in CI. */
-    assert.ok(narrow.cellWidth <= narrow.documentClientWidth,
-      `the name cell is laid out at ${narrow.cellWidth}px inside a ` +
-      `${narrow.documentClientWidth}px viewport, so the reference and its mark cannot ` +
-      'be on screen together');
-  });
-}
-
-/* ------------------------------------------------------------ WCAG AA text */
-
-for (const theme of THEMES) {
-  test(`[${theme}] every text site this change moves clears WCAG AA`, () => {
-    const sites = census[theme].textContrast;
-    for (const s of sites) {
-      assert.ok(s.ratio >= AA_TEXT,
-        `${s.where} reads ${s.ratio}:1 — ink ${s.ink} on the painted stack ` +
-        `rgb(${s.backdrop.map(Math.round).join(', ')}) sampled over ${s.pixels} text pixels`);
-    }
-  });
-}
-
-/* ------------------------------------------- a scroll box a keyboard can use
-
-   Stadiora/Aria#10822. `overflow-x: auto` makes the columns past the card's
-   edge reachable with a pointer and with nothing else: a div is not focusable
-   by default, and a box that cannot be focused cannot be scrolled from a
-   keyboard. WCAG 2.1 SC 2.1.1.
-
-   The pane sets the three attributes only while the box actually scrolls, so
-   both arms are asserted: present where it clips, ABSENT where it does not.
-   The second arm is the one that keeps the fix from becoming a row of dead tab
-   stops at desktop width, and it is assertable here only because the same run
-   measures the same four boxes at two widths.
-
-   NOT COVERED, deliberately:
-     - the wrap's POSITION in the tab sequence. That it is reachable is bound
-       below; that it is reached in a sensible order is not.
-     - overflow under half a pixel. clientWidth and scrollWidth are integers,
-       so a hairline clip is invisible to the pane's own condition and to this
-       check alike. The pane errs towards the tab stop for that reason.
-     - the pane painted while hidden. A display:none box measures 0/0 and reads
-       as not scrolling. The pane's ResizeObserver does fire when such a box is
-       shown and gains a size, so the mechanism covers it; nothing here binds
-       that, because the shell draws this pane only when it is the active one.
-     - every other pane. ops/assets/pane-run-history-v2.js has the same defect
-       and is held by another agent; #10822 stays open against it.
-     - either observation of watchScroller ALONE, on a rendered path. The pane
-       observes each wrap and the table inside it, and every real path moves
-       both boxes at once, so on a rendered arm either one covers the other and
-       neither is bound. The two arms that isolate them are therefore both
-       synthetic and say so. The load-bearing reason is worth keeping: a box
-       that starts clipping grows a horizontal scrollbar, and in this browser
-       that takes 17.25px of the WRAP's own height, so even "the table grew
-       inside a card that did not move" is visible to the wrap's observation
-       unless the gutter is reserved up front.
-     - the pre-fix state, as an OUTCOME, on this browser. Chrome has focused
-       scroll containers natively since 127, so on the harness browser a wrap
-       with no tabindex still focuses, still scrolls on ArrowRight and still
-       draws a ring. The two arms that drive a keyboard are outcome checks
-       inside that confound: they assert the attribute first, so they fall
-       with the fix, but what they DEMONSTRATE is that the box works here, not
-       that it would work without the fix elsewhere. The browsers where the
-       #10822 defect is live -- Firefox, Safari, Chrome before 127 -- are not
-       driven by anything in this repository. */
-
-for (const theme of THEMES) {
-  test(`[${theme}] at 375px every clipping table is a named region a keyboard can reach`, () => {
-    const wraps = census[theme].scrollers.narrow;
-    assert.ok(wraps.length >= 3,
-      `only ${wraps.length} scroll wrappers were drawn, so the pane did not reach ` +
-      'the populated state this arm reads');
-
-    const clipping = wraps.filter((w) => w.overflows);
-    assert.ok(clipping.length >= 1,
-      'no table clipped at 375px, so this assertion could not have failed from ' +
-      'what it names — the widths measured were ' +
-      wraps.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
-
-    for (const w of clipping) {
-      assert.equal(w.tabIndex, 0,
-        `the wrap holding "${w.caption}" clips ${w.scrollWidth - w.clientWidth}px and ` +
-        `reports tabIndex ${w.tabIndex}, so a keyboard cannot reach what it hides`);
-      assert.equal(w.role, 'region',
-        `the wrap holding "${w.caption}" is a tab stop with role ${JSON.stringify(w.role)}`);
-      assert.ok(w.accessibleName.length > 0,
-        `the wrap holding "${w.caption}" is a region with no accessible name, so a ` +
-        'reader landing on it is told "region" and nothing else');
-      assert.equal(w.accessibleName, w.caption,
-        `the region is named ${JSON.stringify(w.accessibleName)} while the table it ` +
-        `holds is captioned ${JSON.stringify(w.caption)}`);
+  test(`[${theme}] the pick control reads at AA in every state, over the paint that is there`, () => {
+    for (const [name, p] of Object.entries(census[theme].paint)) {
+      assert.ok(p.ratio >= AA_TEXT,
+        `[${theme}] "${name}" (${p.text}) reads ${p.ratio}:1 over its worst pixel, under ${AA_TEXT}:1`);
     }
   });
 
-  test(`[${theme}] a table that fits is not a tab stop`, () => {
-    const seen = [];
-    for (const where of ['wide', 'narrow']) {
-      for (const w of census[theme].scrollers[where]) {
-        if (w.overflows) continue;
-        seen.push(`${where}:${w.caption}`);
-        assert.equal(w.hasTabindex, false,
-          `at ${where} width the wrap holding "${w.caption}" fits ` +
-          `(${w.clientWidth}/${w.scrollWidth}) and is still a tab stop, so a keyboard ` +
-          'user stops on a region that cannot move');
-        assert.equal(w.role, null,
-          `at ${where} width the wrap holding "${w.caption}" fits and still announces ` +
-          `role ${JSON.stringify(w.role)}`);
+  test(`[${theme}] the pointer changes what is under an unpicked and a picked control`, () => {
+    const { paint } = census[theme];
+    for (const [rest, over] of [['unpicked, at rest', 'unpicked, under the pointer'],
+      ['picked, at rest', 'picked, under the pointer']]) {
+      assert.notEqual(round(paint[rest].worstLum), round(paint[over].worstLum),
+        `[${theme}] "${over}" is painted exactly as "${rest}", so hover does nothing`);
+    }
+  });
+
+  test(`[${theme}] picking is not colour alone: weight and the word Selected carry it`, () => {
+    const { styles } = census[theme];
+    assert.equal(styles.pressedCount, 1, `[${theme}] ${styles.pressedCount} controls are pressed, not one`);
+    assert.equal(styles.button.ariaPressed, 'true');
+    assert.ok(styles.picked.fontWeight > styles.unpicked.fontWeight,
+      `[${theme}] the picked reference is ${styles.picked.fontWeight}, the other ${styles.unpicked.fontWeight}`);
+    assert.ok(styles.mark.visible && /Selected/.test(styles.mark.text),
+      `[${theme}] the word Selected is not drawn on the picked row`);
+    assert.equal(styles.otherMark, 0, `[${theme}] the word Selected is also on an unpicked row`);
+  });
+
+  test(`[${theme}] cards sit two to a row on a wide screen and stack on a phone`, () => {
+    const { wide, phones } = census[theme];
+    assert.ok(wide.g2.length >= 2, `[${theme}] found ${wide.g2.length} card pairs`);
+    for (const [a, b] of wide.g2) {
+      assert.ok(Math.abs(a.y - b.y) < 2 && b.x > a.x + a.w - 2, `[${theme}] a pair is not side by side at ${DESKTOP}`);
+    }
+    for (const width of PHONES) {
+      for (const [a, b] of phones[width].g2) {
+        assert.ok(b.y > a.y && Math.abs(a.x - b.x) < 2, `[${theme}] a pair is not stacked at ${width}`);
       }
     }
-    assert.ok(seen.length >= 1,
-      'every wrap clipped at both widths, so this arm asserted nothing; the ' +
-      'conditional half of the fix is unbound in this run');
   });
 
-  test(`[${theme}] arrow keys actually scroll the box they focus`, () => {
-    const k = census[theme].scrollers.keyboard;
-    assert.equal(k.present, true, 'no clipping wrap was found to drive at 375px');
-    /* First, because everything after it is available to an unfixed pane on
-       this browser and on no other. */
-    assert.equal(k.tabIndex, 0,
-      `the wrap holding "${k.caption}" was driven with a keyboard at tabIndex ` +
-      `${k.tabIndex}: Chrome focuses scroll containers natively since 127, so the ` +
-      'scrolling below happens with or without this fix here, and does not happen ' +
-      'at all in Firefox, in Safari, or in Chrome before 127');
-    assert.equal(k.focused, true,
-      `.focus() on the wrap holding "${k.caption}" did not move activeElement to it`);
-    assert.equal(k.before, 0, `the box started at scrollLeft ${k.before}`);
-    assert.ok(k.after > 0,
-      `eight ArrowRight presses on the focused wrap holding "${k.caption}" left ` +
-      `scrollLeft at ${k.after} with ${k.room}px of room, so the columns past the ` +
-      'edge stayed out of reach');
-    assert.equal(k.stillFocused, true,
-      'focus left the wrap during the presses, so what scrolled may not be it');
-  });
+  for (const width of PHONES) {
+    test(`[${theme}] at ${width}px nothing runs past the screen, every control is ${MIN_TAP}px and no text is under ${MIN_TEXT}px`, () => {
+      const m = census[theme].phones[width];
+      assert.ok(m.docScroll <= m.vw, `[${theme}] ${width}px: the page scrolls sideways (${m.docScroll} > ${m.vw})`);
+      assert.deepEqual(m.beyond, [], `[${theme}] ${width}px: past the edge`);
+      assert.deepEqual(m.short, [], `[${theme}] ${width}px: controls under ${MIN_TAP}px`);
+      assert.deepEqual(m.tiny, [], `[${theme}] ${width}px: text under ${MIN_TEXT}px`);
+    });
+  }
 
-  /* The affordance has to arrive on boxes that were not there when the pane
-     last painted, and leave when the window stops clipping them. Neither is
-     reachable from the two arms above: the first reads one render, the second
-     reads one width. */
-  test(`[${theme}] a table drawn after the first paint is reachable too`, () => {
-    const wraps = census[theme].scrollers.repick;
-    const fresh = wraps.filter((w) => w.fresh);
-    assert.ok(fresh.length >= 2,
-      `picking the second account replaced ${fresh.length} of the ${wraps.length} ` +
-      'wraps, so this arm cannot see a box the pane had never measured');
-
-    const clipping = fresh.filter((w) => w.overflows);
-    assert.ok(clipping.length >= 1,
-      'none of the replaced tables clipped at 375px, so this assertion could not ' +
-      'have failed from what it names — ' +
-      fresh.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
-
-    for (const w of clipping) {
-      assert.equal(w.tabIndex, 0,
-        `the wrap holding "${w.caption}" was drawn by the second pick, clips ` +
-        `${w.scrollWidth - w.clientWidth}px and reports tabIndex ${w.tabIndex}: ` +
-        'a box added without a size change anywhere is seen by nothing but a ' +
-        'watcher of the tree');
-      assert.equal(w.role, 'region',
-        `the newly drawn wrap holding "${w.caption}" is a tab stop with role ` +
-        `${JSON.stringify(w.role)}`);
-      assert.ok(w.accessibleName.length > 0,
-        `the newly drawn wrap holding "${w.caption}" is an unnamed region`);
-    }
-  });
-
-  test(`[${theme}] widening the window takes the tab stops back off`, () => {
-    const wraps = census[theme].scrollers.rewide;
-    assert.ok(wraps.length >= 3,
-      `only ${wraps.length} wraps were on the page after the width went back to 1280`);
-
-    const fitting = wraps.filter((w) => !w.overflows);
-    assert.ok(fitting.length >= 3,
-      'the tables still clipped at 1280px, so this arm never reached the state it ' +
-      'names — ' + wraps.map((w) => `${w.clientWidth}/${w.scrollWidth}`).join(', '));
-
-    for (const w of fitting) {
-      assert.equal(w.hasTabindex, false,
-        `the wrap holding "${w.caption}" fits again (${w.clientWidth}/${w.scrollWidth}) ` +
-        `and kept tabIndex ${w.tabIndex} from when it clipped: the stop is now dead`);
-      assert.equal(w.role, null,
-        `the wrap holding "${w.caption}" fits again and still announces ` +
-        `role ${JSON.stringify(w.role)}`);
-      assert.equal(w.accessibleName, '',
-        `the wrap holding "${w.caption}" fits again and still carries the name ` +
-        `${JSON.stringify(w.accessibleName)}`);
-    }
-  });
-
-  /* Binds the MutationObserver on its own. Every rendered path also moves
-     layout, so the ResizeObserver covers them and removing the tree watcher
-     breaks nothing visible; an injected box, taken out of flow, changes the
-     size of nothing already observed and can be seen by nothing else. */
-  test(`[${theme}] a scroll box injected into the result region is picked up`, () => {
-    const w = census[theme].scrollers.injected;
-    assert.equal(w.overflows, true,
-      `the injected wrap measured ${w.clientWidth}/${w.scrollWidth} and did not clip, ` +
-      'so this arm could not have failed from what it names');
-    assert.equal(w.atBirth, null,
-      'the injected wrap already carried a tabindex the instant it was appended, ' +
-      'so the probe dressed it rather than the pane');
-    assert.equal(w.tabIndex, 0,
-      `a wrap appended to #lookupResult that clips ${w.scrollWidth - w.clientWidth}px ` +
-      `still reports tabIndex ${w.tabIndex} 600ms later: nothing is watching the tree`);
-    assert.equal(w.role, 'region', `the injected wrap announces role ${JSON.stringify(w.role)}`);
-    assert.equal(w.accessibleName, 'An injected table, not a rendered one',
-      `the injected wrap is named ${JSON.stringify(w.accessibleName)}, which is not its caption`);
-  });
-
-  /* Binds the observation of the TABLE, which nothing else in this file
-     reaches. The gutter is reserved up front so the wrap's box cannot move,
-     the growth is a characterData write the tree watcher does not take, and
-     the arm carries its own ResizeObserver over both elements so "only the
-     table could have seen this" is a measurement rather than an argument. */
-  test(`[${theme}] a table that outgrows a box that did not move becomes reachable`, () => {
-    const g = census[theme].scrollers.grown;
-    assert.equal(g.before.hasTabindex, false,
-      `the grow wrap measured ${g.before.clientWidth}/${g.before.scrollWidth} and was ` +
-      'already a tab stop before anything grew, so this arm started in the state it ' +
-      'is supposed to produce');
-    assert.equal(g.overflows, true,
-      `growing the cell did not make the box clip (${g.clientWidth}/${g.scrollWidth})`);
-    assert.equal(g.boxMoved, false,
-      `the wrap's own box went ${JSON.stringify(g.before.wrap)} -> ${JSON.stringify(g.wrap)}, ` +
-      "so its own observation could have reported this and the table's is not isolated");
-    assert.equal(g.fired.wrap, 0,
-      `a ResizeObserver on the wrap fired ${g.fired.wrap} time(s) for this growth, so ` +
-      'the pane\'s observation of the wrap covers it and this arm binds nothing');
-    assert.ok(g.fired.table > 0,
-      'a ResizeObserver on the table did not fire at all, so nothing here was ' +
-      'observable and the arm cannot fail from what it names');
-    assert.equal(g.tabIndex, 0,
-      `the table grew to clip ${g.scrollWidth - g.clientWidth}px inside a box that did ` +
-      `not move and the wrap still reports tabIndex ${g.tabIndex}: nothing is ` +
-      'observing the table itself');
-    assert.equal(g.role, 'region', `it announces role ${JSON.stringify(g.role)}`);
-    assert.equal(g.accessibleName, 'A table that grew inside a still box',
-      `it is named ${JSON.stringify(g.accessibleName)}, which is not its caption`);
-  });
-
-  /* The mirror image, binding the observation of the WRAP: its box narrows
-     under a table whose own box does not move, with no tree change at all.
-     Synthetic, and could not be otherwise -- a real card that narrows also
-     re-lays the table inside it, which is why these two observations cover for
-     each other on every rendered path. Same instrument as the arm above. */
-  test(`[${theme}] a box that shrinks under a table that did not becomes reachable`, () => {
-    const q = census[theme].scrollers.squeezed;
-    assert.equal(q.wide.hasTabindex, false,
-      `the squeeze wrap was a tab stop at ${q.wide.clientWidth}px wide ` +
-      `(${q.wide.clientWidth}/${q.wide.scrollWidth}), before anything was squeezed`);
-    assert.equal(q.overflows, true,
-      `narrowing the wrap to ${q.clientWidth}px did not make it clip ` +
-      `(${q.clientWidth}/${q.scrollWidth})`);
-    assert.equal(q.tableMoved, false,
-      `the table's own box moved (${q.wide.tableWidth} -> ${q.tableWidth} wide), so the ` +
-      "table's observation could have reported this and the wrap's is not isolated");
-    assert.equal(q.fired.table, 0,
-      `a ResizeObserver on the table fired ${q.fired.table} time(s) for this squeeze, ` +
-      'so the pane\'s observation of the table covers it and this arm binds nothing');
-    assert.ok(q.fired.wrap > 0,
-      'a ResizeObserver on the wrap did not fire at all, so nothing here was ' +
-      'observable and the arm cannot fail from what it names');
-    assert.equal(q.tabIndex, 0,
-      `the wrap narrowed under a still table until it clipped ` +
-      `${q.scrollWidth - q.clientWidth}px and still reports tabIndex ${q.tabIndex}: ` +
-      'nothing is observing the box itself');
-    assert.equal(q.role, 'region', `it announces role ${JSON.stringify(q.role)}`);
-    assert.equal(q.accessibleName, 'A table whose box was squeezed, not a rendered one',
-      `it is named ${JSON.stringify(q.accessibleName)}, which is not its caption`);
-  });
-
-  /* The whole chain, timed: paint, MutationObserver, settle, measure, write.
-     A ceiling rather than an instant, because the settle is deliberate. */
-  test(`[${theme}] a repainted table becomes reachable within one settle`, () => {
-    const im = census[theme].scrollers.immediate;
-    assert.ok(!im.missing,
-      're-running the lookup drew no clipping table, so the arrival of the ' +
-      'affordance was never timed');
-    const arrived = im.timeline.find((t) => t[1]);
-    assert.ok(arrived,
-      `the repainted wrap (${im.clientWidth}/${im.scrollWidth}) was still not a tab ` +
-      `stop ${im.timeline.length * 10}ms after it appeared`);
-    assert.ok(arrived[0] <= 400,
-      `the repainted wrap became reachable ${arrived[0]}ms after it appeared, which is ` +
-      'longer than the 140ms settle it should be waiting on');
-    assert.equal(arrived[2], 0, `it arrived with tabIndex ${arrived[2]}`);
-    assert.equal(arrived[3], 'region', `it arrived with role ${JSON.stringify(arrived[3])}`);
-  });
-
-  /* A box that has just become focusable has to show that it is focused:
-     WCAG 2.4.7, and the fix above is what puts focus there in the first place.
-     The ring is aria.css:180's global one, measured rather than assumed.
-
-     NOT its offset. aria.css draws every ring at outline-offset 2px, and four
-     v2 pane sheets pull theirs inside with a `:focus-visible` rule of their
-     own; this sheet has no such rule, so the ring sits 2px outside the box.
-     Measured on this pane the box is flush with its card body and nothing
-     clips the ring, so it is visible on all four sides -- a refinement, not a
-     defect. Adding the rule is a paired edit with ops/README.md's derived
-     `claims id=table-focus-rings` block, which another agent holds. */
-  /* Stadiora/Aria#10706's two halves, on the pane its own sweep cannot reach.
-     The first is the CONSEQUENCE and the second is the GAP: a wrapper that
-     holds nothing absolutely positioned today produces no escape to detect, so
-     the consequence alone would score an unrepaired eighth scroller clean. */
-  test(`[${theme}] a scrolling result table contains what it appears to contain`, () => {
-    const boxes = census[theme].scrollers.containment;
-
-    /* A sweep that judged nothing is indistinguishable from a clean board. */
-    const scrolled = boxes.filter((b) => b.scrolledBy !== 0);
-    assert.ok(scrolled.length > 0,
-      `no result-table wrapper actually scrolled at 375px, so every descendant below ` +
-      `reports a shift of zero -- which is what a CONTAINED one looks like. Boxes seen: ` +
-      JSON.stringify(boxes.map((b) => [b.caption, b.overflows, b.scrolledBy])));
-    const judged = scrolled.reduce((n, b) => n + b.descendants.length, 0);
-    assert.ok(judged > 0,
-      `${scrolled.length} wrapper(s) scrolled but not one held an absolutely positioned ` +
-      'descendant, so the containment assertion below held whatever the sheet said. ' +
-      'aria.css gives caption.sr position: absolute; if that changed, this file is ' +
-      'the wrong place to find out.');
-
-    for (const box of scrolled) {
-      for (const d of box.descendants) {
-        /* Read off the element, not off the filter that selected it. An
-           in-flow descendant scrolls with its box whatever the box's position
-           is, so a probe that quietly lost its filter would judge a set every
-           member of which passes, and report containment it never tested. The
-           battery's S5 inverts that filter; this is the line it fails on. */
-        assert.equal(d.position, 'absolute',
-          `<${d.what}> was judged for containment but computes position: ${d.position}. ` +
-          'Only an absolutely positioned descendant resolves its containing block to the ' +
-          'nearest positioned ancestor, so only one of those can tell a relative wrapper ' +
-          'from a static one.');
-        assert.equal(d.shift, -box.scrolledBy,
-          `<${d.what}> inside the wrapper holding "${box.caption}" moved ${d.shift}px when ` +
-          `that wrapper scrolled ${box.scrolledBy}px. A descendant this box contains moves ` +
-          `with it; one positioned against a card outside stays exactly where it was and ` +
-          `escapes the clip, taking the document sideways at the table's full width. The ` +
-          `wrapper computes position: ${box.position}.`);
-      }
-    }
-
-    for (const box of boxes) {
-      assert.notEqual(box.position, 'static',
-        `the wrapper holding "${box.caption}" scrolls sideways and is position: static, so ` +
-        'it is in no descendant\'s containing-block chain. Nothing escapes it today only ' +
-        'because nothing positioned inside it has a visible extent yet.');
-    }
-  });
-
-  test(`[${theme}] the newly focusable scroll box draws a focus ring`, () => {
-    const k = census[theme].scrollers.keyboard;
-    assert.equal(k.tabIndex, 0,
-      `the box drawing this ring reports tabIndex ${k.tabIndex}: on this browser a ` +
-      'scroll container takes focus natively, so a ring here is not evidence the ' +
-      'pane put the focus within reach');
-    assert.equal(k.focusVisible, true,
-      `the wrap holding "${k.caption}" did not match :focus-visible after eight real ` +
-      'key presses, so a keyboard user has no mark of where they are');
-    assert.notEqual(k.outlineStyle, 'none',
-      'the focused scroll box draws no outline at all');
-    assert.ok(k.outlineWidth > 0,
-      `the focused scroll box draws a ${k.outlineWidth}px outline`);
+  test(`[${theme}] at ${DESKTOP}px nothing runs past the screen and no text is under ${MIN_TEXT}px`, () => {
+    const m = census[theme].wide;
+    assert.ok(m.docScroll <= m.vw, `[${theme}] the page scrolls sideways`);
+    assert.deepEqual(m.beyond, []);
+    assert.deepEqual(m.tiny, []);
   });
 }

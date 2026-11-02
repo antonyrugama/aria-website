@@ -18,45 +18,43 @@
         The reason is required by the form and again by the server. The value
         comes back with the moment it expires, and this file re-masks at that
         moment, when a new account is opened, and when a new search starts.
-     4. Health data has no reveal control at all. Not a disabled one, not one
-        that asks for a stronger role: the field carries no control, because a
-        control that can never succeed still tells an operator that the value
-        is somewhere within reach.
+     4. Health data has no reveal control at all, and no row. Not a disabled
+        control, not one that asks for a stronger role: the field is not drawn,
+        because a control that can never succeed still tells an operator that
+        the value is somewhere within reach.
 
    Activity is a list of events and never their content. "Chat session, 8
    messages" is a fact about the service; what was said is not this pane's to
    show, at any role.
 
-   THE SIX PROMISES THIS PANE MAKES TO THE ATHLETE, and where each is on screen
+   THE PROMISES THIS PANE MAKES TO THE ATHLETE, and where each is on screen
 
-   They are the reason the pane is shaped the way it is, so each one is a
-   sentence somebody can read rather than a property of the code:
+   There is one sentence on the page, under the Account card: "Owner only ·
+   Reason required · Logged". It is the whole of what the pane says about
+   itself, and each word is backed by a mechanism rather than the reverse:
 
-     1. personal fields are hidden for every role, the owner included, until a
-        reveal is recorded   -> the privilege strip, and the account card foot
-     2. a reveal is owner only and needs a written reason
-                             -> the reveal band note, the reason box itself,
-                                and the disabled control a non-owner gets
-     3. a reveal is recorded by field name, never by value
-                             -> the reveal band note and the note a landed
-                                reveal leaves beside the value
-     4. the athlete can see that it happened and who did it
-                             -> the privilege strip, and the access band
-     5. reveal records outlive the reveal and cannot be erased by one
-                             -> the access band foot
-     6. request and reply content is not shown here, at any role
-                             -> the activity card foot
+     owner only        a reveal is an owner action; every other role gets a
+                       disabled control and the words "Owner action"
+     reason required   the form refuses fewer than three characters and the
+                       server asks again
+     logged            a reveal is recorded by field name and never by value,
+                       and the Access history lists it, with who and why, so
+                       the athlete can see that it happened and who did it
 
-   scripts/ops-users-v2.test.mjs asserts all six are present, and asserts the
-   mechanism behind each separately from the sentence, because a sentence that
-   outlives the thing it describes is the worse of the two failures.
+   Two more hold without a sentence. A personal field is hidden for every
+   role, the owner included, until a reveal is recorded: the payload never
+   carries the value, so there is nothing to hide behind a style. Request and
+   reply content is not shown at any role: the activity list holds a label and
+   a time and nothing else.
+
+   scripts/ops-users-v2.test.mjs asserts the mechanism behind each, and not the
+   sentence, because a sentence that outlives the thing it describes is the
+   worse of the two failures.
 
    WHAT THIS PANE READS
 
    Every field below is what the code actually consumes, because this contract
-   is the only specification a backend author has for these three routes. The
-   routes are unchanged by the v2 remodel: this file draws the same answers
-   differently.
+   is the only specification a backend author has for these three routes.
 
      POST /api/ops/users/lookup
        { identifier, reason, scope, state, tier }
@@ -75,8 +73,13 @@
                      lastActiveAt, flags[] }
          state       { key, label, tone }, tone one of ok, warn, crit, info
          tier        { key, label, brand }
-         platforms[] { key, label }, key 'coaches' tags differently
+         platforms[] { key, label }
          flags[]     { key, label, tone }
+
+       scope, state and tier are all read by the server, so all three are
+       sent. They live behind the Filters control under the search, one level
+       deeper than the mock draws them, because the mock has no room for three
+       selects and the API still honours every one.
 
      GET /api/ops/users/{reference}
        -> { data: { reference, kind, state, tier, memberSince, recorded,
@@ -89,13 +92,17 @@
        recorded    as above, for the record this request wrote
        record      the fuller field list, falling back to summary.fields when
                    it is absent
+       activity    absent when the account has not shared it, which is a
+                   different fact from an empty list and is drawn differently
        events[]    { occurredAt, label, tone, reference, href }: a list of
                    events and never their content. href is followed only when
                    it stays on this origin, so it cannot become an off-site
                    destination reached from a privacy pane.
        devices[]   { label, appVersion, os, lastSeenAt }
        access.entries[] { occurredAt, actor, fields, reason, revealed }
-       supportActions.available[] { key, label }
+       supportActions.available[] is read by nothing: the operations API has no
+                   route that performs an account action, so the pane draws no
+                   account actions
 
      POST /api/ops/users/{reference}/reveal
        { field, reason }
@@ -142,24 +149,20 @@
      neverShownNote / unavailableNote
                   the sentence shown in place of a control.
 
-   WHAT THE V2 REMODEL CHANGED, and what it deliberately did not
+   WHAT THE ROWS CHOOSE
 
-   The drawer is gone. Four tabs behind a "Full record" button held the fuller
-   field list, the devices, the billing record and the access record, and the
-   access record is the one thing on this pane that makes the rest of it
-   defensible. It is a band on the page now, so "who has looked at this
-   account" is read without asking for it.
+   The API sends raw values ('pro', 'monthly', 'apple') and ISO times. This
+   file words them for reading and writes every time in UTC, because an
+   operator and an athlete are rarely in the same zone and a local time on a
+   privacy pane is a time nobody can check. It never decides what a value
+   means beyond that: a status or a store it does not recognise is printed as
+   it arrived.
 
-   Nothing about the reveal flow moved. fieldValue below is the same function,
-   with the same three floors under the API's decision, because every one of
-   them was put there by a defect that had already shipped once.
-
-   The danger zone is stated and not drawn as controls. The mock carries four
-   account actions behind re-authentication; the operations API has no route
-   that performs one, so this pane draws the rows, says re-authentication is
-   required, and draws no button. A control that cannot succeed is worse than
-   no control, and hiding the section entirely would only make people ask
-   whether it exists. */
+   The avatar carries one letter, and only the one the API's own mask already
+   shows: maskName sends "J••••••", so the initial is on screen in the Name row
+   anyway. A name that is not set, or a mask that starts with anything but a
+   letter, draws a person glyph instead. Nothing is ever worked out from a
+   revealed value. */
 (function (global) {
   'use strict';
 
@@ -168,8 +171,59 @@
   var h = shell.h;
   var icon = shell.icon;
 
-  var TONE_ICON = { ok: 'check', warn: 'warn', crit: 'warn', info: 'info' };
-  var TONE_PILL = { ok: 'up', warn: 'warn', crit: 'down', info: 'info' };
+  var DOT_TONE = { ok: 'ok', warn: 'warn', crit: 'bad', info: 'acc' };
+
+  /* The three narrowings the lookup route reads. The app values mirror
+     OpsPaneRegistry.SCOPES, which scripts/ops-users-v2.test.mjs compares. */
+  var SCOPE_OPTIONS = [
+    { v: 'all', l: 'All' },
+    { v: 'mobile', l: 'Mobile' },
+    { v: 'coaches', l: 'Coaches Web' }
+  ];
+  var STATE_OPTIONS = [
+    { v: '', l: 'Any' },
+    { v: 'active', l: 'Active' },
+    { v: 'payment_failed', l: 'Payment failed' },
+    { v: 'deletion_requested', l: 'Deletion requested' },
+    { v: 'suspended', l: 'Suspended' }
+  ];
+  var TIER_OPTIONS = [
+    { v: '', l: 'Any' },
+    { v: 'free', l: 'Free' },
+    { v: 'pro', l: 'Pro' },
+    { v: 'coach_team', l: 'Coach team' }
+  ];
+
+  /* The rows each card leads with, in the order the mock draws them. A field
+     the API sends that is not named here is reachable behind the card's More
+     control rather than dropped, and a field it does not send draws no row. */
+  var ACCOUNT_ROWS = [
+    ['email', 'Email'],
+    ['displayName', 'Name'],
+    ['authProvider', 'Sign-in'],
+    ['emailVerified', 'Verified'],
+    ['lastSignInAt', 'Last sign-in'],
+    ['usageAnalytics', 'Usage analytics']
+  ];
+  /* Said in the result header, so not repeated as rows. */
+  var HEAD_KEYS = { reference: 1, memberSince: 1 };
+  var BILLING_KEYS = {
+    tier: 1, billingStatus: 1, billingPlatform: 1, billingCycle: 1,
+    currentPeriodStart: 1, currentPeriodEnd: 1
+  };
+
+  var STORES = {
+    apple: 'App Store', ios: 'App Store', app_store: 'App Store',
+    google: 'Google Play', android: 'Google Play', google_play: 'Google Play'
+  };
+  var STATUS_TONE = {
+    active: 'ok', trialing: 'ok', trial: 'ok',
+    past_due: 'warn', payment_failed: 'warn', grace_period: 'warn', billing_retry: 'warn',
+    canceled: 'bad', cancelled: 'bad', expired: 'bad', refunded: 'bad'
+  };
+
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   /* Field keys that are health data. Rule 4 puts these out of reach at every
      role, and the operations API is what decides which fields those are: it is
@@ -250,46 +304,40 @@
     return isFinite(t) ? t : null;
   }
 
-  function ago(iso) {
-    var t = parseTime(iso);
-    if (t === null) return null;
-    var mins = Math.max(0, Math.round((Date.now() - t) / 60000));
-    if (mins < 1) return 'just now';
-    if (mins < 60) return mins + 'm ago';
-    var hours = Math.round(mins / 60);
-    if (hours < 24) return hours + 'h ago';
-    var days = Math.round(hours / 24);
-    return days === 1 ? '1d ago' : days + 'd ago';
-  }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
-  function dateTime(iso) {
-    var t = parseTime(iso);
-    if (t === null) return null;
-    try { return new Date(t).toLocaleString(); } catch (e) { return new Date(t).toISOString(); }
-  }
-
-  /* "Today 09:52", "Yesterday 18:04", "26 Jul 07:14". A support conversation
-     is about what happened today or the day before far more often than about a
-     date, and a full locale timestamp on every row buries that. */
-  function whenLabel(iso) {
+  /* "Nov 12", with the year only when it is not this one. The year is read in
+     UTC like everything else here, so the label does not change with the
+     machine the operator happens to be on. */
+  function dayLabel(iso) {
     var t = parseTime(iso);
     if (t === null) return null;
     var d = new Date(t);
-    var time;
-    try { time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); }
-    catch (e) { time = d.toISOString().slice(11, 16); }
+    var label = MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate();
+    if (d.getUTCFullYear() !== new Date().getUTCFullYear()) label += ', ' + d.getUTCFullYear();
+    return label;
+  }
 
-    var startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    var dayDiff = Math.floor((startOfToday.getTime() - d.getTime()) / 86400000);
-    if (d.getTime() >= startOfToday.getTime()) return 'Today ' + time;
-    if (dayDiff < 1) return 'Yesterday ' + time;
+  /* "Nov 1, 08:42". The zone is named once on the card or row that carries
+     the time, not on every time. */
+  function stamp(iso) {
+    var t = parseTime(iso);
+    if (t === null) return null;
+    var d = new Date(t);
+    return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' +
+      pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes());
+  }
 
-    var opts = { day: 'numeric', month: 'short' };
-    if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
-    var day;
-    try { day = d.toLocaleDateString(undefined, opts); } catch (e2) { day = d.toISOString().slice(0, 10); }
-    return day + ' ' + time;
+  function headDate() {
+    var d = new Date();
+    return WEEKDAYS[d.getUTCDay()] + ', ' + MONTHS[d.getUTCMonth()] + ' ' +
+      d.getUTCDate() + ', ' + d.getUTCFullYear();
+  }
+
+  /* "Active", "Payment failed". Raw values arrive snake or lower case. */
+  function words(value) {
+    var text = String(value).replace(/[_-]+/g, ' ').trim();
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
   }
 
   /* A count and its noun, agreeing.
@@ -314,90 +362,47 @@
 
   /* ------------------------------------------------------- small pieces */
 
-  /* A status, never as colour alone: every pill carries a glyph or a word that
-     says the same thing the colour does. */
-  function pill(tone, text, iconName) {
-    var p = h('span', { className: 'pill' + (tone ? ' ' + tone : '') });
-    if (iconName) p.appendChild(icon(iconName));
-    p.appendChild(h('span', { text: text }));
-    return p;
-  }
-
-  function tonePill(tone, text) {
-    return pill(TONE_PILL[tone] || '', text, TONE_ICON[tone]);
-  }
-
-  function stateePill(state) {
-    if (!state) return pill('', 'State not reported', 'info');
-    return tonePill(state.tone, state.label || state.key || 'Unknown');
-  }
-
-  function tierPill(tier) {
-    if (!tier) return pill('', 'Tier not reported', 'info');
-    return pill(tier.brand ? 'acc' : '', tier.label || tier.key || 'Unknown');
-  }
-
   function code(text) {
     return h('span', { className: 'code', text: text });
   }
 
-  /* The recording confirmation. It appears after a request rather than before
-     it, because it reports something that has already happened: this is the
-     row the athlete would be shown if they asked.
-
-     When the response does not carry one, the surface says so. The privilege
-     strip above states that every lookup is recorded, and a response that
-     stayed silent about it is the one case where that sentence might not be
-     true. Looking identical either way would make the promise unfalsifiable,
-     so this returns a warning rather than nothing. */
-  function recordingNotice(recorded, what) {
-    /* what names the thing that was recorded, and both sentences are built
-       from it. The confirmed branch used to be the word "lookup" hard coded,
-       so opening an account, which is its own access record, was reported as
-       "This lookup is on the record" on the column beside the matches. */
-    var subject = what || 'this request';
-    var Subject = subject.charAt(0).toUpperCase() + subject.slice(1);
-
-    if (!recorded) {
-      var warn = h('div', { className: 'note note-warn' });
-      warn.appendChild(icon('warn'));
-      var wbody = h('div');
-      wbody.appendChild(h('b', { text: 'No record was confirmed.' }));
-      wbody.appendChild(document.createTextNode(
-        ' The operations API handled ' + subject + ' without confirming an access record. ' +
-        'Treat it as unrecorded until the access record shows otherwise.'
-      ));
-      warn.appendChild(wbody);
-      return warn;
-    }
-
-    var box = h('div', { className: 'note' });
-    box.appendChild(icon('lock'));
-    var body = h('div');
-    body.appendChild(h('b', { text: Subject + ' is on the record.' }));
-    var parts = [];
-    if (recorded.at) parts.push('at ' + (dateTime(recorded.at) || recorded.at));
-    if (recorded.actor) parts.push('by ' + recorded.actor);
-    if (recorded.fields) parts.push('as ' + recorded.fields);
-    if (recorded.reason) parts.push('reason ' + recorded.reason);
-    body.appendChild(document.createTextNode(
-      parts.length ? ' Written ' + parts.join(', ') + '.' : ' Written, without the details being reported.'
-    ));
-    box.appendChild(body);
-    return box;
+  /* A status is a dot and a word, never the dot alone. */
+  function dotWord(tone, text) {
+    var wrap = h('span', { className: 'u-dotword' });
+    wrap.appendChild(h('span', { className: 'dot' + (tone ? ' ' + tone : ''), 'aria-hidden': 'true' }));
+    wrap.appendChild(h('span', { text: text }));
+    return wrap;
   }
 
-  /* --------------------------------------------------- the privilege strip
+  function stateWord(state) {
+    if (!state) return h('span', { className: 'u-dim', text: 'State not reported' });
+    return dotWord(DOT_TONE[state.tone] || '', state.label || state.key || 'Unknown');
+  }
 
-     Promise 1 and promise 4, as pills, at the top of the pane. The registry
-     gives this pane an App filter and nothing else, so this is not the filter
-     bar restated: it is what the signed-in role may do here. */
-  function privilegeStrip() {
-    var strip = h('div', { className: 'privilege' });
-    strip.appendChild(pill(isOwner() ? 'vio' : '', isOwner() ? 'Owner' : 'Not an owner', 'lock'));
-    strip.appendChild(pill('', 'Personal fields hidden until revealed', 'eye'));
-    strip.appendChild(pill('', 'Every reveal is visible to the athlete', 'person'));
-    return strip;
+  function tierWord(tier) {
+    if (!tier) return h('span', { className: 'u-dim', text: 'Tier not reported' });
+    return h('span', { text: tier.label || tier.key || 'Unknown' });
+  }
+
+  /* The recording confirmation, for the one case that matters. A lookup or an
+     open that the API handled without confirming an access record is the only
+     time the promise "every lookup is recorded" might not be true, so it is the
+     only time the page says anything. Confirmed is not said at all: the Access
+     history lists the row, which is a better witness than a banner.
+
+     Looking identical either way would make the promise unfalsifiable, so a
+     missing record returns a warning rather than nothing. */
+  function recordingNotice(recorded, what) {
+    if (recorded) return null;
+    var warn = h('div', { className: 'note note-warn' });
+    warn.appendChild(icon('warn'));
+    var body = h('div');
+    body.appendChild(h('b', { text: 'No record confirmed.' }));
+    body.appendChild(document.createTextNode(
+      ' The API did not confirm an access record for ' + (what || 'this request') + '.'
+    ));
+    warn.appendChild(body);
+    return warn;
   }
 
   /* --------------------------------------------------------- the search */
@@ -405,81 +410,100 @@
   var form = null;
   var identifierInput = null;
   var reasonInput = null;
+  var scopeSelect = null;
   var stateSelect = null;
   var tierSelect = null;
+  var filtersButton = null;
   var formError = null;
 
-  function selectControl(id, label, options) {
-    var sel = h('select', { id: id, 'aria-label': label });
+  function labelledInput(id, label, placeholder) {
+    var input = h('input', {
+      id: id, type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder: placeholder
+    });
+    var field = h('label', { className: 'u-field', for: id }, [
+      h('span', { className: 'u-label', text: label }),
+      input
+    ]);
+    return { field: field, input: input };
+  }
+
+  function narrowSelect(id, label, options) {
+    var sel = h('select', { id: id });
     options.forEach(function (o) {
       sel.appendChild(h('option', { value: o.v, text: o.l }));
     });
-    var wrap = h('div', { className: 'sel' }, [sel, icon('chev')]);
-    return wrap;
+    var wrap = h('label', { className: 'u-narrow-field', for: id }, [
+      h('span', { className: 'u-label', text: label }),
+      h('span', { className: 'sel' }, [sel, icon('chev')])
+    ]);
+    return { wrap: wrap, select: sel };
   }
 
-  function huntPanel(onSubmit) {
-    var panel = h('section', { className: 'hunt', 'aria-labelledby': 'huntTitle' });
-    panel.appendChild(h('h2', { className: 'hunt-title', id: 'huntTitle', text: 'Find one account' }));
-    panel.appendChild(h('p', {
-      className: 'hunt-sub',
-      text: 'Exact identifier only. Near matches are never returned.'
-    }));
+  /* How many of the three narrowings are on, said on the control that opens
+     them. A narrowing that is on and out of sight is a lookup that finds
+     nothing for a reason nobody can see. */
+  function filterCount() {
+    var n = 0;
+    if (scopeSelect && scopeSelect.value && scopeSelect.value !== 'all') n += 1;
+    if (stateSelect && stateSelect.value) n += 1;
+    if (tierSelect && tierSelect.value) n += 1;
+    return n;
+  }
 
-    form = h('form', { className: 'hunt-form', novalidate: 'novalidate' });
+  function syncFiltersLabel() {
+    if (!filtersButton) return;
+    var n = filterCount();
+    filtersButton.textContent = n ? 'Filters · ' + n : 'Filters';
+  }
 
-    identifierInput = h('input', {
-      id: 'lookupIdentifier', type: 'text',
-      autocomplete: 'off', spellcheck: 'false',
-      'aria-label': 'Identifier',
-      placeholder: 'Coded reference, email address, or support ticket'
+  function searchStrip(onSubmit, onNarrow) {
+    form = h('form', { className: 'u-find', novalidate: 'novalidate' });
+
+    var account = labelledInput('lookupIdentifier', 'Account', 'Reference or email');
+    var reason = labelledInput('lookupReason', 'Reason', 'Ticket or note');
+    identifierInput = account.input;
+    reasonInput = reason.input;
+
+    var go = h('button', { className: 'btn btn-primary u-go', type: 'submit', text: 'Search' });
+    form.appendChild(h('div', { className: 'u-bar' }, [account.field, reason.field, go]));
+
+    var scopeSel = narrowSelect('lookupScope', 'App', SCOPE_OPTIONS);
+    var stateSel = narrowSelect('lookupState', 'State', STATE_OPTIONS);
+    var tierSel = narrowSelect('lookupTier', 'Tier', TIER_OPTIONS);
+    scopeSelect = scopeSel.select;
+    stateSelect = stateSel.select;
+    tierSelect = tierSel.select;
+
+    var panel = h('div', { className: 'u-narrow', id: 'lookupFilters', hidden: 'hidden' },
+      [scopeSel.wrap, stateSel.wrap, tierSel.wrap]);
+
+    filtersButton = h('button', {
+      className: 'u-link', type: 'button',
+      'aria-expanded': 'false', 'aria-controls': 'lookupFilters', text: 'Filters'
     });
-    var idField = h('div', { className: 'field field-lg' }, [icon('search'), identifierInput]);
-
-    var submit = h('button', { className: 'btn btn-primary', type: 'submit' });
-    submit.appendChild(icon('search'));
-    submit.appendChild(h('span', { text: 'Look up' }));
-
-    form.appendChild(h('div', { className: 'hunt-line' }, [idField, submit]));
-
-    reasonInput = h('input', {
-      id: 'lookupReason', type: 'text', autocomplete: 'off',
-      'aria-label': 'Reason for this lookup',
-      placeholder: 'Reason, written to the access record beside your name'
+    filtersButton.addEventListener('click', function () {
+      var open = filtersButton.getAttribute('aria-expanded') !== 'true';
+      filtersButton.setAttribute('aria-expanded', String(open));
+      if (open) panel.removeAttribute('hidden');
+      else panel.setAttribute('hidden', 'hidden');
     });
-    var stateSel = selectControl('lookupState', 'State', [
-      { v: '', l: 'Any state' },
-      { v: 'active', l: 'Active' },
-      { v: 'payment_failed', l: 'Payment failed' },
-      { v: 'deletion_requested', l: 'Deletion requested' },
-      { v: 'suspended', l: 'Suspended' }
-    ]);
-    stateSelect = stateSel.querySelector('select');
 
-    var tierSel = selectControl('lookupTier', 'Tier', [
-      { v: '', l: 'Any tier' },
-      { v: 'free', l: 'Free' },
-      { v: 'pro', l: 'Pro' },
-      { v: 'coach_team', l: 'Coach team' }
-    ]);
-    tierSelect = tierSel.querySelector('select');
-
-    form.appendChild(h('div', { className: 'hunt-line' }, [
-      h('div', { className: 'field' }, [icon('history'), reasonInput]),
-      stateSel,
-      tierSel
-    ]));
+    [scopeSelect, stateSelect, tierSelect].forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        syncFiltersLabel();
+        onNarrow();
+      });
+    });
 
     formError = h('p', { className: 'field-error', role: 'alert' });
+    form.appendChild(h('div', { className: 'u-sub' }, [filtersButton, formError]));
+    form.appendChild(panel);
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       onSubmit();
     });
-
-    panel.appendChild(form);
-    panel.appendChild(formError);
-    return panel;
+    return form;
   }
 
   /* The invalid marks are cleared on every pass, not only when the message is
@@ -501,16 +525,17 @@
 
   /* The mark a picked row carries beside its coded reference. A word, not a
      tint: colour is the one channel an operator may not have, and this is the
-     control that decides which account everything below the table describes.
+     control that decides which account everything below the list describes.
      The glyph is decorative (assets/aria.js hides every icon it builds), so
      the word is what carries the fact. */
   function selectedMark() {
-    var mark = pill('acc', 'Selected', 'check');
-    mark.className = mark.className + ' sel-mark';
+    var mark = h('span', { className: 'sel-mark' });
+    mark.appendChild(icon('check'));
+    mark.appendChild(h('span', { text: 'Selected' }));
     return mark;
   }
 
-  /* Selection, said four ways, because three of the four readers of this table
+  /* Selection, said four ways, because three of the four readers of this list
      cannot see the fourth:
 
        the class     what assets/pane-users-v2.css draws the wash and the rail
@@ -519,46 +544,41 @@
                      match changed nothing on screen at all.
        aria-current  the ROW saying it is the one the pane is describing.
                      aria-pressed below is a fact about the button, and a
-                     screen reader walking the table by row never enters it.
+                     screen reader walking the list by row never enters it.
                      Chrome's CDP property enumeration does not list
-                     aria-current on anything — not on a row, not on
-                     aria-current="page" on a link — so this one is correct
-                     ARIA that the PR could not evidence in a tree dump, and
-                     it is deliberately not the channel anything relies on.
+                     aria-current on anything, so this one is correct ARIA that
+                     a tree dump cannot evidence, and it is deliberately not
+                     the channel anything relies on.
        aria-pressed  the control's own state, for a reader on the button. This
                      one IS in the tree: pressed="true" on the picked control
                      and "false" on the rest. Stadiora/Aria#10648: until that
                      issue was fixed it was the only channel the button
                      carried, so the control announced "pressed" and was drawn
-                     pixel-for-pixel like the one beside it. It is now painted
-                     too — a ring, a heavier reference and a tint, in
-                     assets/pane-users-v2.css.
+                     pixel-for-pixel like the one beside it. It is painted too:
+                     a ring, a heavier reference and a tint.
        the word      "Selected", in the row, so the affordance is never the
-                     wash alone — and, being real text in the row's name cell,
-                     it is the channel that reaches every assistive technology
-                     rather than the ones that map a given attribute.
+                     wash alone, and, being real text, it reaches every
+                     assistive technology rather than the ones that map a given
+                     attribute.
 
      One function for the first paint and for every later change. The two used
-     to be written twice — once in the row builder, once in renderSelectedRow —
-     and a repaint that forgets one channel is invisible to everybody except
-     the person who needed that channel. */
-  function applySelection(tr, on) {
-    tr.className = on ? 'match-row is-selected' : 'match-row';
-    if (on) tr.setAttribute('aria-current', 'true');
-    else tr.removeAttribute('aria-current');
+     to be written twice, once in the row builder and once in the repaint, and
+     a repaint that forgets one channel is invisible to everybody except the
+     person who needed that channel. */
+  function applySelection(row, on) {
+    row.className = on ? 'match-row is-selected' : 'match-row';
+    if (on) row.setAttribute('aria-current', 'true');
+    else row.removeAttribute('aria-current');
 
-    var pick = tr.querySelector('.match-row-btn');
+    var pick = row.querySelector('.match-row-btn');
     if (pick) pick.setAttribute('aria-pressed', String(on));
 
-    var mark = tr.querySelector('.sel-mark');
+    var mark = row.querySelector('.sel-mark');
     if (on && !mark) {
-      /* Into the line the coded reference is on, rather than after the masked
-         email under it: the mark belongs beside the name of the row, and the
-         email is a block that would push it onto a third line of its own. The
-         line is its own element so this is an appendChild with one possible
-         outcome — `pick.nextSibling` reads as the same intent and is a
-         different answer in a DOM where the email is absent. */
-      var line = tr.querySelector('.match-id');
+      /* Into the line the coded reference is on rather than after the rest of
+         the row: the mark belongs beside the name. The line is its own element
+         so this is an appendChild with one possible outcome. */
+      var line = row.querySelector('.match-id');
       if (line) line.appendChild(selectedMark());
     } else if (!on && mark && mark.parentNode) {
       mark.parentNode.removeChild(mark);
@@ -579,87 +599,56 @@
     var short = claimed !== null && claimed > rows;
 
     box.appendChild(shell.cardHead(
-      'Accounts matching that reference',
-      short
-        ? rows + ' of ' + plural(claimed, 'account') + ' shown'
-        : plural(rows, 'account'),
-      [pill('', 'Details hidden', 'lock')]
+      'Matches',
+      null,
+      [h('span', { className: 'u-win', text: short
+        ? rows + ' of ' + plural(claimed, 'account')
+        : plural(rows, 'account') })]
     ));
 
     if (short) {
       var capped = h('div', { className: 'note note-warn' });
       capped.appendChild(icon('warn'));
       capped.appendChild(h('div', {
-        text: 'The operations API says ' + plural(claimed, 'account') + ' matched but sent ' + rows +
-          '. The rest are not on this page and cannot be asked for. Narrow the identifier.'
+        text: 'The API says ' + plural(claimed, 'account') + ' matched but sent ' + rows +
+          '. Narrow the account.'
       }));
       box.appendChild(h('div', { className: 'card-body' }, [capped]));
     }
 
-    var wrap = h('div', { className: 'tbl-wrap' });
-    var table = h('table', { className: 'tbl' });
-    table.appendChild(h('caption', { className: 'sr', text: 'Accounts matching the identifier you entered' }));
-
-    table.appendChild(h('thead', {}, [
-      h('tr', {}, [
-        h('th', { scope: 'col', text: 'Account' }),
-        h('th', { scope: 'col', text: 'State' }),
-        h('th', { scope: 'col', text: 'Tier' }),
-        h('th', { scope: 'col', text: 'Last active' }),
-        h('th', { scope: 'col', text: 'Flags' })
-      ])
-    ]));
-
-    var tbody = h('tbody');
+    var list = h('ul', { className: 'u-matches' });
     (data.matches || []).forEach(function (m) {
-      var tr = h('tr');
+      var li = h('li');
 
       /* The whole row is not the control. A row click is unreachable from a
-         keyboard, so the account cell carries a real button and that button is
+         keyboard, so the account line carries a real button and that button is
          what selects the account. `match-row-btn` and `match-row` are query
-         hooks first — applySelection finds the control by the one and
-         renderSelectedRow finds the rows by the other — so neither is drawn
-         in its plain state. Stadiora/Aria#10648 gave the control's PRESSED
-         state a rule; the unpressed button is still a ghost button and
-         nothing styles it by either class. */
+         hooks as well as painted: applySelection finds the control by the one
+         and renderSelectedRow finds the rows by the other. */
       var pick = h('button', {
-        className: 'btn btn-ghost btn-sm match-row-btn', type: 'button',
-        'data-ref': m.reference
+        className: 'match-row-btn', type: 'button', 'data-ref': m.reference
       });
       pick.appendChild(code(m.reference));
       pick.appendChild(h('span', { className: 'sr', text: ', open this account' }));
       pick.addEventListener('click', function () { onPick(m.reference); });
+      li.appendChild(h('div', { className: 'match-id' }, [pick]));
 
-      var cell = h('th', { scope: 'row', className: 'match-name' });
-      cell.appendChild(h('div', { className: 'match-id' }, [pick]));
-      if (m.maskedEmail) {
-        cell.appendChild(h('div', { className: 't-sub' }, [
-          h('span', { className: 'locked' }, [icon('lock'), h('span', { text: m.maskedEmail })])
-        ]));
-      }
-      tr.appendChild(cell);
+      var facts = h('div', { className: 'u-facts' });
+      if (m.maskedEmail) facts.appendChild(h('span', { className: 'u-dim', text: m.maskedEmail }));
+      facts.appendChild(stateWord(m.state));
+      facts.appendChild(tierWord(m.tier));
+      var last = stamp(m.lastActiveAt);
+      facts.appendChild(h('span', { className: 'u-dim', text: last ? 'Active ' + last : 'Last active not reported' }));
+      (m.flags || []).forEach(function (f) {
+        facts.appendChild(dotWord(DOT_TONE[f.tone] || '', f.label || f.key));
+      });
+      li.appendChild(facts);
 
-      tr.appendChild(h('td', {}, [stateePill(m.state)]));
-      tr.appendChild(h('td', {}, [tierPill(m.tier)]));
-      tr.appendChild(h('td', { className: 'num dim', text: ago(m.lastActiveAt) || 'not reported' }));
-
-      var flags = h('td');
-      (m.flags || []).forEach(function (f) { flags.appendChild(tonePill(f.tone, f.label || f.key)); });
-      if (!(m.flags || []).length) flags.appendChild(h('span', { className: 'muted tiny', text: 'none' }));
-      tr.appendChild(flags);
-
-      /* After the cells, because it writes into two of them. */
-      applySelection(tr, m.reference === selectedRef);
-      tbody.appendChild(tr);
+      /* After the children, because it writes into one of them. */
+      applySelection(li, m.reference === selectedRef);
+      list.appendChild(li);
     });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    box.appendChild(wrap);
-
-    box.appendChild(h('div', { className: 'card-foot' }, [
-      icon('lock'),
-      h('span', { text: 'The part-hidden email is masked by the operations API, not by this page.' })
-    ]));
+    box.appendChild(list);
     return box;
   }
 
@@ -697,11 +686,51 @@
     if (main) main.focus();
   }
 
-  /* One field row. Which shape is drawn is the API's decision, with two
-     floors under it that this file will not let the API cross:
+  /* A plain value the API said, in as many words, is not personal. The test is
+     the three floors below, in one place so the row and the formatter cannot
+     disagree about which fields are in the clear:
 
        masked absent or true  masked, whatever else the entry carries
-       reveal 'never'         no control at all, and a line saying so
+       reveal 'never'         never plain
+       a health key           never plain, whatever arrived
+
+     The earlier test here was falsy rather than an equality, so an entry whose
+     masked flag was absent, null or 0 while value was populated printed the
+     real value in the clear, with no reveal control, no reason, and no
+     per-field access record, at every role. Only an explicit false unmasks a
+     field now, and an entry that carries a mask as well is contradictory
+     rather than unmasked, so it is read as masked too.
+
+     The mask half of that is a test of presence, not of truthiness. What makes
+     an entry contradictory is carrying a maskedValue at all beside masked:
+     false, and an empty string is carrying one: it is a mask the API built and
+     got wrong, which is a reason to trust the entry less rather than a reason
+     to print the real value. A falsy test read `maskedValue: ""` as no mask and
+     unmasked the field.
+
+     `reveal: 'never'` is the same idea once more. A field the API says is never
+     shown here, in the same breath as saying it is not personal, is a payload
+     disagreeing with itself, and the row it draws already refuses a control on
+     the strength of the 'never'. Reading the other flag as a licence to print
+     the value would let the contradiction decide the disclosure. No such
+     payload exists today; this is why it would not matter if one did. */
+  function isPlain(field) {
+    var carriesMask = Object.prototype.hasOwnProperty.call(field, 'maskedValue') &&
+      field.maskedValue !== null && field.maskedValue !== undefined;
+    return field.masked === false && !carriesMask && !isHealthKey(field.key) &&
+      field.reveal !== 'never';
+  }
+
+  /* A field that has no row on this pane at any role. */
+  function isWithheld(field) {
+    return isHealthKey(field.key) || field.reveal === 'never';
+  }
+
+  /* One field row. Which shape is drawn is the API's decision, with the floors
+     above under it that this file will not let the API cross:
+
+       masked absent or true  masked, whatever else the entry carries
+       reveal 'never'         no control at all
        reveal 'unavailable'   no control, and the reason there is none
        reveal 'allowed'       a control that asks for a written reason first
        a health key           treated as 'never' regardless of what arrived */
@@ -709,67 +738,33 @@
     var row = h('div', { className: 'reveal-row' });
     var health = isHealthKey(field.key);
 
-    /* Masked by default, and the default is what a missing flag gets. The
-       earlier test here was falsy rather than an equality, so an entry whose
-       masked flag was absent, null or 0 while value was populated printed the
-       real value in the clear, with no reveal control, no reason, and no
-       per-field access record, at every role, because this return sat above
-       the owner gate below. Only an explicit false unmasks a field now, and
-       an entry that carries a mask as well is contradictory rather than
-       unmasked, so it is read as masked too. A health key is never unmasked
-       here whatever the payload says.
+    /* A plain value the API said is not personal. */
+    if (isPlain(field)) {
+      return h('span', { className: 'reveal-value', text: field.value === null || field.value === undefined ? 'Not reported' : String(field.value) });
+    }
 
-       The mask half of that is a test of presence, not of truthiness. What
-       makes an entry contradictory is carrying a maskedValue at all beside
-       masked: false, and an empty string is carrying one: it is a mask the API
-       built and got wrong, which is a reason to trust the entry less rather
-       than a reason to print the real value. A falsy test read `maskedValue:
-       ""` as no mask and unmasked the field.
-
-       `reveal: 'never'` is the same idea once more. A field the API says is
-       never shown here, in the same breath as saying it is not personal, is a
-       payload disagreeing with itself, and the row it draws already refuses a
-       control on the strength of the 'never'. Reading the other flag as a
-       licence to print the value would let the contradiction decide the
-       disclosure. No such payload exists today; this is why it would not
-       matter if one did. */
-    var carriesMask = Object.prototype.hasOwnProperty.call(field, 'maskedValue') &&
-      field.maskedValue !== null && field.maskedValue !== undefined;
-    var unmaskedByDesign = field.masked === false && !carriesMask && !health &&
-      field.reveal !== 'never';
-
-    /* The mask carries the word as well as the hatching, so it is never the
-       texture alone that says a value is withheld. */
-    var masked = h('span', { className: 'masked locked' }, [
-      icon('lock'),
-      h('span', { text: field.maskedValue || 'Hidden' })
-    ]);
+    /* The mask is the API's own text. It is never the hatching or a glyph
+       alone that says a value is withheld. */
+    var masked = h('span', { className: 'masked', text: field.maskedValue || 'Hidden' });
     var shown = h('span', { className: 'reveal-value hidden' });
     var note = h('span', { className: 'reveal-note hidden' });
-
-    /* A plain value the API said, in as many words, is not personal. */
-    if (unmaskedByDesign) {
-      return h('span', { className: 'reveal-value', text: field.value === null || field.value === undefined ? 'not reported' : String(field.value) });
-    }
 
     row.appendChild(masked);
     row.appendChild(shown);
     row.appendChild(note);
 
     if (health || field.reveal === 'never') {
-      var never = h('span', { className: 'reveal-never' });
-      never.appendChild(icon('x'));
-      never.appendChild(h('span', {
+      row.appendChild(h('span', {
+        className: 'reveal-never',
         text: field.neverShownNote ||
           (health ? 'Health data is never shown here' : 'Never shown here')
       }));
-      row.appendChild(never);
       return row;
     }
 
     if (field.reveal !== 'allowed') {
       row.appendChild(h('span', {
-        className: 'tiny muted',
+        className: 'u-dim',
         text: field.unavailableNote || 'Not revealable'
       }));
       return row;
@@ -779,11 +774,8 @@
       /* The rail already renders role facts rather than hiding destinations,
          so this does the same: the control is present, plainly unavailable,
          and names the role. The server enforces it regardless. */
-      var locked = h('button', { className: 'btn btn-sm', type: 'button', disabled: 'disabled' });
-      locked.appendChild(icon('eye'));
-      locked.appendChild(h('span', { text: 'Reveal' }));
-      row.appendChild(locked);
-      row.appendChild(h('span', { className: 'tiny muted', text: 'Owner action' }));
+      row.appendChild(h('button', { className: 'u-act', type: 'button', disabled: 'disabled', text: 'Reveal' }));
+      row.appendChild(h('span', { className: 'u-dim', text: 'Owner action' }));
       return row;
     }
 
@@ -791,9 +783,9 @@
     var entry = null;
 
     /* Re-mask. Both ways in here hide the button that may be holding focus:
-       the operator pressing "Hide again", and the expiry falling due while
-       focus happens to be sitting on it. Focus left on a display:none control
-       is focus nobody can see and a keyboard cannot move on from, so it goes
+       the operator pressing "Hide", and the expiry falling due while focus
+       happens to be sitting on it. Focus left on a display:none control is
+       focus nobody can see and a keyboard cannot move on from, so it goes
        back to the Reveal control in the same row. If that control has gone too,
        which is another account being opened or a new search replacing the
        container, the pane's content region takes it rather than document.body. */
@@ -815,11 +807,11 @@
       }
     }
 
-    var revealBtn = h('button', { className: 'btn btn-sm', type: 'button' });
-    revealBtn.appendChild(icon('eye'));
-    revealBtn.appendChild(h('span', { text: 'Reveal' }));
+    var revealBtn = h('button', { className: 'u-act', type: 'button', text: 'Reveal' });
+    revealBtn.setAttribute('aria-label', 'Reveal ' + (field.label || field.key).toLowerCase());
 
-    var hideBtn = h('button', { className: 'btn btn-sm hidden', type: 'button', text: 'Hide again' });
+    var hideBtn = h('button', { className: 'u-act hidden', type: 'button', text: 'Hide' });
+    hideBtn.setAttribute('aria-label', 'Hide ' + (field.label || field.key).toLowerCase());
     hideBtn.addEventListener('click', function () {
       hide();
       shell.announce(field.label + ' hidden again');
@@ -829,15 +821,15 @@
     var reasonId = 'reveal-' + reference + '-' + field.key;
     var reasonBox = h('input', {
       id: reasonId, type: 'text', autocomplete: 'off',
-      placeholder: 'Reason, recorded by field name'
+      placeholder: 'Reason'
     });
-    var confirm = h('button', { className: 'btn btn-sm btn-primary', type: 'submit', text: 'Show ' + (field.label || field.key).toLowerCase() });
-    var cancel = h('button', { className: 'btn btn-sm', type: 'button', text: 'Cancel' });
-    var problem = h('span', { className: 'tiny reveal-note' });
+    var confirm = h('button', { className: 'btn btn-primary u-ok', type: 'submit', text: 'Show' });
+    var cancel = h('button', { className: 'btn u-no', type: 'button', text: 'Cancel' });
+    var problem = h('span', { className: 'reveal-problem' });
 
     reasonForm.appendChild(h('label', { className: 'sr', for: reasonId, text: 'Reason for revealing ' + (field.label || field.key) }));
-    reasonForm.appendChild(h('div', { className: 'field' }, [icon('history'), reasonBox]));
-    reasonForm.appendChild(h('div', { className: 'row' }, [confirm, cancel, problem]));
+    reasonForm.appendChild(h('div', { className: 'field' }, [reasonBox]));
+    reasonForm.appendChild(h('div', { className: 'u-acts' }, [confirm, cancel, problem]));
 
     function closeForm(restoreFocus) {
       reasonForm.classList.add('hidden');
@@ -859,7 +851,7 @@
       e.preventDefault();
       var reason = reasonBox.value.trim();
       if (reason.length < 3) {
-        problem.textContent = 'Give a reason. It is written beside your name.';
+        problem.textContent = 'Add a reason.';
         reasonBox.setAttribute('aria-invalid', 'true');
         reasonBox.focus();
         return;
@@ -910,15 +902,10 @@
            contradiction the lookup note exists to avoid, so the sentence on
            screen and the one a screen reader hears are both built from it. */
         var onRecord = !!out.recorded;
-        var noteText = serverSaid
-          ? 'Hides itself in ' + countdownLabel(ms)
-          : 'Hides itself in ' + countdownLabel(ms) + ', a limit this page set because the ' +
-            'response did not give one.';
-        noteText += onRecord
-          ? ' Recorded by field name.'
-          : ' The operations API did not confirm a record for it. Treat it as unrecorded.';
+        var noteText = 'Hides in ' + countdownLabel(ms) + (serverSaid ? '' : ' (page limit)') +
+          ' · ' + (onRecord ? 'Logged' : 'No record confirmed');
 
-        shown.textContent = out.value === null || out.value === undefined ? 'not reported' : String(out.value);
+        shown.textContent = out.value === null || out.value === undefined ? 'Not reported' : String(out.value);
         shown.classList.remove('hidden');
         masked.classList.add('hidden');
         hideBtn.classList.remove('hidden');
@@ -954,401 +941,414 @@
     return row;
   }
 
-  /* A key and value list, one field per line. The key is a <dt> and the value
-     a <dd> so the pairing survives a screen reader reading down the column,
-     which a pair of styled divs does not. */
-  function fieldList(reference, fields) {
-    var kv = h('dl', { className: 'kv' });
+  /* ------------------------------------------------------------- rows */
+
+  /* A label and a value, as a <dt> and a <dd> so the pairing survives a screen
+     reader reading down the column, which a pair of styled divs does not. */
+  function dataRow(label, node) {
+    var dd = h('dd', { className: 'u-v' });
+    if (node) dd.appendChild(node);
+    return h('div', { className: 'u-row' }, [h('dt', { className: 'u-k', text: label }), dd]);
+  }
+
+  function textValue(text) {
+    return h('span', { text: text });
+  }
+
+  function fieldsByKey(fields) {
+    var map = {};
     (fields || []).forEach(function (f) {
-      var line = h('div');
-      line.appendChild(h('dt', { className: 'k', text: f.label || f.key }));
-      var dd = h('dd', { className: 'v' });
-      dd.appendChild(fieldValue(reference, f));
-      line.appendChild(dd);
-      kv.appendChild(line);
+      if (f && f.key && !Object.prototype.hasOwnProperty.call(map, f.key)) map[f.key] = f;
     });
-    return kv;
+    return map;
+  }
+
+  /* What a plain field says, worded for reading. A value this does not
+     recognise is printed as it arrived, so a new value is never mistaken for
+     a different one. */
+  function plainNode(field) {
+    var value = field.value;
+    if (value === null || value === undefined || value === '') {
+      return h('span', { className: 'u-dim', text: 'Not reported' });
+    }
+    var raw = String(value);
+    switch (field.key) {
+      case 'authProvider':
+        return textValue(words(raw));
+      case 'emailVerified':
+        if (raw === 'Verified') {
+          var yes = h('span', { className: 'u-dotword' });
+          yes.appendChild(h('span', { className: 'u-tick' }, [icon('check')]));
+          yes.appendChild(h('span', { text: 'Yes' }));
+          return yes;
+        }
+        return textValue(raw === 'Not verified' ? 'No' : raw);
+      case 'lastSignInAt':
+      case 'currentPeriodStart':
+      case 'currentPeriodEnd':
+        return textValue(stamp(raw) ? stamp(raw) + ' UTC' : raw);
+      default:
+        return textValue(raw);
+    }
+  }
+
+  function rowNode(reference, field) {
+    return isPlain(field) ? plainNode(field) : fieldValue(reference, field);
+  }
+
+  /* The card's own fields past the ones it leads with, behind one control. The
+     reveal rules still apply to every one of them, so a guardian's address is
+     as reachable as it ever was. */
+  function moreRows(reference, extras) {
+    var list = h('dl', { className: 'u-rows u-extra', id: 'more-' + reference + '-' + extras.length, hidden: 'hidden' });
+    extras.forEach(function (f) {
+      list.appendChild(dataRow(f.label || f.key, rowNode(reference, f)));
+    });
+    return list;
+  }
+
+  function moreToggle(list) {
+    var btn = h('button', {
+      className: 'u-link', type: 'button',
+      'aria-expanded': 'false', 'aria-controls': list.getAttribute('id'), text: 'More'
+    });
+    btn.addEventListener('click', function () {
+      var open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(open));
+      if (open) list.removeAttribute('hidden');
+      else list.setAttribute('hidden', 'hidden');
+    });
+    return btn;
   }
 
   /* -------------------------------------------------------- the account */
 
-  /* Promise 1 lives in this card's foot, next to the fields it is about. */
-  function accountCard(detail) {
-    var box = shell.card();
-    var kind = detail.kind === 'coach' ? 'Coach' : 'Athlete';
-    box.appendChild(shell.cardHead('Account', null, [
-      code(detail.reference),
-      stateePill(detail.state),
-      tierPill(detail.tier)
-    ]));
-
-    var body = h('div', { className: 'card-body' });
-    var facts = h('dl', { className: 'kv' });
-    facts.appendChild(h('div', {}, [
-      h('dt', { className: 'k', text: 'Kind' }),
-      h('dd', { className: 'v dim', text: kind })
-    ]));
-    if (detail.memberSince) {
-      facts.appendChild(h('div', {}, [
-        h('dt', { className: 'k', text: 'Member since' }),
-        h('dd', { className: 'v num dim', text: whenLabel(detail.memberSince) || detail.memberSince })
-      ]));
-    }
-    body.appendChild(facts);
-
+  /* The initial the API's own mask already shows, or nothing. */
+  function initialOf(detail) {
     var fields = (detail.record && detail.record.fields) ||
       (detail.summary && detail.summary.fields) || [];
-    body.appendChild(h('div', { className: 'divider mt-sm' }));
-    body.appendChild(h('div', { className: 'mt-sm' }, [fieldList(detail.reference, fields)]));
-
-    if (detail.record && detail.record.note) {
-      var box2 = h('div', { className: 'note note-warn mt-sm' });
-      box2.appendChild(icon('warn'));
-      box2.appendChild(h('div', { text: detail.record.note }));
-      body.appendChild(box2);
-    }
-    box.appendChild(body);
-
-    box.appendChild(h('div', { className: 'card-foot' }, [
-      icon('lock'),
-      h('span', { text: 'Hidden for every role, including this one, until a reveal is recorded.' })
-    ]));
-    return box;
+    var name = fieldsByKey(fields).displayName;
+    if (!name || isPlain(name) || name.reveal !== 'allowed' || typeof name.maskedValue !== 'string') return null;
+    var first = name.maskedValue.trim().charAt(0);
+    try { return /^\p{L}$/u.test(first) ? first.toUpperCase() : null; } catch (e) { return null; }
   }
 
-  /* Promises 2 and 3. The controls themselves are per field, beside the field
-     they uncover, so this card states the rule once and then shows what has
-     already been revealed on this account. */
-  function revealCard(detail) {
+  function resultHead(detail) {
+    var head = h('div', { className: 'u-head' });
+
+    var av = h('span', { className: 'u-av', 'aria-hidden': 'true' });
+    var initial = initialOf(detail);
+    if (initial) av.appendChild(document.createTextNode(initial));
+    else av.appendChild(icon('person'));
+    head.appendChild(av);
+
+    var id = h('div', { className: 'u-id' });
+    id.appendChild(h('h2', { className: 'u-ref', text: detail.reference }));
+    var meta = h('div', { className: 'u-meta' });
+    meta.appendChild(stateWord(detail.state));
+    meta.appendChild(tierWord(detail.tier));
+    var since = dayLabel(detail.memberSince);
+    if (since) meta.appendChild(h('span', { text: 'Member since ' + since }));
+    id.appendChild(meta);
+    head.appendChild(id);
+
+    var ro = h('div', { className: 'u-ro' });
+    ro.appendChild(icon('lock'));
+    ro.appendChild(h('span', { text: 'Read only' }));
+    head.appendChild(ro);
+    return head;
+  }
+
+  function accountCard(detail) {
     var box = shell.card();
-    box.appendChild(shell.cardHead('Revealing a personal field', null, [
-      pill(isOwner() ? 'vio' : '', 'Owner only', 'lock')
-    ]));
+    box.appendChild(shell.cardHead('Account'));
+
+    var fields = ((detail.record && detail.record.fields) ||
+      (detail.summary && detail.summary.fields) || []).filter(function (f) { return f && !isWithheld(f); });
+    var byKey = fieldsByKey(fields);
+    var led = {};
 
     var body = h('div', { className: 'card-body' });
-    var rules = h('ul', { className: 'list-tick' });
-    [
-      'A written reason is required, and the server asks for it again.',
-      'Recorded by field name, never by value.',
-      'Shown once, then it hides itself.'
-    ].forEach(function (line) {
-      rules.appendChild(h('li', {}, [icon('check'), h('span', { text: line })]));
+    var rows = h('dl', { className: 'u-rows' });
+    ACCOUNT_ROWS.forEach(function (spec) {
+      var f = byKey[spec[0]];
+      if (!f) return;
+      led[spec[0]] = true;
+      rows.appendChild(dataRow(spec[1], rowNode(detail.reference, f)));
     });
-    body.appendChild(rules);
+    body.appendChild(rows);
 
-    if (!isOwner()) {
-      body.appendChild(h('p', { className: 'tiny muted mt-sm', text:
-        'You are not an owner, so every Reveal control on this page is dead. It is shown rather ' +
-        'than hidden so the rule is legible.' }));
-    }
-
-    var entries = ((detail.access && detail.access.entries) || [])
-      .filter(function (e) { return e.revealed; });
-    var inset = h('div', { className: 'inset mt-sm' });
-    inset.appendChild(h('div', { className: 'row' }, [
-      h('span', { className: 'dot vio' }),
-      h('span', { className: 'inset-title', text: 'Previously revealed' })
-    ]));
-    if (!entries.length) {
-      inset.appendChild(h('p', { className: 'tiny muted mt-xs', text:
-        'No field has been revealed on this account inside the reported window.' }));
+    var extras = fields.filter(function (f) {
+      return !led[f.key] && !HEAD_KEYS[f.key];
+    });
+    var foot = h('div', { className: 'u-foot' });
+    var line = h('p', { className: 'u-fine' });
+    line.appendChild(icon('lock'));
+    line.appendChild(h('span', { text: 'Owner only · Reason required · Logged' }));
+    foot.appendChild(line);
+    if (extras.length) {
+      var more = moreRows(detail.reference, extras);
+      foot.appendChild(moreToggle(more));
+      body.appendChild(foot);
+      body.appendChild(more);
     } else {
-      var list = h('dl', { className: 'kv mt-xs' });
-      entries.slice(0, 6).forEach(function (e) {
-        list.appendChild(h('div', {}, [
-          h('dt', { className: 'k', text: e.fields || 'field revealed' }),
-          h('dd', { className: 'v tiny dim', text:
-            (whenLabel(e.occurredAt) || 'time not reported') + ' · ' + (e.actor || 'actor not reported') })
-        ]));
-      });
-      inset.appendChild(list);
+      body.appendChild(foot);
     }
-    body.appendChild(inset);
+
+    if (detail.record && detail.record.note) {
+      body.appendChild(h('p', { className: 'u-fine', text: detail.record.note }));
+    }
     box.appendChild(body);
-    return box;
-  }
-
-  /* Promise 6 lives in this card's foot. */
-  function activityCard(detail) {
-    var box = shell.card();
-    var activity = detail.activity;
-    var events = (activity && activity.events) || [];
-
-    box.appendChild(shell.cardHead(
-      'What this account has done',
-      activity && activity.windowDays ? 'Last ' + plural(activity.windowDays, 'day') : null,
-      null
-    ));
-
-    if (!events.length) {
-      box.appendChild(h('div', { className: 'card-body' }, [
-        shell.stateBlock('empty', 'No activity in this window', [
-          activity
-            ? 'The account exists and reported nothing. A quiet account, not a missing one.'
-            : 'The operations API did not report activity for this account.'
-        ], 4)
-      ]));
-      return box;
-    }
-
-    var wrap = h('div', { className: 'tbl-wrap' });
-    var table = h('table', { className: 'tbl' });
-    table.appendChild(h('caption', { className: 'sr', text: 'Recent activity on this account' }));
-    table.appendChild(h('thead', {}, [
-      h('tr', {}, [
-        h('th', { scope: 'col', text: 'When' }),
-        h('th', { scope: 'col', text: 'What happened' }),
-        h('th', { scope: 'col', text: 'Reference' })
-      ])
-    ]));
-
-    var tbody = h('tbody');
-    events.forEach(function (ev) {
-      var what = h('td');
-      what.appendChild(h('div', { className: 't-main', text: ev.label }));
-      if (ev.tone) what.appendChild(h('div', { className: 'mt-xs' }, [tonePill(ev.tone, ev.tone === 'ok' ? 'Delivered' : ev.tone === 'info' ? 'Noted' : 'Needs a look')]));
-
-      var ref = h('td');
-      /* Only a link when the API gave one, and only ever to another pane in
-         this dashboard. safeHref is what makes that second half true rather
-         than a claim: an off-origin href renders as the plain reference it
-         would otherwise link to, so a page with somebody's account open cannot
-         be turned into a referrer leak by a payload. */
-      var href = ev.reference ? safeHref(ev.href) : null;
-      if (href) ref.appendChild(h('a', { className: 'code', href: href, text: ev.reference }));
-      else if (ev.reference) ref.appendChild(code(ev.reference));
-      else ref.appendChild(h('span', { className: 'muted tiny', text: '—' }));
-
-      tbody.appendChild(h('tr', {}, [
-        h('th', { scope: 'row', className: 'num dim', text: whenLabel(ev.occurredAt) || 'time not reported' }),
-        what,
-        ref
-      ]));
-    });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    box.appendChild(wrap);
-
-    box.appendChild(h('div', { className: 'card-foot' }, [
-      icon('lock'),
-      h('span', { text: 'Request and reply content is not shown, for any role.' })
-    ]));
-    return box;
-  }
-
-  function devicesCard(detail) {
-    var box = shell.card();
-    var devices = detail.devices || [];
-    box.appendChild(shell.cardHead('Devices', null,
-      [pill('', plural(devices.length, 'device'), 'plug')]));
-
-    if (!devices.length) {
-      box.appendChild(h('div', { className: 'card-body' }, [
-        shell.stateBlock('empty', 'No device reported', [
-          'Device level version data is sent by the apps themselves, so an account that has not ' +
-            'opened one recently has none.'
-        ], 4)
-      ]));
-      return box;
-    }
-
-    var wrap = h('div', { className: 'tbl-wrap' });
-    var table = h('table', { className: 'tbl' });
-    table.appendChild(h('caption', { className: 'sr', text: 'Devices on this account' }));
-    table.appendChild(h('thead', {}, [
-      h('tr', {}, [
-        h('th', { scope: 'col', text: 'Device' }),
-        h('th', { scope: 'col', text: 'App' }),
-        h('th', { scope: 'col', text: 'Last seen' })
-      ])
-    ]));
-    var tbody = h('tbody');
-    devices.forEach(function (d) {
-      var app = h('td');
-      app.appendChild(h('div', { className: 't-main num', text: d.appVersion || 'not reported' }));
-      if (d.os) app.appendChild(h('div', { className: 't-sub', text: d.os }));
-      tbody.appendChild(h('tr', {}, [
-        h('th', { scope: 'row', className: 't-main', text: d.label || 'Unnamed device' }),
-        app,
-        h('td', { className: 'num dim', text: ago(d.lastSeenAt) || 'not reported' })
-      ]));
-    });
-    table.appendChild(tbody);
-    wrap.appendChild(table);
-    box.appendChild(wrap);
     return box;
   }
 
   function billingCard(detail) {
     var box = shell.card();
+    box.appendChild(shell.cardHead('Subscription'));
     var billing = detail.billing;
-    box.appendChild(shell.cardHead('Subscription', null, null));
+    var fields = ((billing && billing.fields) || []).filter(function (f) { return f && !isWithheld(f); });
 
-    if (!billing || !(billing.fields || []).length) {
-      /* An empty billing record means different things on different tiers and
-         this pane cannot tell which: the API sends tier { key, label, brand }
-         and defines no paid-or-free semantics for any of them — `brand` picks
-         a pill tone (see tierPill). So name the tier beside the absence and
-         leave the reading to the operator, which is what the head pill did
-         before it became a third copy of the same fact. Three shapes, because
-         a tier can arrive with no name at all and "on Unknown" reads as a
-         tier called Unknown — which is a claim the API never made. */
-      var tier = detail.tier;
-      var tierName = tier && (tier.label || tier.key);
+    if (!fields.length) {
+      /* Named by tier when the API gave one, because an empty subscription
+         means different things on different tiers and this pane cannot tell
+         which. Saying the tier leaves the reading to the operator. */
+      var tier = detail.tier && (detail.tier.label || detail.tier.key);
       box.appendChild(h('div', { className: 'card-body' }, [
-        shell.stateBlock('empty', 'No subscription record', [
-          tierName ? 'The account is on ' + tierName + '.'
-            : tier ? 'The tier it reported has no name.'
-            : 'No tier was reported for this account either.'
-        ], 4)
+        h('p', { className: 'u-empty', text: tier ? 'No subscription · ' + tier : 'No subscription' })
       ]));
       return box;
     }
 
-    box.appendChild(h('div', { className: 'card-body' }, [
-      fieldList(detail.reference, billing.fields)
-    ]));
-    return box;
-  }
+    var byKey = fieldsByKey(fields);
+    var rows = h('dl', { className: 'u-rows' });
 
-  /* Promises 4 and 5. This is the band that makes the rest of the pane
-     defensible: it is built so that it would be safe to show the athlete whose
-     account it belongs to, which is why it is a band on the page rather than a
-     tab behind a button, as it was before the remodel. */
-  function accessCard(detail) {
-    var access = detail.access;
-    var box = shell.card();
-    var entries = (access && access.entries) || [];
-
-    box.appendChild(shell.cardHead(
-      'Who has looked at this account',
-      access && access.windowDays ? 'Last ' + plural(access.windowDays, 'day') : null,
-      [pill('', 'Shown to the athlete on request', 'person')]
-    ));
-
-    if (!entries.length) {
-      box.appendChild(h('div', { className: 'card-body' }, [
-        shell.stateBlock('empty', 'No recorded access', [
-          access
-            ? 'Nobody has opened this account inside the reported window, including you until this lookup is written.'
-            : 'The operations API did not report an access record for this account.'
-        ], 4)
-      ]));
-    } else {
-      var wrap = h('div', { className: 'tbl-wrap' });
-      var table = h('table', { className: 'tbl' });
-      table.appendChild(h('caption', { className: 'sr', text: 'Recorded access to this account' }));
-      table.appendChild(h('thead', {}, [
-        h('tr', {}, [
-          h('th', { scope: 'col', text: 'When' }),
-          h('th', { scope: 'col', text: 'Who' }),
-          h('th', { scope: 'col', text: 'What' }),
-          h('th', { scope: 'col', text: 'Reason' })
-        ])
-      ]));
-      var tbody = h('tbody');
-      entries.forEach(function (e) {
-        var what = h('td');
-        /* A revealed entry is marked with a word as well as a colour, because
-           "somebody read a personal field" is the row on this table that an
-           athlete reading it would care about most. */
-        if (e.revealed) what.appendChild(pill('vio', e.fields || 'field revealed', 'eye'));
-        else what.appendChild(h('span', { className: 'tiny dim', text: e.fields || 'summary only' }));
-
-        tbody.appendChild(h('tr', {}, [
-          h('th', { scope: 'row', className: 'num dim', text: whenLabel(e.occurredAt) || 'not reported' }),
-          h('td', { text: e.actor || 'not reported' }),
-          what,
-          h('td', { className: 'tiny dim', text: e.reason || 'no reason recorded' })
-        ]));
-      });
-      table.appendChild(tbody);
-      wrap.appendChild(table);
-      box.appendChild(wrap);
+    function plainOf(key) {
+      var f = byKey[key];
+      return f && isPlain(f) && f.value !== null && f.value !== undefined && f.value !== ''
+        ? String(f.value) : null;
     }
 
-    box.appendChild(h('div', { className: 'card-foot' }, [
-      icon('history'),
-      h('span', { text: 'Kept for the life of the account. A reveal cannot erase one.' })
-    ]));
-    return box;
-  }
+    if (byKey.tier) {
+      var tierValue = plainOf('tier');
+      rows.appendChild(dataRow('Tier', tierValue ? textValue(words(tierValue)) : rowNode(detail.reference, byKey.tier)));
+    }
+    if (byKey.billingStatus) {
+      var status = plainOf('billingStatus');
+      rows.appendChild(dataRow('Status', status
+        ? dotWord(STATUS_TONE[String(status).toLowerCase()] || '', words(status))
+        : rowNode(detail.reference, byKey.billingStatus)));
+    }
+    if (byKey.billingPlatform) {
+      var store = plainOf('billingPlatform');
+      rows.appendChild(dataRow('Store', store
+        ? textValue(STORES[String(store).toLowerCase()] || words(store))
+        : rowNode(detail.reference, byKey.billingPlatform)));
+    }
+    if (byKey.billingCycle) {
+      var cycle = plainOf('billingCycle');
+      rows.appendChild(dataRow('Cycle', cycle ? textValue(words(cycle)) : rowNode(detail.reference, byKey.billingCycle)));
+    }
 
-  /* The danger zone. The mock carries four account actions behind
-     re-authentication; the operations API answers no route that performs one,
-     so the rows are named and none of them is a button. A control that cannot
-     succeed is worse than no control, and hiding the band entirely would only
-     make people ask whether it exists. */
-  function dangerCard(detail) {
-    var box = shell.card('accent acc-bad');
-    var actions = (detail.supportActions && detail.supportActions.available) || [];
+    var from = dayLabel(plainOf('currentPeriodStart'));
+    var until = dayLabel(plainOf('currentPeriodEnd'));
+    if (from && until) rows.appendChild(dataRow('Period', textValue(from + '–' + until)));
+    if (until) rows.appendChild(dataRow('Access until', textValue(until)));
 
-    box.appendChild(shell.cardHead(
-      'Account actions',
-      'Named here, not performed here. Audited, and the athlete is told.',
-      [pill('ghost', 'Re-authentication required', 'lock')]
-    ));
+    var body = h('div', { className: 'card-body' }, [rows]);
 
-    var body = h('div', { className: 'card-body' });
-    if (!actions.length) {
-      body.appendChild(h('p', { className: 'tiny muted', text:
-        'The operations API reports no account action on this deployment, so there is nothing ' +
-        'here to press. Deleting an account runs through the deletion workflow, which needs the ' +
-        "athlete's own confirmation." }));
-    } else {
-      actions.forEach(function (a) {
-        body.appendChild(h('div', { className: 'srow' }, [
-          h('div', { className: 's-main', text: a.label || a.key })
-        ]));
-      });
+    var extras = fields.filter(function (f) { return !BILLING_KEYS[f.key]; });
+    if (extras.length) {
+      var more = moreRows(detail.reference + '-billing', extras);
+      body.appendChild(h('div', { className: 'u-foot u-foot-end' }, [moreToggle(more)]));
+      body.appendChild(more);
     }
     box.appendChild(body);
     return box;
   }
 
-  /* ------------------------------------------------------------- states */
-
-  function idleState() {
+  function devicesCard(detail) {
     var box = shell.card();
-    box.appendChild(shell.stateBlock('search', 'Nothing looked up yet', [
-      'Enter an exact coded reference, email address or support ticket above, with your reason.',
-      'This pane has no list of accounts to start from, on purpose.'
-    ]));
+    box.appendChild(shell.cardHead('Devices'));
+    var devices = detail.devices || [];
+
+    if (!devices.length) {
+      box.appendChild(h('div', { className: 'card-body' }, [
+        h('p', { className: 'u-empty', text: 'No device reported' })
+      ]));
+      return box;
+    }
+
+    var body = h('div', { className: 'card-body u-devices' });
+    devices.forEach(function (d) {
+      var one = h('div', { className: 'u-dev' });
+      var name = h('div', { className: 'u-dev-name' }, [
+        h('span', { className: 'u-strong', text: d.label || 'Unnamed device' })
+      ]);
+      if (d.os) name.appendChild(h('span', { className: 'u-dim', text: d.os }));
+      var seen = stamp(d.lastSeenAt);
+      one.appendChild(h('div', { className: 'u-dev-top' }, [
+        name,
+        h('span', { className: 'u-dev-seen', text: seen ? 'Last seen ' + seen + ' UTC' : 'Last seen not reported' })
+      ]));
+      one.appendChild(h('dl', { className: 'u-rows' }, [
+        dataRow('App version', h('span', { className: d.appVersion ? '' : 'u-dim', text: d.appVersion || 'Not reported' }))
+      ]));
+      body.appendChild(one);
+    });
+    box.appendChild(body);
     return box;
   }
 
-  function noMatchState(identifier) {
+  function windowNote(activity, fallback) {
+    var days = activity && activity.windowDays;
+    return h('span', { className: 'u-win', text: (days ? plural(days, 'day') + ' · ' : '') + 'UTC' + (fallback || '') });
+  }
+
+  function activityCard(detail) {
     var box = shell.card();
-    var block = shell.stateBlock('search', 'No account matches that identifier', [
-      'The operations API looked and found nothing. Near matches are never returned, so a wrong ' +
-        'guess cannot be used to find out who has an account.'
-    ]);
-    if (identifier) {
-      block.appendChild(h('div', { className: 'row mt-sm' }, [code(identifier)]));
+    var activity = detail.activity;
+    box.appendChild(shell.cardHead('Recent activity', null, activity ? [windowNote(activity)] : null));
+
+    var events = (activity && activity.events) || [];
+    if (!events.length) {
+      /* Two different facts. An account that has not shared activity is not a
+         quiet account, and drawing them the same would read the first as the
+         second. */
+      box.appendChild(h('div', { className: 'card-body' }, [
+        h('p', { className: 'u-empty', text: activity ? 'No activity' : 'Not shared' })
+      ]));
+      return box;
     }
-    box.appendChild(block);
+
+    var list = h('ul', { className: 'u-list' });
+    events.forEach(function (ev) {
+      var label = ev.label || 'Activity';
+      /* Only a link when the API gave one, and only ever to another pane in
+         this dashboard. safeHref is what makes that second half true rather
+         than a claim: an off-origin href renders as the plain label it would
+         otherwise link from, so a page with somebody's account open cannot
+         be turned into a referrer leak by a payload. */
+      var href = ev.reference ? safeHref(ev.href) : null;
+      var what = h('span', { className: 'u-what' });
+      if (href) what.appendChild(h('a', { className: 'u-link', href: href, text: label }));
+      else what.appendChild(document.createTextNode(label));
+      if (ev.tone === 'warn' || ev.tone === 'crit') {
+        what.appendChild(h('span', { className: 'sr', text: ', needs a look' }));
+      }
+      list.appendChild(h('li', {}, [
+        h('span', { className: 'u-when', text: stamp(ev.occurredAt) || 'Time not reported' }),
+        what
+      ]));
+    });
+    box.appendChild(list);
+    return box;
+  }
+
+  /* The record of who has opened this account. It is built so that it would be
+     safe to show the athlete it belongs to, which is why it is on the page
+     and open rather than behind a control. */
+  function accessCard(detail) {
+    var access = detail.access;
+    var box = shell.card();
+    box.appendChild(shell.cardHead('Access history', null, access ? [windowNote(access)] : null));
+
+    var entries = (access && access.entries) || [];
+    if (!entries.length) {
+      box.appendChild(h('div', { className: 'card-body' }, [
+        h('p', { className: 'u-empty', text: access ? 'No access recorded' : 'Not reported' })
+      ]));
+      return box;
+    }
+
+    /* The explicit roles are not redundant: the phone layout lays rows out
+       with display:grid, which makes a browser drop a table's own semantics. */
+    var table = h('table', { className: 'u-log', role: 'table' });
+    table.appendChild(h('caption', { className: 'sr', text: 'Recorded access to this account' }));
+    table.appendChild(h('thead', { role: 'rowgroup' }, [
+      h('tr', { role: 'row' }, ['When', 'Who', 'Fields', 'Reason'].map(function (name) {
+        return h('th', { scope: 'col', role: 'columnheader', text: name });
+      }))
+    ]));
+
+    var tbody = h('tbody', { role: 'rowgroup' });
+    entries.forEach(function (e) {
+      var who = h('td', { role: 'cell' });
+      var actor = e.actor || 'Not reported';
+      var lead = h('span', { className: 'u-who' });
+      lead.appendChild(h('span', { className: 'who-av', 'aria-hidden': 'true', text: /^[\p{L}\p{N}]/u.test(actor) ? actor.charAt(0).toUpperCase() : '·' }));
+      lead.appendChild(h('span', { className: 'u-actor', text: actor }));
+      who.appendChild(lead);
+
+      /* A revealed entry is marked with a word, because "somebody read a
+         personal field" is the row on this table that an athlete reading it
+         would care about most, and colour is the one channel they may not
+         have. */
+      var fieldsCell = h('td', { role: 'cell' });
+      if (e.revealed) {
+        var flag = h('span', { className: 'u-revealed' });
+        flag.appendChild(icon('eye'));
+        flag.appendChild(h('span', { text: e.fields ? 'Revealed ' + e.fields : 'Revealed' }));
+        fieldsCell.appendChild(flag);
+      } else {
+        fieldsCell.appendChild(document.createTextNode(e.fields || 'Summary only'));
+      }
+
+      tbody.appendChild(h('tr', { role: 'row' }, [
+        h('td', { role: 'cell', className: 'u-when', text: stamp(e.occurredAt) || 'Not reported' }),
+        who,
+        fieldsCell,
+        h('td', { role: 'cell', text: e.reason || 'No reason' })
+      ]));
+    });
+    table.appendChild(tbody);
+    box.appendChild(table);
+    return box;
+  }
+
+  /* ------------------------------------------------------------- states */
+
+  function stateCard(iconName, title, lines) {
+    var box = shell.card();
+    box.appendChild(shell.stateBlock(iconName, title, lines, 3));
+    return box;
+  }
+
+  function loadingCard() {
+    return h('div', { className: 'card' }, [
+      h('div', { className: 'card-body' }, [
+        h('p', { className: 'sr', role: 'status', text: 'Loading account' }),
+        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
+        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' })
+      ])
+    ]);
+  }
+
+  function idleState() {
+    return stateCard('search', 'Nothing looked up yet', ['An exact reference or email, and a reason.']);
+  }
+
+  function noMatchState(identifier) {
+    var box = stateCard('search', 'No account found', ['Matches are exact.']);
+    if (identifier) {
+      box.querySelector('.state-block').appendChild(h('div', { className: 'row mt-sm' }, [code(identifier)]));
+    }
     return box;
   }
 
   function errorState(err, retry) {
-    var box = shell.card();
     var missing = err && err.code === 'ops_route_missing';
-    var block = missing
-      ? shell.stateBlock('plug', 'This pane has no API yet', [
-        'The operations API does not answer the account lookup routes on this deployment.',
-        'Nothing has been recorded, because nothing was looked up.'
-      ])
-      : shell.stateBlock('warn', 'Could not look that up', [
-        shell.failureMessage(err),
-        'Nothing has been signed out.'
-      ]);
+    var box = missing
+      ? stateCard('plug', 'No API yet', ['This deployment does not answer account lookups.'])
+      : stateCard('warn', 'Could not look that up', [shell.failureMessage(err)]);
 
     if (retry) {
-      var again = h('button', { className: 'btn btn-primary', type: 'button', text: 'Try again' });
-      again.addEventListener('click', retry);
-      block.appendChild(h('div', { className: 'row mt-sm' }, [again]));
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      again.addEventListener('click', function () {
+        refocus = true;
+        retry();
+      });
+      box.querySelector('.state-block').appendChild(h('div', { className: 'row mt-sm' }, [again]));
     }
-    box.appendChild(block);
     return box;
   }
 
@@ -1360,108 +1360,15 @@
   var lastResult = null;
   var lastIdentifier = '';
   var selectedRef = null;
-  var scope = 'all';
   var seq = 0;
-  /* Whether a lookup has been issued under the current scope, landed or not.
-     lastResult cannot answer that: it is null both before the first lookup and
-     while one is in flight, and those need different handling on a scope
-     change. */
+  /* Whether a lookup has been issued since the last time the result was
+     cleared, landed or not. lastResult cannot answer that: it is null both
+     before the first lookup and while one is in flight, and those need
+     different handling when a narrowing changes. */
   var looked = false;
-
-  /* Whether a box scrolls is a fact about layout, and layout changes for
-     reasons no single call site can see: the window resizes, the account
-     column redraws under a row click without going back through paintResult,
-     a web font lands late and the widest cell grows. So the question is
-     re-asked by watching the two things that can change the answer -- the
-     size of the box, and the size of the table inside it -- plus additions to
-     the result region itself.
-
-     Deliberately NOT a `resize` listener, which is what this started as.
-     A window `resize` event is a notification the browser may decline to
-     send: driving Chrome from 1280px to 375px through CDP fires it in one
-     run and not in the next, at the same call site, with innerWidth changed
-     both times. A ResizeObserver is driven by layout rather than by that
-     event, so it also catches the cases a window resize never covered -- a
-     sidebar collapsing, a zoom, a font swap. aria.js:714 uses the event
-     because it redraws charts on a viewport change, which is genuinely a
-     window question; this one is not.
-
-     Settled at aria.js:714's interval: an affordance that appears and
-     vanishes through a window drag is worse than one that arrives a beat
-     late.
-
-     paintResult deliberately does NOT call this directly. It used to, and the
-     call never fired: a table is appended before its rows are, so at the
-     instant of the paint the box does not clip yet and the answer is a
-     correct no. Measured on the matches table at 375px -- 343/570 at the
-     first sighting, tabindex absent, present 150ms later off the settle. A
-     call that cannot decide the thing it is called for is not a fast path,
-     it is a second place to be wrong. */
-  var syncSettle;
-  var boxWatch = null;
-
-  function queueScrollerSync() {
-    clearTimeout(syncSettle);
-    syncSettle = setTimeout(function () { syncScrollers(resultRegion); }, 140);
-  }
-
-  /* observe() on an element already observed is a no-op, so this is safe to
-     re-run on every sync and needs no bookkeeping of its own. */
-  function watchScroller(wrap) {
-    if (!boxWatch) return;
-    boxWatch.observe(wrap);
-    var table = wrap.querySelector('table');
-    if (table) boxWatch.observe(table);
-  }
-
-  /* A table wider than its card scrolls sideways inside .tbl-wrap, which makes
-     the columns past the edge reachable with a pointer and, without this, with
-     nothing else. A box with `overflow-x: auto` is not focusable by default,
-     and a box that cannot be focused cannot be scrolled from a keyboard:
-     WCAG 2.1.1. Stadiora/Aria#10822.
-
-     It is made a region and a tab stop only WHILE it actually scrolls. At
-     1280px these four tables fit their cards, and a tab stop that cannot move
-     is a stop that announces a region and then does nothing in it.
-
-     The name is read off the table's own <caption class="sr"> rather than
-     written a second time here, so the region and the table cannot come to
-     disagree about what they are.
-
-     ops/assets/pane-evaluations.js:1181 and ops/assets/settings.js:225 set the
-     same three attributes unconditionally. Both name their region, which is
-     the half this repository usually gets wrong; neither asks whether the box
-     scrolls. */
-  function syncScrollers(root) {
-    if (!root || !root.querySelectorAll) return;
-    var wraps = root.querySelectorAll('.tbl-wrap');
-    for (var i = 0; i < wraps.length; i += 1) {
-      var wrap = wraps[i];
-      watchScroller(wrap);
-
-      /* Both integers, so overflow under half a pixel rounds away here. The
-         error that leaves is a clipped hairline with no tab stop; the error
-         the other threshold leaves is a stop that scrolls nothing. Sensitivity
-         is the safe direction when the thing being missed is a barrier. */
-      if (wrap.scrollWidth > wrap.clientWidth) {
-        var caption = wrap.querySelector('caption');
-        var name = caption ? (caption.textContent || '').trim() : '';
-        wrap.setAttribute('tabindex', '0');
-
-        /* An unnamed region is a landmark that says "region" and stops. Where
-           there is no caption to read, reachability is still worth having on
-           its own, so the tab stop goes on and the role does not. */
-        if (name) {
-          wrap.setAttribute('role', 'region');
-          wrap.setAttribute('aria-label', name);
-        }
-      } else {
-        wrap.removeAttribute('tabindex');
-        wrap.removeAttribute('role');
-        wrap.removeAttribute('aria-label');
-      }
-    }
-  }
+  /* Set by Try again. Redrawing the result removes the button that held focus,
+     and focus falls to the body unless it is put somewhere on purpose. */
+  var refocus = false;
 
   function paintResult(node) {
     if (!resultRegion) return;
@@ -1469,18 +1376,29 @@
     if (node) resultRegion.appendChild(node);
   }
 
+  /* After the region is shown again, because focus cannot be placed on
+     something that is still display:none. */
+  function landFocus() {
+    if (!refocus || !resultRegion) return;
+    refocus = false;
+    var head = resultRegion.querySelector('.state-title, .u-ref, .card-title');
+    if (!head) return;
+    head.setAttribute('tabindex', '-1');
+    head.focus();
+  }
+
   function runLookup() {
     var identifier = (identifierInput.value || '').trim();
     var reason = (reasonInput.value || '').trim();
 
     if (!identifier) {
-      setFormError('Enter an exact coded reference, email address or support ticket.');
+      setFormError('Enter an account.');
       identifierInput.setAttribute('aria-invalid', 'true');
       identifierInput.focus();
       return;
     }
     if (reason.length < 3) {
-      setFormError('Give a reason. It is written to the access record beside your name.');
+      setFormError('Add a reason.');
       reasonInput.setAttribute('aria-invalid', 'true');
       reasonInput.focus();
       return;
@@ -1502,7 +1420,7 @@
       body: {
         identifier: identifier,
         reason: reason,
-        scope: scope,
+        scope: scopeSelect.value || 'all',
         state: stateSelect.value || undefined,
         tier: tierSelect.value || undefined
       }
@@ -1515,6 +1433,7 @@
       lastResult = null;
       paintResult(errorState(err, runLookup));
       region.degraded(resultRegion);
+      landFocus();
     });
   }
 
@@ -1533,28 +1452,27 @@
     if (!matches.length) {
       paintResult(noMatchState(lastIdentifier));
       region.empty(resultRegion);
-      shell.announce('No account matches that identifier');
+      landFocus();
+      shell.announce('No account found');
       return;
     }
 
     var stack = h('div', { className: 'stack' });
-    stack.appendChild(recordingNotice(lastResult.recorded, 'this lookup'));
+    var notice = recordingNotice(lastResult.recorded, 'this lookup');
+    if (notice) stack.appendChild(notice);
 
-    var matchBand = shell.band('Matches', null, null);
-    matchBand.appendChild(matchesCard(lastResult, selectAccount, selectedRef));
-    stack.appendChild(matchBand);
+    /* One match is not a choice, so it is opened rather than offered. */
+    if (matches.length > 1) stack.appendChild(matchesCard(lastResult, selectAccount, selectedRef));
 
     stack.appendChild(h('div', { className: 'stack', id: 'accountColumn' }, [
-      h('div', { className: 'card' }, [
-        shell.stateBlock('person', 'Pick an account', ['Opening one is itself recorded.'], 3)
-      ])
+      matches.length > 1 ? stateCard('person', 'Pick an account', []) : loadingCard()
     ]));
     paintResult(stack);
     settle(lastResult.recorded);
+    landFocus();
 
     shell.announce(matches.length === 1 ? '1 account matched' : matches.length + ' accounts matched');
 
-    /* One match is not a choice, so it is opened rather than offered. */
     if (matches.length === 1) selectAccount(matches[0].reference);
   }
 
@@ -1563,22 +1481,16 @@
     clearReveals();
 
     /* Before the request, not after it. The row is what the operator just
-       acted on, and a table that only marks the pick once the account has
+       acted on, and a list that only marks the pick once the account has
        answered leaves the one control on the page with no feedback for the
-       length of a network round trip — which is most of the time anybody is
+       length of a network round trip, which is most of the time anybody is
        looking at it. */
     renderSelectedRow();
 
     var column = document.getElementById('accountColumn');
     if (!column) return;
     clear(column);
-    column.appendChild(h('div', { className: 'card' }, [
-      h('div', { className: 'card-body' }, [
-        h('p', { className: 'sr', role: 'status', text: 'Loading account record' }),
-        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' }),
-        h('div', { className: 'skel skel-row', 'aria-hidden': 'true' })
-      ])
-    ]));
+    column.appendChild(loadingCard());
 
     var mine = ++seq;
     session.call('/api/ops/users/' + encodeURIComponent(reference)).then(function (payload) {
@@ -1589,46 +1501,25 @@
       var col = document.getElementById('accountColumn');
       if (!col) return;
       clear(col);
-      /* Opening an account is its own access record, so the same confirmation
-         the lookup gets is reported here. detail.recorded was declared in the
-         contract and never read, which meant a response that confirmed nothing
-         looked exactly like one that did. */
-      col.appendChild(recordingNotice(detail.recorded, 'opening this account'));
 
-      var one = shell.band('One account', null, null);
-      one.appendChild(h('div', { className: 'grid g2' }, [
-        accountCard(detail),
-        revealCard(detail)
-      ]));
-      col.appendChild(one);
+      /* Opening an account is its own access record, so the same check the
+         lookup gets is made here: a response that confirmed nothing must not
+         look like one that did. */
+      var notice = recordingNotice(detail.recorded, 'opening this account');
+      if (notice) col.appendChild(notice);
 
-      var story = shell.band('Recent activity', null, null);
-      story.appendChild(activityCard(detail));
-      col.appendChild(story);
-
-      var subs = shell.band('Subscription and devices', null, null);
-      subs.appendChild(h('div', { className: 'grid g2' }, [
-        billingCard(detail),
-        devicesCard(detail)
-      ]));
-      col.appendChild(subs);
-
-      var seen = shell.band('Access record', null, null);
-      seen.appendChild(accessCard(detail));
-      col.appendChild(seen);
-
-      var danger = shell.band('Danger zone', 'Not reversible from this pane', [
-        pill('vio', 'Owner only', 'lock')
-      ]);
-      danger.appendChild(dangerCard(detail));
-      col.appendChild(danger);
+      col.appendChild(resultHead(detail));
+      col.appendChild(h('div', { className: 'grid g2' }, [accountCard(detail), billingCard(detail)]));
+      col.appendChild(h('div', { className: 'grid g2' }, [devicesCard(detail), activityCard(detail)]));
+      col.appendChild(accessCard(detail));
 
       settle(lastResult && lastResult.recorded && detail.recorded);
+      landFocus();
 
-      /* The same fact the note directly above this reports. Announcing
-         "opened and recorded" over a warning that says no record was confirmed
-         would leave a screen reader with the one version of events the page
-         has just said it cannot vouch for. */
+      /* The same fact the note above reports. Announcing "opened and recorded"
+         over a warning that says no record was confirmed would leave a screen
+         reader with the one version of events the page has just said it cannot
+         vouch for. */
       shell.announce(detail.recorded
         ? 'Account ' + detail.reference + ' opened and recorded'
         : 'Account ' + detail.reference + ' opened, with no record confirmed');
@@ -1639,15 +1530,39 @@
       clear(col);
       col.appendChild(errorState(err, function () { selectAccount(reference); }));
       region.degraded(resultRegion);
+      landFocus();
     });
   }
 
   function renderSelectedRow() {
     if (!resultRegion) return;
-    Array.prototype.forEach.call(resultRegion.querySelectorAll('.match-row'), function (tr) {
-      var pick = tr.querySelector('.match-row-btn');
-      applySelection(tr, !!pick && pick.getAttribute('data-ref') === selectedRef);
+    Array.prototype.forEach.call(resultRegion.querySelectorAll('.match-row'), function (row) {
+      var pick = row.querySelector('.match-row-btn');
+      applySelection(row, !!pick && pick.getAttribute('data-ref') === selectedRef);
     });
+  }
+
+  /* A narrowing is part of the query, so anything already out was asked under
+     a value that is no longer on screen. The sequence is bumped whether or not
+     a result has landed: leaving it alone let an in-flight lookup resolve and
+     render under the old value while the control showed the new one, which is
+     the pane silently answering a question nobody asked. Anything revealed
+     under the old value goes back behind its mask.
+
+     Refiltering is a new lookup, and a new lookup is a new access record, so it
+     is not run behind the operator's back. The result is drawn over whenever a
+     lookup has been run, in flight or landed, because the skeleton of a
+     lookup that has just been invalidated would otherwise sit on screen
+     forever. */
+  function narrowingChanged() {
+    ++seq;
+    clearReveals();
+    if (!looked || !resultRegion) return;
+    paintResult(stateCard('search', 'Filters changed', ['Search again to apply them.']));
+    region.empty(resultRegion);
+    lastResult = null;
+    selectedRef = null;
+    looked = false;
   }
 
   /* The header's "Look up a user" hands over what was typed and nothing else:
@@ -1676,6 +1591,14 @@
     });
   }
 
+  /* The date, in the slot the shell leaves under the title. */
+  function drawHead() {
+    var slot = document.getElementById('pageSub');
+    if (!slot) return;
+    clear(slot);
+    slot.appendChild(h('span', { className: 'sub-date', text: headDate() }));
+  }
+
   global.addEventListener('ops:lookup', function () { receiveLookup(false); });
 
   /* The shell calls this once, with the pane's content region, after the
@@ -1684,70 +1607,16 @@
      claiming this pane is built: the fact is this file being on the page. */
   shell.definePane('users', function (host) {
     content = host;
-    scope = shell.filters().scope || 'all';
+    drawHead();
 
-    content.appendChild(h('div', { className: 'stack' }, [
-      privilegeStrip(),
-      huntPanel(runLookup)
-    ]));
+    var root = h('div', { className: 'stack users' });
+    content.appendChild(root);
+    root.appendChild(searchStrip(runLookup, narrowingChanged));
 
-    region = shell.region(content);
+    region = shell.region(root);
     receiveLookup(true);
     resultRegion = h('div', { className: 'stack', id: 'lookupResult' });
     resultRegion.appendChild(idleState());
     region.empty(resultRegion);
-
-    /* Two observers, one question. The ResizeObserver answers "is this box
-       still the same shape as what is in it", which is what actually decides
-       the affordance. The MutationObserver exists because a box that has just
-       been created has never been observed: selectAccount redraws the account
-       column in place, and the three tables it brings with it never pass
-       through paintResult.
-
-       childList and subtree only. Watching attributes would make this loop:
-       syncScrollers sets tabindex, role and aria-label, and would be woken by
-       its own writes. */
-    if (global.ResizeObserver) {
-      boxWatch = new global.ResizeObserver(queueScrollerSync);
-    }
-    if (global.MutationObserver) {
-      new global.MutationObserver(queueScrollerSync).observe(resultRegion, {
-        childList: true,
-        subtree: true
-      });
-    }
-  });
-
-  global.addEventListener('ops:filters', function (e) {
-    if (!content || !e.detail) return;
-    var next = e.detail.scope || 'all';
-    if (next === scope) return;
-    scope = next;
-
-    /* The scope is part of the query, so anything already out was asked under
-       a scope that is no longer on screen. The sequence is bumped whether or
-       not a result has landed: leaving it alone let an in-flight lookup
-       resolve and render under the old scope while the filter bar showed the
-       new one, which is the pane silently answering a question nobody asked.
-       Anything revealed under the old scope goes back behind its mask. */
-    ++seq;
-    clearReveals();
-
-    /* Refiltering is a new lookup, and a new lookup is a new access record, so
-       it is not run behind the operator's back. The card is drawn whenever a
-       lookup has been run under the old scope, in flight or landed, because
-       the skeleton of a lookup that has just been invalidated would otherwise
-       sit on screen forever. */
-    if (looked) {
-      paintResult(h('div', { className: 'card' }, [
-        shell.stateBlock('search', 'App filter changed', [
-          'Running the lookup again writes another access record, so it is not run for you.'
-        ])
-      ]));
-      region.empty(resultRegion);
-      lastResult = null;
-      selectedRef = null;
-      looked = false;
-    }
   });
 })(window);

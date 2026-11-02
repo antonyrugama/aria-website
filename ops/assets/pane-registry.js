@@ -200,9 +200,9 @@
     },
     users: {
       file: 'users.html', icon: 'users', label: 'Look up a user', group: 'Apps and people',
-      destination: null,
+      destination: null, datedHead: true,
       question: 'What is going on with this one account?',
-      wave: 'W4', scope: true, range: false, env: false
+      wave: 'W4', scope: false, range: false, env: false
     },
     settings: {
       file: 'settings.html', icon: 'settings', label: 'Settings', group: 'Apps and people',

@@ -275,7 +275,13 @@ const LIVE_SUB = {
       weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
     });
     return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  }
+  },
+  /* Look up a user carries the UTC date of the day and nothing else: there is
+     no figure on it that has a read time. The date is the page's own clock, so
+     it is computed here the same way, on the same clock. */
+  users: () => new Date().toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  })
 };
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
@@ -969,8 +975,8 @@ const RESULT_PROOF = {
   releases: [RELEASES.sources[0].label, RELEASES.adoption.buckets[0].label],
   /* Nothing here is on the page until a lookup has answered AND a match has
      been picked: the masked address comes off the account record the pick
-     requested, and "Access record" is the band the account column ends with. */
-  users: ['Access record', 'Selected', DETAIL.summary.fields[1].maskedValue],
+     requested, and "Access history" is the card the account column ends with. */
+  users: ['Access history', 'Selected', DETAIL.summary.fields[1].maskedValue],
   settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
 };
 
@@ -998,9 +1004,9 @@ for (const page of PAGES) {
    check with a message telling you to delete the line. An exception nobody
    can produce is an exception nobody is reading.
 
-   `why` is the fact, not an excuse. The entries left, all on Look up a user,
-   are query hooks — assets/pane-users.js queries them by class and says so in
-   its own comment — so none is a defect.
+   `why` is the fact, not an excuse. The list is empty: the two query hooks it
+   last held, `match-row` and `sel-mark` on Look up a user, are painted by the
+   rebuilt pane-users-v2.css, so neither reproduces as unpainted any more.
 
    Stadiora/Aria#10644 left this list when Rules and notifications stopped
    writing `rule-row`: the class was styled only in the deleted v1 sheet, and
@@ -1014,12 +1020,7 @@ for (const page of PAGES) {
    `.match-row-btn[aria-pressed="true"]` in assets/pane-users-v2.css, so it no
    longer reproduces as unpainted and carrying it would be carrying an
    exception nobody can produce. */
-const KNOWN_UNPAINTED = [
-  { pane: 'users', cls: 'match-row', issue: null,
-    why: 'a query hook: assets/pane-users.js:1647 finds the rows by it' },
-  { pane: 'users', cls: 'sel-mark', issue: null,
-    why: 'a query hook: assets/pane-users.js:553 finds the selected mark by it' }
-];
+const KNOWN_UNPAINTED = [];
 
 /* The same enumeration for judgement 2: a state a pane declares to assistive
    technology whose control is painted exactly like its unmarked peer today.
@@ -1115,12 +1116,10 @@ const FLOOR_HINTS = {
     'A mutation route outside that list would have been read past, so treat the rule as ' +
     'checked against the declaration, not against the array the pane ran with.',
   users: 'The pairs come from picking a row in Look up a user: aria-current on the row ' +
-    'and aria-pressed on its control. Measured at this head, a one-row result view judges ' +
-    'aria-current and not aria-pressed — the marked <tr> finds an unmarked peer among the ' +
-    'detail card\'s rows (ops/assets/pane-users.js:1095, :1156, :1239) while the marked ' +
-    'control finds none outside the match table. The census above counts every ' +
-    'aria-pressed attribute under #content, whatever wrote it, and applySelection writes ' +
-    'one on the pick control of every rendered match row that has one (:551, from :652). ' +
+    'and aria-pressed on its control. A one-match result view draws no picker, so none of ' +
+    'them exist there; the picker draws only for several matches. The census above counts ' +
+    'every aria-pressed attribute under #content, whatever wrote it, and applySelection in ' +
+    'ops/assets/pane-users.js writes one on the pick control of every rendered match row. ' +
     `The LOOKUP fixture in this file sent ${LOOKUP.matches.length} ` +
     `${LOOKUP.matches.length === 1 ? 'row' : 'rows'}. Those are the two ` +
     'numbers to hold against each other; what else on the page may carry the attribute is ' +
@@ -2382,7 +2381,7 @@ try {
          silent theme and a census full of positive states from the loud one,
          and joining the two says the states were drawn and unjudgeable when
          they were judged, in the other theme. Reproduced at
-         ops/assets/pane-users.js:547,551 by keying the written value on
+         ops/assets/pane-users.js by keying the written value on
          data-theme. The theme is carried too, so the message can say which
          pass it is describing. */
       if (pairCount < (pairsByPane[page.key] ?? Infinity)) {
@@ -2446,7 +2445,7 @@ for (const page of PAGES) {
        Every sentence below is about ATTRIBUTES, because attributes are what
        was counted. An absent aria-pressed does not establish an absent
        control: removing both ARIA writes from applySelection
-       (ops/assets/pane-users.js:547,551) leaves two match rows and two pick
+       (applySelection in ops/assets/pane-users.js) leaves two match rows and two pick
        controls on the page, measured at 81.4 x 28.25 px, and an empty census.
        None of the three cases is attributed to a cause either — the third
        arrives from a narrowed fixture and from a pane regression alike — so
