@@ -223,6 +223,20 @@ function readRegistry() {
 }
 
 const DECLARED = readRegistry();
+
+/* Today carries the date and when its figures were read under the title, not
+   its registry question. The sub is still asserted to the character, off this
+   file's own summary stamp. */
+const LIVE_SUB = {
+  overview: () => {
+    const t = new Date(SUMMARY.generatedAt);
+    const two = (n) => String(n).padStart(2, '0');
+    const day = t.toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+    });
+    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+  }
+};
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
   file: DECLARED[key].file,
@@ -612,9 +626,10 @@ const REVIEW_ITEM = {
 };
 
 const PROOF = {
-  /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
-     both of which the failure card replaces with "Not reported". */
-  overview: ['1,102', SUMMARY.release.platforms[0].versionName],
+  /* SUMMARY.people.platform.active and the title of the worst open problem,
+     both of which the failure card replaces: the first with "Not reported"
+     and the second with nothing at all. */
+  overview: ['1,102', PROBLEM.title],
   /* The id of the first job in the working set, which only the job table
      prints, and the worker-load sentence, which the route sends as prose and
      the pane prints verbatim. Both are absent until a reading is drawn. */
@@ -993,10 +1008,11 @@ try {
             `"${seen.gate}". Nothing was laid out to measure.`);
           continue;
         }
-        if (seen.title !== page.label || seen.sub !== page.question) {
+        const expectedSub = LIVE_SUB[page.key] ? LIVE_SUB[page.key]() : page.question;
+        if (seen.title !== page.label || seen.sub !== expectedSub) {
           failures.push(`${where}: the top bar reads ${JSON.stringify(seen.title)} / ` +
             `${JSON.stringify(seen.sub)}, and ${REGISTRY} declares ` +
-            `${JSON.stringify(page.label)} / ${JSON.stringify(page.question)}.`);
+            `${JSON.stringify(page.label)} / ${JSON.stringify(expectedSub)}.`);
           continue;
         }
         const refused = REFUSALS.find((r) => seen.contentText.includes(r));

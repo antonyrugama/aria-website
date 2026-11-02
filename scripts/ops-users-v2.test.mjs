@@ -274,6 +274,22 @@ async function boot(options) {
   dom.doc.contains = (node) => dom.root.contains(node);
   buildPage(dom, body);
 
+  /* The header's search hands its text over through sessionStorage, before
+     this page loads. */
+  if (opts.handedOver) dom.window.sessionStorage.setItem('ops-user-lookup', opts.handedOver);
+
+  /* A browser ignores focus() on anything it is hiding, and the application is
+     hidden until the shell opens the gate. The stub's focus() always works, so
+     `blindWhileBooting` makes it ignore the call the way the browser does. */
+  if (opts.blindWhileBooting) {
+    let active = null;
+    Object.defineProperty(dom.doc, 'activeElement', {
+      configurable: true,
+      get() { return active; },
+      set(el) { if (!/\bis-booting\b/.test(String(body.className))) active = el; },
+    });
+  }
+
   dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
   dom.window.OpsSession = {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: opts.role || 'owner' } },
@@ -334,6 +350,32 @@ async function boot(options) {
 function field(dom, id) {
   return dom.doc.getElementById(id);
 }
+
+/* ============================ the header's hand-off ====================== */
+
+test('a search handed over from another page fills the identifier and puts the cursor in the reason once the page is open', async () => {
+  const dom = await boot({ handedOver: 'ath_2277', blindWhileBooting: true });
+  assert.equal(field(dom, 'lookupIdentifier').value, 'ath_2277');
+  assert.equal(field(dom, 'lookupReason').value, '', 'a handed-over search was run without a reason');
+  assert.equal(dom.doc.activeElement, field(dom, 'lookupReason'),
+    'the reason field does not have the cursor once the page is open: it was focused behind the ready gate, where a browser drops it, or never');
+  assert.equal(dom.calls.length, 0, 'handing a search over ran it');
+});
+
+test('a search handed over while the pane is already open focuses the reason straight away, once', async () => {
+  const dom = await boot({ blindWhileBooting: true });
+  assert.equal(dom.doc.activeElement === field(dom, 'lookupReason'), false);
+  dom.window.sessionStorage.setItem('ops-user-lookup', 'ath_9001');
+  dom.window.dispatchEvent(new dom.window.CustomEvent('ops:lookup'));
+  assert.equal(field(dom, 'lookupIdentifier').value, 'ath_9001');
+  assert.equal(dom.doc.activeElement, field(dom, 'lookupReason'));
+});
+
+test('a page opened with nothing handed over leaves the cursor alone', async () => {
+  const dom = await boot({ blindWhileBooting: true });
+  assert.equal(field(dom, 'lookupIdentifier').value, '');
+  assert.notEqual(dom.doc.activeElement, field(dom, 'lookupReason'));
+});
 
 /* Runs the search the way a person does: type, then submit the form. */
 async function lookUp(dom, identifier = 'ath_2277', reason = 'SUP-4471') {

@@ -61,7 +61,7 @@ const OUT = (() => {
 /* The ten panes, named as the registry names them. shell-v2.html is the rail
    demo and login/setup are not panes, so none of the three is walked here. */
 const PANES = [
-  { pane: 'overview', url: '/ops/index.html', title: 'Overview' },
+  { pane: 'overview', url: '/ops/index.html', title: 'Today' },
   { pane: 'jobs', url: '/ops/jobs-live.html', title: 'Jobs live' },
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
   { pane: 'alerts', url: '/ops/alerts.html', title: 'Alerts' },
@@ -870,6 +870,18 @@ for (const p of PANES) {
        way everywhere. */
     await load(p.url, v);
     await helpers();
+    /* The theme button lives in the avatar menu, which is closed on load, so a
+       person reaches it by opening the menu from the keyboard first. */
+    const menuOpened = await evalJson(`JSON.stringify((() => {
+      const btn = document.getElementById('acctBtn');
+      if (!btn || !window.__kbd.visible(btn)) return false;
+      btn.focus();
+      return true;
+    })())`);
+    if (menuOpened) {
+      await key('Enter');
+      await new Promise((r) => setTimeout(r, 250));
+    }
     const toggle = await evalJson(`JSON.stringify((() => {
       const els = Array.from(document.querySelectorAll(window.__kbd.INTERACTIVE)).filter(window.__kbd.visible);
       const hit = els.find((el) => /theme|dark|light/i.test(window.__kbd.describe(el).label + ' ' + (el.id || '') + ' ' + (el.getAttribute('class') || '')));

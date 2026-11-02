@@ -18,27 +18,14 @@
 
 /* --------------------------------------------------------------- entries */
 
+/* Both entries are menu items in the avatar menu, so they take the menu's own
+   row shape (.menu-item in aria.css) and only the parts a tour adds are here.
+   The note says where an unfinished tour stopped, and is only drawn then. */
 .tour-entry { flex: none; }
-/* One line in the top bar: a wrapped label would grow the bar's height on
-   every pane at the widths where it shows. */
 .tour-entry-label { white-space: nowrap; }
 
-/* On a phone the top bar has room for a glyph and not for a sentence. The
-   button keeps its name through aria-label, which carries the same words the
-   label shows at every other width. */
-@media (max-width: 560px) {
-  .tour-entry-label { display: none; }
-}
-
-.tour-rail {
-  display: flex; flex-direction: column; gap: 7px;
-  margin-top: 16px;
-  padding: 10px;
-  border-radius: var(--r);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.tour-rail-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.tour-rail-note { font-size: 11px; line-height: 1.45; color: var(--ink-3); }
+.tour-rail { display: flex; flex-direction: column; }
+.tour-rail-note { padding: 4px 12px 6px; font-size: 12px; line-height: 1.45; color: var(--ink-3); }
 
 /* ---------------------------------------------------------------- dialog */
 

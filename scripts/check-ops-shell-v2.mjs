@@ -64,7 +64,7 @@ const PANES = [
    would mean shipping the palette twice. The whole palette is pinned in
    PALETTE below and checked on the booted page; this is the sentinel for
    "which theme painted", not a claim that the palette is only two values. */
-const CYAN = { dark: '#22D3EE', light: '#0891B2' };
+const CYAN = { dark: '#00E5FF', light: '#0891B2' };
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -257,7 +257,7 @@ const REQUIRED_TOKENS = [
    the canvas behind an overscroll — and it is per-theme, not invariant. */
 const INVARIANT = {
   '--r-sm': '8px', '--r': '12px', '--r-lg': '16px', '--r-xl': '22px',
-  '--rail': '244px',
+  '--rail': '184px',
   '--sans': "'Geist', 'Inter Tight', 'Inter', -apple-system, system-ui, sans-serif",
   '--mono': "'Geist Mono', 'JetBrains Mono', ui-monospace, monospace",
 };
@@ -266,13 +266,13 @@ const COLOR_SCHEME = { dark: 'dark', light: 'light' };
 
 const PALETTE = {
   dark: {
-    '--cyan': '#22D3EE', '--cyan-lit': '#67E8F9', '--violet': '#A78BFA',
-    '--emerald': '#34D399', '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
-    '--cyan-ink': '#22D3EE', '--violet-ink': '#A78BFA', '--emerald-ink': '#34D399',
-    '--amber-ink': '#FBBF24', '--rose-ink': '#FB7185', '--blue-ink': '#60A5FA',
-    '--bg': '#06080B', '--surface': '#0E1218', '--surface-2': '#141A22', '--surface-3': '#1B222C',
-    '--ink': '#E8EEF6', '--ink-2': '#97A6BA', '--ink-3': '#7E8DA3',
-    '--line': 'rgba(255, 255, 255, .07)', '--line-2': 'rgba(255, 255, 255, .11)',
+    '--cyan': '#00E5FF', '--cyan-lit': '#5CF0FF', '--violet': '#8B5CF6',
+    '--emerald': '#34D399', '--amber': '#FBBF24', '--rose': '#F87171', '--blue': '#60A5FA',
+    '--cyan-ink': '#00E5FF', '--violet-ink': '#A78BFA', '--emerald-ink': '#3CDBA0',
+    '--amber-ink': '#FBBF24', '--rose-ink': '#FA7C7C', '--blue-ink': '#60A5FA',
+    '--bg': '#0A0A0A', '--surface': '#1C1C1E', '--surface-2': '#252528', '--surface-3': '#2C2C2E',
+    '--ink': '#F5F5F7', '--ink-2': '#B0B0B8', '--ink-3': '#9A9AA3',
+    '--line': 'rgba(255, 255, 255, .08)', '--line-2': 'rgba(255, 255, 255, .13)',
     '--edge': 'rgba(255, 255, 255, .06)',
     '--shadow-1': '0 1px 2px rgba(0,0,0,.4)',
     '--shadow-2': '0 4px 16px -4px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.3)',
@@ -539,6 +539,7 @@ const SHELL_PROBE = `(() => {
 
   return JSON.stringify({
     groups: [...document.querySelectorAll('.nav-group')].map((n) => n.textContent.trim()),
+    navLabels: [...document.querySelectorAll('.nav-item .nav-label')].map((n) => n.textContent.trim()),
     navItems: document.querySelectorAll('.nav-item').length,
     navItemsWithIcon: document.querySelectorAll('.nav-item > svg.ico').length,
     account: !!document.querySelector('.rail-foot .who-name'),
@@ -833,12 +834,17 @@ try {
       `${tokens.palettePinned} hold the exact value the design writes`);
 
     const shell = await evaluate(SHELL_PROBE);
-    const expectGroups = ['Right now', 'How we are doing', 'Apps and people'];
-    if (JSON.stringify(shell.groups) !== JSON.stringify(expectGroups)) {
-      failures.push(`${SHELL} (${theme}): rail groups are ${JSON.stringify(shell.groups)}`);
+    /* The rail is five destinations in one list, with no group headings: the
+       eleven panes sit behind them as sub-navigation, not as rail rows. */
+    const expectLabels = ['Today', 'Growth', 'Health', 'Money', 'Aria AI'];
+    if (shell.groups.length !== 0) {
+      failures.push(`${SHELL} (${theme}): rail groups are ${JSON.stringify(shell.groups)}, ` +
+        'expected none');
     }
-    if (shell.navItems !== 11) {
-      failures.push(`${SHELL} (${theme}): rail drew ${shell.navItems} panes, expected 11`);
+    if (shell.navItems !== expectLabels.length
+      || JSON.stringify(shell.navLabels) !== JSON.stringify(expectLabels)) {
+      failures.push(`${SHELL} (${theme}): the rail drew ${shell.navItems} destinations ` +
+        `${JSON.stringify(shell.navLabels)}, expected ${JSON.stringify(expectLabels)}`);
     }
     if (!shell.account) {
       failures.push(`${SHELL} (${theme}): the rail has no account footer`);
@@ -892,7 +898,7 @@ try {
     if (!shell.ribbonName || !shell.ribbonName.includes('peak at')) {
       failures.push(`${SHELL} (${theme}): the ribbon has no derived name. Got ${shell.ribbonName}`);
     }
-    const api = ['applyState', 'boot', 'icon', 'redraw'];
+    const api = ['appendBadge', 'applyState', 'boot', 'icon', 'lookup', 'redraw', 'takeLookup'];
     if (JSON.stringify(shell.api) !== JSON.stringify(api)) {
       failures.push(`${SHELL} (${theme}): window.Aria exposes ${JSON.stringify(shell.api)}, ` +
         `expected ${JSON.stringify(api)}`);
@@ -1061,12 +1067,14 @@ try {
     note(`${SHELL} ${theme}: pre-paint theme correct with aria.js blocked, no state flash`);
   }
 
-  /* Nothing stored. theme.js now has to decide from the system, and this is
-     the third place the default is written — the branch the two cases above
-     can never reach, because they always store a choice. Run in both
-     directions: a fallback hard-coded either way passes one and fails the
-     other. */
-  for (const [media, expected] of [['dark', 'dark'], ['light', 'light']]) {
+  /* Nothing stored. theme.js decides from nothing but its own default, and this
+     is the third place the default is written — the branch the two cases above
+     can never reach, because they always store a choice. The default is dark
+     whatever the system prefers: it is the house look, and the stored choice
+     (the switch in the avatar menu) is what makes a page light. Run under both
+     system preferences: a fallback that follows the system fails the light
+     run, and one hard-coded to light fails both. */
+  for (const [media, expected] of [['dark', 'dark'], ['light', 'dark']]) {
     await setTheme(null, media);
     await load(origin + SHELL, { settle: 400 });
     const seen = await evaluate(PREPAINT_PROBE);

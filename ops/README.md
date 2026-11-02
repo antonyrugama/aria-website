@@ -265,7 +265,7 @@ ever disagree with the first one.
 ops/
   login.html            sign in, the choose-your-own-password step, and the setup-link request
   setup.html            first-time setup: spend the emailed link, choose the first password
-  index.html            Overview
+  index.html            Today
   jobs-live.html        Happening now
   run-history.html      What happened
   alerts.html           Problems
@@ -291,11 +291,10 @@ ops/
                         page loads it; likewise
     alerts-model.js     the problems API in plain words; which pages load it is
                         assets-by-page, and no count is kept here
-    pane-overview.js    Overview
+    pane-overview.js    Today
     pane-alerts.js      Problems
-    pane-data.js        v1 plumbing for the understand panes and for Overview's
-                        figures: source, formatting, states, charts — no page
-                        loads it; likewise
+    pane-data.js        v1 plumbing for the understand panes: source, formatting,
+                        states, charts — no page loads it; likewise
     pane-analytics.js   People and usage
     pane-spend.js       Cloud costs
     pane-evaluations.js dataset validation, private quarantine import, approval handoffs and admission
@@ -304,14 +303,14 @@ ops/
     settings.js         Settings
   shell-v2.html         the v2 design system, rendered — reference page, not a pane
   assets/
-    aria.css            v2 design system: tokens, rail, top bar, components
-    aria.js             v2 runtime: rail, icons, charts, preview states
+    aria.css            v2 design system: tokens, rail, bottom bar, top bar, components
+    aria.js             v2 runtime: navigation, icons, charts, preview states
     shell-v2.js         the controller for shell-v2.html
-    shell-pane-v2.js    the v2 pane bootstrap: session gate, rail, top bar,
+    shell-pane-v2.js    the v2 pane bootstrap: session gate, navigation, top bar,
                         filter bar, roles, definePane, the four states
     shell-pane-v2.css   what a v2 pane page needs and aria.css does not carry:
-                        the three gates, the phone drawer, the toast
-    pane-overview-v2.css  Overview's own shapes
+                        the three gates, the sub-navigation, the toast
+    pane-overview-v2.css  Today's own shapes
     pane-releases-v2.css  App releases' own shapes
     pane-alerts-v2.css    Problems' own shapes
     pane-settings-v2.css  Settings' own shapes
@@ -324,7 +323,7 @@ ops/
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Cloud costs' own shapes
-    tour.js               the guided tour: "What am I looking at?" and "Take the
+    tour.js               the guided tour: "About this page" and "Take the
                           tour", built from the registry and the page on screen
     tour-v2.css           the tour's own shapes
 ```
@@ -388,7 +387,7 @@ each one, derived the same way.
 
 ```claims id=assets-only-in-tests
 operate.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
-pane-data.js = ops-overview-v2.test.mjs, ops-shell-pane-v2.test.mjs
+pane-data.js = ops-shell-pane-v2.test.mjs
 shell.js = ops-alerts-v2.test.mjs, ops-shell-pane-v2.test.mjs
 ```
 
@@ -426,15 +425,15 @@ list typed here once said `ops.css` declares `.pill` and `.tbl`, and it declares
 never did.
 
 ```claims id=v1-v2-collision
-class names declared in both ops.css and aria.css = 47
+class names declared in both ops.css and aria.css = 48
 .btn = 7 selectors in ops.css, 4 in aria.css
 .budget = 4 selectors in ops.css, 3 in aria.css
 .card-foot = 3 selectors in ops.css, 2 in aria.css
 .card-head = 3 selectors in ops.css, 1 in aria.css
-.content = 3 selectors in ops.css, 2 in aria.css
 .legend = 4 selectors in ops.css, 3 in aria.css
-.nav-item = 9 selectors in ops.css, 6 in aria.css
-.seg = 5 selectors in ops.css, 4 in aria.css
+.lookup-input = 4 selectors in ops.css, 3 in aria.css
+.nav-item = 9 selectors in ops.css, 7 in aria.css
+.seg = 5 selectors in ops.css, 5 in aria.css
 ```
  **Which layer a pane is on is stated by its own page**, in the stylesheets
 and scripts its `<head>` loads, and nowhere else: a list written here by hand would have to be
@@ -460,10 +459,13 @@ Three things about `aria.js` are worth knowing before using it:
 
 - `Aria.icon(name)` returns an **SVGElement**, not a string. Nothing in this repository builds
   markup from a string, so the mock's `innerHTML` form could not come across.
-- The rail's badges and the account footer are **passed in** through `boot({ badges, account })`
+- The navigation's badges and the account are **passed in** through `boot({ badges, account })`
   and render nothing when absent. The mock hard-codes both; they are operational facts, and a
   dashboard that invents a count is worse than one that shows nothing.
-- `boot`, `icon`, `redraw` and `applyState` are the whole surface. There is no `Aria.icons()`.
+- `boot`, `icon`, `redraw` and `applyState` are the whole surface, plus three that the pane
+  shell reaches for: `appendBadge`, which draws a count the way the navigation does, and
+  `lookup` and `takeLookup`, the two ends of the header search's hand-off to Look up a user.
+  There is no `Aria.icons()`.
 
 Theme is **not** decided in `aria.js`. `theme.js` is a blocking script in every `<head>` and owns
 the pre-paint decision; `aria.js` reads what it wrote. The stylesheet's `:root` default has to
@@ -506,11 +508,32 @@ users = users.html, shell-pane-v2.js, pane-users-v2.css
 settings = settings.html, shell-pane-v2.js, pane-settings-v2.css
 ```
 
+### The shell: five places, and a way into a user
+
+The navigation is five destinations rather than a list of panes: **Today**, **Growth**,
+**Health**, **Money** and **Aria AI**. On a desktop they are a 184px rail down the left; on a phone
+they are a bottom bar, and the old slide-in drawer is gone. Which pane a destination opens on, and
+which other pages sit inside it, is declared once in `pane-registry.js` (`destination` on each
+pane, and `DESTINATIONS`), so the rail, the bottom bar and the row of sibling pages under a title
+cannot disagree. A destination with a single page shows no such row. Nothing about the navigation
+varies by role: a destination the role cannot open still links to it and carries the badge that
+says why.
+
+Three things moved out of the rail. **Settings, Administrators, Sessions and Audit** are in the
+avatar menu at the end of the top bar, and so are the tour's two
+entries. **Look up a user** is the search at the top of every page: it carries what was typed to
+the users pane through `sessionStorage` rather than the address, because the lookup is audited and
+an address is logged and shared, and the users pane reads it once and removes it.
+
+The default theme is **dark**, whatever the operating system prefers; a stored `light` choice
+wins, and light stays fully supported through the same tokens. The accent is cyan `#00E5FF`;
+violet `#8B5CF6` is reserved for Aria AI.
+
 ### One registry, two shells
 
 `assets/pane-registry.js` holds `PANES`, `GROUPS`, `WAVES`, `RANGES`, `SCOPES` and `ENVS` — what
 each pane is called, the question it owns, which filters its own reads can honour, which roles
-may open it, and the id it answers to in the v2 rail. It used to live inside `shell.js`. It was
+may open it, and the destination it belongs to in the v2 navigation. It used to live inside `shell.js`. It was
 lifted out unchanged so that a v1 page and a v2 page cannot disagree about what a pane is: the
 rail on every page is drawn from this table, and a second copy of it would drift the first time
 somebody renamed a pane.
@@ -554,7 +577,7 @@ and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 | `filters()` / `resetRange()` | the current selection; put the range back to the pane's default |
 | `paneFilters(nodes)` | the pane's own controls, in the shared filter bar, replacing any it put there before |
 | `paneHref(paneId)` | a link to another pane, carrying only the filters that pane has |
-| `setBadge(railId, badge)` | a count beside a rail item, or `null` to remove it |
+| `setBadge(paneId, badge)` | a count beside every place the navigation names that pane, or `null` to remove it |
 | `region(content)` | the four preview states, as a region the pane owns |
 | `read(source)` | the pane's own read, through the local fixture hook |
 | `h` / `icon` / `card` / `cardHead` / `band` / `bandHead` / `stateBlock` / `link` | DOM builders, never `innerHTML` |
@@ -564,37 +587,54 @@ Two events fire on `window` once the shell is in the document: `ops:ready` and t
 which fires again on every change. Both carry the starting selection, so a pane never reads the
 querystring itself.
 
-Rail badges and the account footer are passed through `Aria.boot({ badges, account })` and render
+Navigation badges and the account are passed through `Aria.boot({ badges, account })` and render
 nothing when absent. Wire them from a real read or pass nothing: a dashboard that invents a count
-is worse than one that shows nothing. Overview's Problems badge is the count from
-`/api/ops/alerts/problems`, and it is removed when that read comes back empty.
+is worse than one that shows nothing. Today's Problems badge is the count from
+`/api/ops/alerts/problems`, filed under the Problems pane's id and worn by the Health destination
+(and by the Problems link in its sub-navigation), and it is removed when that read comes back
+empty.
 
 ## What this release does and does not do
 
 The shell, the sign in, and the design system are built. Of the panes, **Problems** is complete:
 it reads the live problems and alert rules, takes a problem on, closes it with a reason, tunes a
 rule where the role allows it, and states whether the alerting is armed and where what it finds
-is sent. **Overview** answers both of its questions from live reads. The status ribbon and the
-needs-attention queue come from the problems API, and every entry opens the pane that owns the
-work; the four headline figures, the activity line, and the list of what is
-deliberately not drawn come from `GET /api/ops/summary`, which composes them server side.
+is sent. **Today** answers its three questions from live reads — how many people used the app this
+week, is it working, and is anything wrong — and owns no detail: every figure on it is a doorway
+into the page that owns the question. It makes seven reads, each on its own terms: the people
+figure and the AI run count from `GET /api/ops/summary`; the daily lines from `/api/ops/usage`;
+the queue from `/api/ops/alerts/problems`; whether
+anything is in a position to notice from `/api/ops/alerts/rules`; what is running, queued and
+stuck from `/api/ops/jobs`; how the last 24 hours went from `/api/ops/runs`; and the latest billed
+day from `/api/ops/costs`. Every read is carried as a value, so a read that is down takes only its
+own section off the screen and gives it a Try again that re-reads only that read. Each read has its
+own generation, so overlapping retries of one section are superseded and the newest answer wins in
+whichever order they come back, while another section's retry is left alone. An operator who
+cannot see spend can still act on a critical problem.
 
-Three things about that pane are rules rather than styling, and each one is a rule about not
-drawing something. Every figure is labelled with the window the answer says it covers, read from
-the payload's `window`: the activity line accepts both the day-grain answer already in production
-and the hour-grain answer that restores the approved last-24-hours chart, so the site and API can
-deploy in either order without inventing a window. Every block carries an `availability` state and its figures are
-absent from the payload unless that state is `ready`, so a tile that is not ready renders words
-and never a numeral. And the two apps are never added together: the activity line is one series
-per app, and the headline people figure is the platform's own distinct count rather than the sum
-of the two, because somebody who used both is one person.
+Five things about that pane are rules rather than styling, and each one is a rule about not
+drawing something. **Empty never means zero**: every block carries an `availability` state and its
+figures are absent from the payload unless that state is `ready`, so a tile that is not ready
+renders words and never a numeral. **The two apps are never added together**: the headline people
+figure is the platform's own distinct count rather than the sum of the two, because somebody who
+used both is one person, and the change in active people is an absolute difference rather than a
+rate. **Nothing absent is filled in**: a day with no reading is a gap in the line. **"No critical
+issues" is a claim**, printed only after a complete, readable problems result and only when
+something was in a position to notice; a failed, capped or unreadable problems list (one with no
+list in it at all is a failed read, never an empty queue), or checks that are not running, say so
+instead, and the health line carries a state of its own for "no alert destination set". The claim
+is about the problems and nothing else, so what it leaves out is printed beside it in the
+secondary ink: "N checks not reporting" for enabled rules that have not reached a verdict, and
+"Checks last ran <age>" once the newest verdict is more than fifteen minutes old (the rules are
+evaluated every five).
+And **a moment is earned or it is not drawn**: each tile under "This week" has one rule and
+renders only when its own reads prove it, and the strip draws only the tiles that were earned, so
+it can hold two, one, or none and then is not drawn at all. A read that fails removes its tile.
+There are two moments, the best mobile day and more AI runs than the week before. A "most paying"
+moment is not drawn at all.
 
-The cost tile draws no budget bar. Nothing in the platform records a cloud budget, so the route
-marks the figure `basis: 'spend'` and names the gap in `omissions`, and the pane prints the
-omission with its reason instead of drawing a track against a target that does not exist. The
-same list is what replaced the old "Not on this page yet" block, and it is rendered from the
-answer rather than from a list in the client, so a figure that gains a source leaves it without
-an edit here.
+The cost tile draws no budget bar and no forecast. Nothing in the platform records a cloud budget,
+so there is no target to draw a track against, and only billed usage to date is stored.
 
 **Happening now** draws the live queue from `GET /api/ops/jobs`, which app-backend serves off the
 job lifecycle state recorded by Stadiora/Aria#5561. It has counts by state, and a working set of
@@ -654,7 +694,7 @@ says why, and Hide content removes the text from the DOM.
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
 which is the opposite of what a window ending today needs. When a page comes back full, both
-Overview and Problems say so and every count reads as "at least"; on Problems the whole of the
+Today and Problems say so and every count reads as "at least"; on Problems the whole of the
 "how the watching is doing" card — the fortnight's opened and closed counts, the median time to
 take one on, and the false-alarm figure — says it cannot be worked out rather than showing a
 number that is quietly short.
@@ -775,13 +815,14 @@ piece of infrastructure rather than per app and splitting a shared bill by clien
 invented number.
 
 That rule now binds a built pane to what its own reads can carry, through the registry's
-`filterNote`. Overview declares no scope, range or environment control, because everything it
-draws is the state of things right now, across every app, in production; Problems keeps its
+`filterNote`. Today declares no scope, range or environment control, because everything it
+draws is the state of things right now, across every app, in production, and it carries no note
+either: there is no control, so there is nothing to apologise for. Problems keeps its
 window, which is applied to the problems that were read and disclosed in the count line under
 the list, and drops the environment control, because a problem carries no environment to filter
 on. A control that moves and changes nothing is worse than no control: it leaves Staging showing
-in the bar over production figures. Both say so where the control would have been, and both get
-their controls back when something can carry them.
+in the bar over production figures. Problems says so where the control would have been, and gets
+its controls back when something can carry them.
 
 People and usage and Cloud costs keep the controls the registry gives them, and now every one of
 those controls is carried into the read: People and usage sends `scope`, `range` and `env`, and
@@ -813,8 +854,8 @@ lifecycle state is kept per job type and written by production workers only, so 
 app nor an environment to narrow by; What happened's run record carries no client app or
 environment column at all. No bar on this dashboard can supply a start and an end. All of it is
 now declared `false` — or, for the
-custom window, simply not listed — and one `filterNote` on each pane says why, which is what
-Overview has done since it was built.
+custom window, simply not listed — and one `filterNote` on each pane says why. Today needs no
+note, because it has no control for one to stand in for.
 
 What happened keeps its window, and since `GET /api/ops/runs` takes one, the window is now
 *sent* rather than applied to what came back. That moves the pane from the answer-side half of
@@ -843,7 +884,7 @@ bootstrap like every other — the `panes` block above is what says so — and t
 about what that file boots rather than about which shell the pane is on.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
-so a non-owner sees it marked in the rail and lands on a state that names the role it needs
+so a non-owner sees it marked in the avatar menu and lands on a state that names the role it needs
 rather than a destination that silently vanishes. The server enforces this independently; the
 client renders a fact, it does not decide one.
 
@@ -852,8 +893,8 @@ client renders a fact, it does not decide one.
 `assets/tour.js` explains the dashboard to the person using it. It is mounted by its own script,
 after the shell says the page is up, so `assets/shell-pane-v2.js` carries no tour code:
 
-- **What am I looking at?** in the top bar opens the steps for the pane on screen, at any time.
-- **Take the tour** at the foot of the rail walks every pane `assets/pane-registry.js` declares,
+- **About this page**, in the avatar menu, opens the steps for the pane on screen, at any time.
+- **Take the tour** in the avatar menu walks every pane `assets/pane-registry.js` declares,
   in the order it declares them, and carries on to the next pane's page at the end of each.
 
 Every pane's first step is made from its registry entry: its question, and what its filter bar
@@ -871,7 +912,7 @@ request; the only thing it can do is move to another pane's page.
 
 **Where it stops is kept** in `localStorage` under `ops-tour-progress`: the pane, the step,
 whether the dialog was open, and whether the tour was dismissed or finished. A reload brings an
-open dialog back at the same step; a dismissed tour stays closed and the rail offers to resume
+open dialog back at the same step; a dismissed tour stays closed and the avatar menu offers to resume
 it.
 
 **Metric wording is quoted, not paraphrased**, where the metric definitions in the Aria monorepo
@@ -889,9 +930,9 @@ covered by a step, so a band added to a pane without a tour entry is a red run. 
 does, from focus to what is remembered, is `scripts/ops-tour-dialog.test.mjs`.
 
 Neither suite lays the tour out. To see it, run `.github/workflows/ops-tour-render.yml` from the
-Actions tab. It runs `scripts/render-ops-tour.mjs`, which opens the tour from "What am I looking
-at?" on every pane the registry declares, in both themes, at 1440x900 and 375x812, and photographs
-every step of each pane's guide, plus the first dialog of "Take the tour" and the rail's block that
+Actions tab. It runs `scripts/render-ops-tour.mjs`, which opens the tour from "About this page"
+on every pane the registry declares, in both themes, at 1440x900 and 375x812, and photographs
+every step of each pane's guide, plus the first dialog of "Take the tour" and the avatar menu's block that
 offers it at each theme and width. The pictures and an index naming each one's pane, theme, width
 and step are uploaded as the `ops-tour-render` artifact. It runs by hand, and on its own only for
 a pull request that changes the workflow or its script. It is not a guard: it fails only when a
@@ -1110,7 +1151,7 @@ pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
 pane-evaluations.js = /api/ops/seval/admin/datasets/, /api/ops/seval/admin/overview, /api/ops/seval/admin/scenarios/, /api/ops/seval/operations
 pane-jobs-live-v2.js = /api/ops/jobs
-pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/summary
+pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/costs, /api/ops/jobs, /api/ops/runs, /api/ops/summary, /api/ops/usage
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
 pane-review-admin.js = /api/ops/seval/admin/reviews/adjudications, /api/ops/seval/admin/reviews/items/, /api/ops/seval/admin/reviews/labels, /api/ops/seval/admin/reviews/queue
@@ -1516,7 +1557,7 @@ those panes now.
 
     ```claims id=sr-span-classes
     absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
-    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-releases.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-overview.js, pane-releases.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
     ```
 
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
@@ -1550,61 +1591,49 @@ those panes now.
     narrow enough to fit. It was found by the check in `scripts/check-ops-narrow-overflow.mjs`
     running in CI, after a local run of the same commit had passed.
 
-### Overview on v2: where the pane departs from the mock
+### Today on v2: where the page departs from the mock
 
-`docs/mocks/ops-dashboard-v2/index.html` in the Aria monorepo is the approved design. The pane
-follows its structure, its drill-down paths and the rules its README calls normative.
+The approved design is the Today pair in the R54 set, `T-desktop` and `T-phone`. The page follows
+its structure, its order, its colours and its rule that every figure is a doorway into the page
+that owns the question. The mock is a still picture with hand-written sample text and the page
+writes its words from the answers, so wording, exact dates and the chart ceilings differ in more
+places than are listed here. The list is the departures that carry a decision, read as "these are
+on purpose and here is why", not as "everything else is identical".
 
-The list below is **not a complete diff against the mock** and does not claim to be. It names
-the departures that carry a decision: a thing the mock draws that nothing behind the pane can
-answer, and a second caption for a fact already on screen. Wording, ordering within a card and
-exact copy differ in more places than are listed here, because the mock is a static page with
-hand-written sample text and the pane writes its words from the answer. Anyone checking this
-pane against the mock should read the list as "these are on purpose and here is why", not as
-"everything else is identical".
+1. **There is no "Most paying" tile.** The mock's third moment needs fifty-six daily snapshots of
+   the verified paying count, and the backend exposes only weekly samples, so the rule cannot be
+   proved from what the page can read. It is not drawn, and not approximated from the weeks. The
+   "This week" strip draws the tiles that are earned, so it can be two wide, one wide, or absent.
+2. **The health line has a state the mock does not.** "No alert destination set" is drawn when
+   nothing is in a position to notice, before "No critical issues" can be claimed. The order is
+   critical, capped, rules unread ("Checks unread"), untrusted, no destination, then none. Only
+   the last of those carries the check-coverage line beside it.
+3. **Health is a pulse glyph and Money is a coin**, where the mock draws a heart and a database.
+   The brand mark is the existing arrow glyph rather than the mock's cyan dot.
+4. **No drawer.** The phone navigation is the bottom bar. Growth, Health and Aria AI each carry a
+   row of sibling pages under the title, because five destinations hold eleven pages.
+5. **The rail foot is a plain avatar and a first name, with no caret.** The account menu is in the
+   top bar, which is also where the tour's entries moved to; the account button is a rounded
+   rectangle around the round avatar.
+6. **The AI bar is drawn from counts and prints no percentage**, and is hidden on the phone. The
+   "Happening now" notches are tally ticks, not a gauge.
+7. **The people delta is an absolute difference**, not a rate, so an absent comparison is shown as
+   absent rather than as a percentage of nothing.
+8. **A problem row's owner is "Someone is on it"** with a generic glyph: the session layer masks
+   `acknowledgedByEmail`, so a name is not available to draw.
+9. **On the phone the "Last 24h" line is separate from "24 / 25 worked"**, and the Cloud spend tile
+   hides the daily average and its link.
+10. **The top bar's sub is the date and "Updated HH:MM UTC"**, drawn from the summary's
+    `generatedAt`, not the registry's question. The question stays in the registry for the tour.
+11. **Dark is the default whatever the operating system prefers.** A stored light choice wins.
+    `--cyan` moved from `#22d3ee` to `#00e5ff`, the heaviest font weight from 650 to 640, and
+    the dark `--emerald-ink` and `--rose-ink` one step lighter.
+12. **The tour dropped two Overview steps**, "App version" and "Not drawn here", because the
+    page no longer draws what they explained.
 
-1. **No App, Range or Environment control.** The registry gives Overview none, and the filter bar
-   states the absence where they would have been. `/api/ops/summary` takes no parameter and
-   reports the environment it answered for; a control that changes nothing is worse than no
-   control, because the selection sits in the bar looking applied.
-2. **No budget bar on the cost tile.** Nothing in the platform records a cloud budget. The route
-   marks the figure `basis: 'spend'` and names the gap in `omissions`, and the pane prints the
-   omission with its reason. An empty track reads as a budget with nothing spent against it and
-   a full one as a budget already gone.
-3. **No month-end forecast**, for the same reason: only billed usage to date is stored.
-4. **No sparkline in the tiles.** The activity series exists for active people only. A sparkline on
-   three tiles out of four, with one of them drawn from a different shape, invites a comparison
-   between lines that are not comparable.
-5. **No severity stack bar in the ribbon.** The chips beside it already carry each count with its
-   own glyph and word; the bar is the same fact a second time, in colour.
-6. **The mock's explanatory captions are not reproduced.** "Not the sum of the two apps", the
-   omissions footer, and the cost tile's sentence about `basis` each restate something the figure,
-   the pill or the omissions card already says. The mocks encode one fact per slot, and that rule
-   is what took the approved set from 7,240 words to 4,842.
-
-7. **Five more things the mock draws are absent, all for reason (2) above — no source.** They
-   are listed separately because they are structural, not wording, and a reader diffing the pane
-   against the mock hits them first:
-   - the hero service-health chips (`Main backend 99.98%`, `Aria AI 99.94%`, `Plan builder`,
-     `Database 3ms`). No uptime or latency series is stored per component; `/api/ops/summary`
-     answers for the platform, not for four named services.
-   - the AI-runs quality figures (`98.6% finished cleanly`, `Slowest 5% took 8.4s`). The route
-     returns a run count and its previous-window count, and no outcome or duration distribution.
-   - the version tile's `Adoption 73%` and `Crash free 99.7%` meters. Neither is recorded; a
-     meter drawn against a denominator nothing stores is the budget-bar problem again.
-   - `Auto refresh · 60s`. Nothing here polls, and a label claiming a refresh that does not
-     happen is worse than a page you know is a snapshot.
-
-The same card also carries two pane-held entries. **What Aria has been doing** has no route
-field for per-request-type requests, reliability, latency and cost; `/api/ops/summary` returns
-platform totals only, so it cannot split the approved table into rows. **Where the money goes**
-is drawn on Cloud costs by category and resource group; Overview has no smaller spend-breakdown
-field to place beside its live operating summary. API-declared omissions are still deduplicated
-against these entries by stable omission key, so if the route starts naming either gap the pane
-does not print it twice.
-
-Everything else the omissions card shows comes **from the answer**, never from a list in the
-client, so a figure that gains a source drops off the card without a code change here.
+Everything the mock draws that nothing behind the page can answer is simply absent rather than
+faked: no service-health chips per component, no uptime, no latency percentiles, no adoption or
+crash-free meters, no auto-refresh. Nothing here polls.
 
 ### App releases on v2: where the pane departs from the mock
 
@@ -1612,7 +1641,7 @@ client, so a figure that gains a source drops off the card without a code change
 pane follows its structure — the four-rung pipeline, the version-share band, the store card with
 its age attached, the health comparison — and the rules its README calls normative.
 
-As with Overview above, this is **not a complete diff** and does not claim to be. It names the
+As with Today above, this is **not a complete diff** and does not claim to be. It names the
 departures that carry a decision.
 
 The pane's one claim comes first, because most of the list follows from it. A version sitting at
@@ -1886,7 +1915,7 @@ departures that carry a decision.
 `docs/mocks/ops-dashboard-v2/alerts.html` in the Aria monorepo is the approved design. The pane
 follows its structure, its drill-down paths and the rules its README calls normative.
 
-As with Overview, the list below is **not a complete diff against the mock**. It names the
+As with Today, the list below is **not a complete diff against the mock**. It names the
 departures that carry a decision. Wording and ordering differ in more places than are listed,
 because the mock is a static page with hand-written sample text and the pane writes its words
 from the answer.
@@ -1898,8 +1927,8 @@ from the answer.
    drawer also lived in `operate.css`, which a v2 page could not load and which has since been
    deleted outright.
 2. **No meter on a problem card.** The answer carries an observed value and a threshold and no
-   scale to put them on. A bar between two numbers with no axis is the budget-bar problem from
-   Overview in another shape.
+   scale to put them on. A bar between two numbers with no axis is a bar against a target nothing
+   records, the same mistake as a budget bar on Today.
 3. **No "right now" column in the rules table.** `GET /api/ops/alerts/rules` sends each rule's
    threshold and the verdict of its last evaluation, and no current reading. The table's foot
    says that rather than leaving a reader to wonder where the column went.
@@ -2468,11 +2497,11 @@ on any change under `ops/`.
 `shell-v2.html` needs none of that. It calls no API, so `python3 -m http.server 8000` and
 `http://127.0.0.1:8000/ops/shell-v2.html` is the whole setup.
 
-Overview reads `ops-pane-fixture-overview` on the same terms as the two understand panes: a
+Today reads `ops-pane-fixture-overview` for its summary read, on the same terms as the two understand panes: a
 relative path to a same-origin JSON document holding one `{ "data": ... }` envelope, honoured only
-on loopback. It is the only practical way to see the states the live API will not produce on
-demand — a window nothing reported, a comparison the retention horizon refused, a day with no
-stored reading — which on this pane is most of them.
+on loopback. The other seven reads have no fixture hook. It is the only practical way to see the
+states the live API will not produce on demand — a window nothing reported, a comparison the
+retention horizon refused, a day with no stored reading.
 
 ### What checks this
 
@@ -2492,7 +2521,7 @@ stored reading — which on this pane is most of them.
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
 | `node scripts/check-ops-narrow-overflow.mjs` | Every pane `assets/pane-registry.js` declares, at **each width in the `guard-constants` block below** — the list is read out of the guard, because this row said "375px and 360px" through the rebase onto the commit that added a third — in both themes: that nothing is past the right edge of the document on any of them, and that each page measured was the pane the registry pointed at, had reached its ready gate, had drawn more than a handful of elements, and had drawn **a string only that pane's loaded state draws** — Overview, App releases and Settings each answer an empty read with a failure card that passes every other gate and clears the element floor, so without that last one the sweep would shrink from ten laid-out panes to seven while still reporting ten — **measured once and written down, not derived**: which panes answer an empty read with a failure card is a runtime behaviour, and the ten is the registry's, bound by the `panes` block above. The swept count is compared against the registry's own, so a pane that silently stops being measured is a failure rather than a shorter run. On the Problems pane it additionally requires the longest sentence the pane can put in a rule row to have been laid out. Its failure message skips cells inside a horizontal scroller when it names the widest offender; that affects **diagnosis only** — the pass/fail decision is `scrollWidth > viewport` on the document and no filter touches it. |
 | `node scripts/check-ops-theme-redraw.mjs` | Whether pressing the theme button repaints the page. A colour resolved at **draw time** is only correct for the theme it was drawn in; this loads every pane `assets/pane-registry.js` declares plus `/ops/shell-v2.html`, clicks the real button, and requires **every node's** resolved paint to equal the paint that node carries on a **fresh load** of the same page in the theme the button switched to — sixteen paint properties per node, with a `url(#id)` gradient resolved to its stops, because the ids are minted per draw. Two assertions stand either side of that one: that the two fresh loads differ at all, so the comparison is not vacuous on a page the theme never reached, and, on the pages that draw `aria.js`'s charts, that every shape painted from a token holds the palette's pinned value — the only one of the three that would notice `aria.css` drifting away from the palette, since a page compared against itself agrees with itself. Both directions, every page. The sixteen are `PAINT_PROPS`, listed in the `guard-constants` block below. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here. |
-| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It also measures the phone navigation drawer at 375px, which is a modal over its own scrim with the same failure shape (`Stadiora/Aria#12909`). It fails rather than skips when it opens no dialog. |
+| `node scripts/check-ops-dialog-hit.mjs` | Whether a confirmation dialog that is entirely correct in the DOM is **reachable by a mouse**. `Stadiora/Aria#10688` is the shape: the Settings pane's revoke dialog sat at `z-index` 60 under its own scrim at 90, so `elementFromPoint` over the confirm button returned the scrim and a real click never landed, while every unit test — element present, role correct, focus trapped, submits from the keyboard — passed. Two assertions per dialog, because each alone has a hole: every interactive control is hit-tested at its centre **and four inset corners** and must return itself or a descendant; and the dialog is screenshotted with the scrim in the DOM and again with it removed, and almost every pixel must be unchanged — the comparison is not byte equality but **two gates in series**, both in the `guard-constants` block below: a pixel counts as changed only once it moves by more than `PAINT_PIXEL_DELTA`, and the run passes while the share of pixels that did counts under `PAINT_COVERAGE_LIMIT`. Both holes run the flattering way and both are real: a scrim that dims the whole plate by two units of 255 changes every pixel and scores a coverage of zero, and a scrim over a twentieth of the dialog passes however hard it dims that twentieth. A scrim carrying `pointer-events: none` passes the hit test while still painting a dim and a blur over the dialog. Neither assertion compares `z-index` numbers: stacking is resolved from the whole ancestor chain, so the browser's answer is the only one worth having. It also opens the same dialog on a phone held sideways, 667 by 375, where the fixed bottom bar can reach the card, and shoots the dialog with the bar and again with it hidden: the page behind an open dialog is inert, so a bar painted over the dialog lets the pointer through and only the paint comparison can see it. The drawer this check once measured (`Stadiora/Aria#12909`) had the same failure shape and is gone. It fails rather than skips when it opens no dialog. |
 
 The `33` in that first row is not typed either. It is the size of the guard's own two pinned
 tables — the per-theme palette and the tokens it holds invariant across themes — counted out of
@@ -2516,7 +2545,7 @@ it then asserts on each page is the table above.
 
 ```claims id=browser-guards
 check-ops-contrast.mjs = ops-contrast.yml; /ops/shell-v2.html
-check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/index.html + /ops/settings.html
+check-ops-dialog-hit.mjs = ops-dialog-hit.yml; /ops/settings.html
 check-ops-narrow-overflow.mjs = ops-narrow-overflow.yml; every pane the registry declares
 check-ops-result-view.mjs = ops-result-view.yml; every pane the registry declares + /ops/run-history.html
 check-ops-shell-v2.mjs = ops-shell-v2.yml; every page in ops/
@@ -2739,14 +2768,14 @@ lines short — which is why none of them are typed any more.
 
 ```claims id=source-anchors
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
-scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 583
+scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 584
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 144
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 150
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
-ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 114
-ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 636
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 118
+ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 660
 ```
 
 One citation is still spelled in this file, and it is the one just above: the drifted

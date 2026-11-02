@@ -261,6 +261,22 @@ function readRegistry() {
 }
 
 const DECLARED = readRegistry();
+
+/* Today does not carry its registry question under the title. It carries the
+   date and when the figures were read, which are the figures' own stamp: the
+   summary read's generatedAt. The sub is still asserted to the character, off
+   that same fixture, so a Today whose sub stopped saying when it was read
+   would fail here exactly as a pane with the wrong question does. */
+const LIVE_SUB = {
+  overview: () => {
+    const t = new Date(SUMMARY.generatedAt);
+    const two = (n) => String(n).padStart(2, '0');
+    const day = t.toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+    });
+    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+  }
+};
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
   file: DECLARED[key].file,
@@ -928,7 +944,12 @@ const DRIVE = {
    pages passes, and a guard that counts a landing state as a result view is
    the same failure wearing a better number. */
 const RESULT_PROOF = {
-  overview: ['1,102', SUMMARY.release.platforms[0].versionName, PROBLEMS[0].reference],
+  /* Today draws the people count, the AI run count and the title of the worst
+     open problem. None is on its landing state, its empty state or its failure
+     card. The reference (AO-118) and the release version are no longer drawn
+     here: an identifier is not primary text on Today, and the release moved to
+     its own pane. */
+  overview: ['1,102', '4,820', PROBLEMS[0].title],
   /* Happening now moved off the alerting record onto GET /api/ops/jobs
      (Stadiora/Aria#5562), so its markers come off that reading: the id of the
      first job in the working set, which only the job table prints, and the
@@ -2267,10 +2288,11 @@ try {
           `"${seen.gate}". Nothing was drawn to judge.`);
         continue;
       }
-      if (seen.title !== page.label || seen.sub !== page.question) {
+      const expectedSub = LIVE_SUB[page.key] ? LIVE_SUB[page.key]() : page.question;
+      if (seen.title !== page.label || seen.sub !== expectedSub) {
         failures.push(`${where}: the top bar reads ${JSON.stringify(seen.title)} / ` +
           `${JSON.stringify(seen.sub)}, and ${REGISTRY} declares ` +
-          `${JSON.stringify(page.label)} / ${JSON.stringify(page.question)}.`);
+          `${JSON.stringify(page.label)} / ${JSON.stringify(expectedSub)}.`);
         continue;
       }
       const refused = REFUSALS.find((r) => seen.contentText.includes(r));

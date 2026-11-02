@@ -108,21 +108,23 @@ const PINNED_FIELDS = ['file', 'selector', 'offset', 'dark', 'light'];
 
 const EXPECTED = [
   { file: 'ops/assets/aria.css', selector: ':focus-visible',
-    offset: '2px', dark: '#22d3ee', light: '#155e75' },
+    offset: '2px', dark: '#00e5ff', light: '#155e75' },
   { file: 'ops/assets/aria.css', selector: '.field:focus-within',
-    offset: '-2px', dark: '#22d3ee', light: '#155e75' },
+    offset: '-2px', dark: '#00e5ff', light: '#155e75' },
+  { file: 'ops/assets/aria.css', selector: '.lookup:focus-within',
+    offset: '-2px', dark: '#00e5ff', light: '#155e75' },
   { file: 'ops/assets/ops.css', selector: ':focus-visible',
     offset: '2px', dark: '#00e5ff', light: '#026a80' },
   { file: 'ops/assets/ops.css', selector: '.search:focus-within',
     offset: '2px', dark: '#00e5ff', light: '#026a80' },
   { file: 'ops/assets/pane-alerts-v2.css', selector: '.p-close textarea:focus-visible',
-    offset: '1px', dark: '#22d3ee', light: '#0891b2' },
+    offset: '1px', dark: '#00e5ff', light: '#0891b2' },
   { file: 'ops/assets/pane-alerts-v2.css', selector: '.sw:focus-visible',
-    offset: '2px', dark: '#22d3ee', light: '#0891b2' },
+    offset: '2px', dark: '#00e5ff', light: '#0891b2' },
   { file: 'ops/assets/pane-evaluations-v2.css', selector: '.field-input:focus-visible',
-    offset: '-2px', dark: '#22d3ee', light: '#155e75' },
+    offset: '-2px', dark: '#00e5ff', light: '#155e75' },
   { file: 'ops/assets/shell-pane-v2.css', selector: '.modal-card .field-input:focus-visible',
-    offset: '-2px', dark: '#22d3ee', light: '#155e75' }
+    offset: '-2px', dark: '#00e5ff', light: '#155e75' }
 ];
 
 /* Rules whose colour is NOT the document ring's, each with the issue that
@@ -823,9 +825,9 @@ test('the counts are the ones this file claims to produce', () => {
     enumerated: counts.enumerated,
     pins: counts.pins
   }, {
-    colourRules: 8,
-    censusRows: 8,
-    inherits: 6,
+    colourRules: 9,
+    censusRows: 9,
+    inherits: 7,
     diverges: 2,
     unresolvable: 0,
     enumerated: 2,

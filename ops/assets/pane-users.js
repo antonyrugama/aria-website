@@ -1650,6 +1650,34 @@
     });
   }
 
+  /* The header's "Look up a user" hands over what was typed and nothing else:
+     no search runs, because this pane owns the reason a lookup is audited
+     under. The identifier is filled in and the cursor is put on the field that
+     is still empty, so pressing Enter in the header is one step short of a
+     lookup rather than a lookup with no reason. It came through sessionStorage
+     rather than the address, so it is never in a log or a shared link.
+
+     On the first draw the application is still behind the ready gate, and a
+     browser ignores focus() on anything it is hiding, so the field is
+     focused when ops:ready says the gate has gone. */
+  function receiveLookup(untilReady) {
+    var typed = global.Aria && global.Aria.takeLookup ? global.Aria.takeLookup() : '';
+    if (!typed || !identifierInput) return;
+    identifierInput.value = typed;
+    setFormError('');
+    if (!reasonInput) return;
+    if (!untilReady) {
+      reasonInput.focus();
+      return;
+    }
+    global.addEventListener('ops:ready', function focusReason() {
+      global.removeEventListener('ops:ready', focusReason);
+      if (reasonInput) reasonInput.focus();
+    });
+  }
+
+  global.addEventListener('ops:lookup', function () { receiveLookup(false); });
+
   /* The shell calls this once, with the pane's content region, after the
      session is confirmed and the document has finished parsing. A pane with no
      registration renders the not-built state, so there is no flag anywhere
@@ -1664,6 +1692,7 @@
     ]));
 
     region = shell.region(content);
+    receiveLookup(true);
     resultRegion = h('div', { className: 'stack', id: 'lookupResult' });
     resultRegion.appendChild(idleState());
     region.empty(resultRegion);

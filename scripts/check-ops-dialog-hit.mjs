@@ -1,5 +1,6 @@
-/* Guards the dashboard's confirmation dialogs, and the phone navigation
-   drawer, against the one failure that leaves them fully present in the DOM
+/* Guards the dashboard's confirmation dialogs, at desktop and at phone width
+   where a fixed bottom bar sits beside them, against the one failure that
+   leaves them fully present in the DOM
    and unusable on screen: painting behind the scrim that is meant to sit
    behind THEM.
 
@@ -64,18 +65,24 @@ const DIALOGS = [
     dialog: 'form.modal',
     confirm: 'button.btn-danger',
   },
-  /* Not a confirmation dialog, but the same failure: below 980px the rail is a
-     modal drawer over its own scrim, and a scrim that paints above the drawer
-     leaves every pane link present, focusable and unreachable by a finger
-     (Stadiora/Aria#12909). It needs the phone width to exist at all, and the
-     drawer slides in, so it is measured once the slide has finished. */
+  /* The phone has no drawer any more: the five destinations are a fixed bar
+     along the bottom edge. The same failure now has a different shape. A fixed
+     bar that paints above the dialog covers its lowest buttons, and the
+     dialog's confirm and cancel row is the part that sits lowest. The bar
+     lives inside the page's own stacking context, so it can only rise above
+     the dialog if that context goes, and it only overlaps the card where the
+     screen is short: a phone held sideways, 667 by 375, is the shortest this
+     dashboard is read on. The page behind an open dialog is inert, so the
+     pointer goes through the bar; what a raised bar costs is the paint, which
+     is why this spec also compares the dialog with and without the bar. */
   {
-    name: 'Phone navigation drawer',
-    page: '/ops/index.html',
-    viewport: { width: 375, height: 812, mobile: true },
-    open: '#railToggle',
-    dialog: '#rail.is-open',
-    settleMs: 400,
+    name: 'Settings / revoke access, phone held sideways, under the bar',
+    page: '/ops/settings.html',
+    viewport: { width: 667, height: 375, mobile: true },
+    bar: '#bottomNav',
+    open: 'button[aria-label^="Revoke access for"]',
+    dialog: 'form.modal',
+    confirm: 'button.btn-danger',
   },
 ];
 
@@ -378,7 +385,6 @@ async function measure(cdp, origin, spec, theme) {
     return;
   }
   dialogsOpened += 1;
-  if (spec.settleMs) await new Promise((r) => setTimeout(r, spec.settleMs));
   let broke = false;
 
   /* ---- 1. pointer ---- */
@@ -396,7 +402,7 @@ async function measure(cdp, origin, spec, theme) {
     const bad = [];
     let points = 0;
     controls.forEach((el) => {
-      /* A drawer scrolls; a control below its fold is not covered, only out of
+      /* A dialog on a phone can scroll; a control below its fold is not covered, only out of
          view, and elementFromPoint off screen answers null. A dialog that does
          not scroll is unaffected. */
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -494,11 +500,39 @@ async function measure(cdp, origin, spec, theme) {
       + `      scrim stacking:  ${hit.scrimContext.join(' < ') || 'none'}`);
   }
 
+  /* ---- 3. the bar ---- */
+  let barNote = '';
+  if (spec.bar) {
+    const hidden = await evaluate(cdp, `(() => {
+      const el = document.querySelector(${JSON.stringify(spec.bar)});
+      if (!el || !el.getClientRects().length) return false;
+      el.style.visibility = 'hidden';
+      return true;
+    })()`);
+    if (!hidden) {
+      failures.push(`${spec.name} [${theme}]: the bar is not drawn at this width, so the `
+        + 'comparison proves nothing');
+      return;
+    }
+    const withoutBar = await shoot(cdp, hit.box);
+    const barPaint = await paintDelta(cdp, withoutScrim, withoutBar);
+    if (barPaint.coverage > PAINT_COVERAGE_LIMIT) {
+      broke = true;
+      failures.push(`${spec.name} [${theme}]: taking the bar away repainted `
+        + `${(barPaint.coverage * 100).toFixed(1)}% of the pixels inside the dialog `
+        + `(mean channel delta ${barPaint.mean.toFixed(2)}), so the bar is painting over the `
+        + 'dialog rather than behind it. The page is inert while a dialog is open, so the '
+        + 'pointer still reaches the dialog and the hit test above cannot see this.\n'
+        + `      dialog stacking: ${hit.dialogContext.join(' < ') || 'none'}`);
+    }
+    barNote = ` and hiding the bar repaints ${(barPaint.coverage * 100).toFixed(2)}% of it`;
+  }
+
   measured += 1;
   if (broke) return;
   notes.push(`ok  ${spec.name} [${theme}]: ${hit.points} points over ${hit.controls} `
     + 'controls each reach their own control, and removing the scrim repaints '
-    + `${(paint.coverage * 100).toFixed(2)}% of the dialog, so it paints behind it`);
+    + `${(paint.coverage * 100).toFixed(2)}% of the dialog${barNote}, so it paints behind it`);
 }
 
 /* ------------------------------------------------------------------- run */
@@ -557,5 +591,5 @@ if (failures.length) {
   console.error('\n' + failures.map((f) => 'FAIL  ' + f).join('\n'));
   process.exit(1);
 }
-console.log('\nEvery confirmation dialog this dashboard opens, and the phone navigation drawer, '
+console.log('\nEvery confirmation dialog this dashboard opens, at desktop and at phone width, '
   + 'receives the pointer over its own controls, and its scrim paints behind it, in both themes.');

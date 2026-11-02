@@ -17,22 +17,24 @@
      <pane>-<theme>-<width>-<NN>.png
        Every step of the pane's guide, NN counting from 01. The pane page is
        loaded with the theme stored the way theme.js reads it, the guide is
-       opened through its real entry point -- the "What am I looking at?"
-       button, .tour-entry, pressed with a real pointer click at its centre,
-       which fails the load if anything covers it -- and each step is
+       opened through its real entry point -- the "About this page" entry,
+       .tour-entry, in the avatar menu, which is opened with a real pointer
+       click on the avatar button and then pressed with a real pointer click at
+       its centre, which fails the load if anything covers either -- and each
+       step is
        photographed before Next is pressed. A step whose anchor the page did
        not draw is photographed too: what the tour says then is part of what
        it does. A load that photographs fewer steps than the tour declares
        for the pane (window.OpsTour.stepsFor) fails.
 
      <pane>-tour-<theme>-<width>.png
-       The whole-dashboard tour opened from the rail's "Take the tour"
-       button on the first registry pane, which is where it starts.
+       The whole-dashboard tour opened from the avatar menu's "Take the tour"
+       entry on the first registry pane, which is where it starts.
 
      tour-rail-<theme>-<width>.png
-       The rail's "Take the tour" block on the first registry pane. On the
-       phone width the rail is a drawer, so it is opened through its own
-       toggle first. The block's box is checked; nothing here hit-tests it.
+       The avatar menu open on the first registry pane, with the tour's
+       "Take the tour" block in it. The block's box is checked; nothing here
+       hit-tests it.
 
    The pane list is read out of ops/assets/pane-registry.js, executed in a vm
    the way scripts/check-ops-narrow-overflow.mjs reads it, so a pane added
@@ -74,7 +76,7 @@ const WIDTHS = [
    itself out, as scripts/check-ops-narrow-overflow.mjs gives it. Every read
    is against the stub on loopback. */
 const SETTLE_MS = 2500;
-/* After the tour scrolls its anchor into view, or the drawer opens, before
+/* After the tour scrolls its anchor into view, or the menu opens, before
    the picture is taken. Motion is already forced off by the launch flags. */
 const PAINT_MS = 400;
 /* One capture that hangs must not take the rest of the run with it. */
@@ -328,11 +330,11 @@ async function loadPane(tab, origin, pane, theme, size) {
 
   const ready = await waitFor(tab, `(() => {
     const entry = document.querySelector('.tour-entry');
-    return !!(entry && entry.getClientRects().length);
+    return !!(entry && document.getElementById('acctBtn'));
   })()`);
   if (!ready) {
     const where = await evaluate(tab, 'location.pathname').catch(() => '(unreadable)');
-    throw new Error(`the "What am I looking at?" button never appeared on screen (page ${where})`);
+    throw new Error(`the "About this page" entry never appeared in the avatar menu (page ${where})`);
   }
   await sleep(SETTLE_MS);
   await evaluate(tab, 'document.fonts ? document.fonts.ready.then(() => true) : true');
@@ -381,6 +383,18 @@ async function pointerClick(tab, selector) {
   }
 }
 
+/* The tour's entries sit in the avatar menu, which is closed on load. A person
+   opens it with the avatar button, so that is how it is opened here, and it
+   fails if the menu did not open. */
+async function openAccountMenu(tab) {
+  await pointerClick(tab, '#acctBtn');
+  const open = await waitFor(tab, `(() => {
+    const menu = document.getElementById('acctMenu');
+    return !!(menu && !menu.hidden && menu.getClientRects().length);
+  })()`);
+  if (!open) throw new Error('pressing the avatar button (#acctBtn) did not open the menu (#acctMenu)');
+}
+
 /* Where the tour dialog stands: its step title and kicker, whether the
    outlined anchor is inside the viewport, and what the forward button says.
    Next is pressed only while it reads exactly "Next": on the last step of the
@@ -418,12 +432,13 @@ async function renderPane(tab, origin, pane, theme, size, base) {
     `window.OpsTour ? window.OpsTour.stepsFor(${JSON.stringify(pane.key)}).length : 0`);
   if (!declared) throw new Error('the tour declares no steps for this pane');
 
+  await openAccountMenu(tab);
   await pointerClick(tab, '.tour-entry');
   const opened = await waitFor(tab, `(() => {
     const d = document.querySelector('.tour-modal');
     return !!(d && d.getClientRects().length && d.querySelector('.tour-title'));
   })()`);
-  if (!opened) throw new Error('pressing "What am I looking at?" (.tour-entry) opened no tour dialog');
+  if (!opened) throw new Error('pressing "About this page" (.tour-entry) opened no tour dialog');
 
   const shots = [];
   for (;;) {
@@ -445,19 +460,13 @@ async function renderPane(tab, origin, pane, theme, size, base) {
   return shots;
 }
 
-/* The whole-dashboard tour, opened from the rail's "Take the tour" button on
-   the pane it starts from. The button is pressed through the DOM rather than
-   the pointer: on a phone it sits in the closed drawer, and the tour closes
-   the drawer itself when it opens. */
+/* The whole-dashboard tour, opened from the avatar menu's "Take the tour"
+   entry on the pane it starts from. The menu closes itself when the entry is
+   pressed, and the dialog takes focus. */
 async function renderTourMode(tab, origin, pane, theme, size, file) {
   await loadPane(tab, origin, pane, theme, size);
-  const pressed = await evaluate(tab, `(() => {
-    const start = document.querySelector('.tour-rail .tour-start');
-    if (!start) return false;
-    start.click();
-    return true;
-  })()`);
-  if (!pressed) throw new Error('the rail carries no "Take the tour" button (.tour-rail .tour-start)');
+  await openAccountMenu(tab);
+  await pointerClick(tab, '.tour-rail .tour-start');
   const opened = await waitFor(tab, `(() => {
     const d = document.querySelector('.tour-modal');
     return !!(d && d.getClientRects().length && d.querySelector('.tour-title'));
@@ -469,27 +478,15 @@ async function renderTourMode(tab, origin, pane, theme, size, file) {
   return [{ file, step: state }];
 }
 
-/* The rail's "Take the tour" block, on the first registry pane. On a phone
-   the rail is a drawer, opened through its own toggle as a person opens it. */
+/* The avatar menu's "Take the tour" block, on the first registry pane, with the
+   menu open as a person opens it. */
 async function renderRail(tab, origin, pane, theme, size, file) {
   await loadPane(tab, origin, pane, theme, size);
-
-  const drawer = await evaluate(tab, `(() => {
-    const toggle = document.getElementById('railToggle');
-    return !!(toggle && toggle.getClientRects().length);
-  })()`);
-  if (drawer) {
-    await evaluate(tab, "document.getElementById('railToggle').click()");
-    const open = await waitFor(tab, `(() => {
-      const rail = document.getElementById('rail');
-      return !!(rail && rail.classList.contains('is-open'));
-    })()`);
-    if (!open) throw new Error('pressing the rail toggle (#railToggle) did not open the drawer');
-  }
+  await openAccountMenu(tab);
 
   const found = await evaluate(tab, `(() => {
     const block = document.querySelector('.tour-rail');
-    if (!block) return 'the rail carries no .tour-rail block';
+    if (!block) return 'the avatar menu carries no .tour-rail block';
     const start = block.querySelector('.tour-start');
     if (!start) return 'the .tour-rail block carries no .tour-start button';
     block.scrollIntoView({ block: 'center' });
@@ -513,7 +510,7 @@ async function renderRail(tab, origin, pane, theme, size, file) {
       + `viewport after scrolling to it (left, top, width, height: ${seen.box})`);
   }
   await capture(tab, file);
-  return [{ file, step: { title: `rail block, button reads "${seen.label}"`, kicker: '' } }];
+  return [{ file, step: { title: `menu block, button reads "${seen.label}"`, kicker: '' } }];
 }
 
 function withTimeout(promise, ms, what) {
@@ -594,7 +591,7 @@ const lines = [
   `Pictures: ${rows.length - failed.length} captured; page loads: ${attempted} of ${planned} `
     + `planned, ${failed.length} failed.`,
   '',
-  'Each pane has one picture per step of its guide, opened from "What am I looking at?". '
+  'Each pane has one picture per step of its guide, opened from "About this page". '
     + '"On screen" says whether the step\'s outlined anchor is inside the viewport; "not drawn" '
     + 'means the page drew no anchor and the step explains why. Wide is 1440x900, narrow is '
     + '375x812. Written by scripts/render-ops-tour.mjs.',

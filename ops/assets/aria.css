@@ -1,10 +1,10 @@
 /* ============================================================================
    Aria Operations — design system v2
    ----------------------------------------------------------------------------
-   One accent (Aria cyan) used as LIGHT rather than as fill. Surfaces are
-   layered rather than outlined: every panel is a gradient with a hairline
-   border and a lit top edge, so depth comes from the material instead of from
-   drop shadows alone.
+   One accent (Aria cyan), used sparingly. Dark is the house look and the
+   default. Surfaces are flat: a panel is a fill and a hairline, with no
+   gradient, no lit edge and no shadow, so the only light on a page is the
+   data's own (a chart's glow, a live dot's halo).
 
    Only base colours are declared per theme. Every tint, wash and glow is
    derived with color-mix(), so a third theme means overriding the bases only.
@@ -24,8 +24,14 @@
         --st, --acc and --c through style attributes in markup; style-src 'self'
         with no 'unsafe-inline' forbids that, so a fixed tone is a class and
         only genuinely data-driven lengths are written through CSSOM by script.
-     4. A skip link, because these pages put a long rail before the content and
-        the mocks had no keyboard story at all.
+     4. A skip link, because these pages put a navigation before the content
+        and the mocks had no keyboard story at all.
+
+   The palette and the navigation have since moved on from the mocks: a
+   near-black neutral dark theme, a flat panel, five destinations in a
+   184px rail (a bottom bar on a phone) and a user lookup in the top bar. The
+   approved screens for that are in the R54 design set, not in the mock this
+   file was ported from.
 
    This file does not replace ops.css. The two stylesheets define the same
    class names from different token sets, so a page loads one or the other,
@@ -77,13 +83,14 @@
 
 /* ----------------------------------------------------------------- tokens */
 :root {
-  /* Brand + data series. Same hues both themes, different lightness. */
-  --cyan:        #22D3EE;
-  --cyan-lit:    #67E8F9;
-  --violet:      #A78BFA;
+  /* Brand + data series. Same hues both themes, different lightness. Cyan is
+     the one accent; violet is Aria AI's and nothing else's. */
+  --cyan:        #00E5FF;
+  --cyan-lit:    #5CF0FF;
+  --violet:      #8B5CF6;
   --emerald:     #34D399;
   --amber:       #FBBF24;
-  --rose:        #FB7185;
+  --rose:        #F87171;
   --blue:        #60A5FA;
 
   /* Status ink. A status colour does two jobs that pull in opposite
@@ -91,29 +98,33 @@
      One token cannot do both and clear WCAG AA — a tint bright enough to read
      as a tint leaves the same colour too close to it to read as text. So the
      tint keeps the base token and the text takes an -ink token. On dark
-     surfaces the base colour already clears AA as text, so here they match;
-     the light theme is where they diverge. */
+     surfaces the base colour already clears AA as text, so here they match,
+     with three exceptions. Violet at #8B5CF6 is 3.9:1 on a card, which is a
+     graphic and not a sentence, so its ink is the lighter hue it replaced.
+     Emerald and rose are a step lighter for a pill on a hovered or selected
+     table row, where the row's own wash sits under the pill's and the base
+     colour falls just under 4.5:1. */
   --cyan-ink:    var(--cyan);
-  --violet-ink:  var(--violet);
-  --emerald-ink: var(--emerald);
+  --violet-ink:  #A78BFA;
+  --emerald-ink: #3CDBA0;
   --amber-ink:   var(--amber);
-  --rose-ink:    var(--rose);
+  --rose-ink:    #FA7C7C;
   --blue-ink:    var(--blue);
 
   /* Surfaces */
-  --bg:          #06080B;
-  --surface:     #0E1218;
-  --surface-2:   #141A22;
-  --surface-3:   #1B222C;
+  --bg:          #0A0A0A;
+  --surface:     #1C1C1E;
+  --surface-2:   #252528;
+  --surface-3:   #2C2C2E;
 
-  /* Ink */
-  --ink:         #E8EEF6;
-  --ink-2:       #97A6BA;
-  --ink-3:       #7E8DA3;
+  /* Ink. Neutral, not blue-grey: the only hue on a dark page is data. */
+  --ink:         #F5F5F7;
+  --ink-2:       #B0B0B8;
+  --ink-3:       #9A9AA3;
 
   /* Lines */
-  --line:        rgba(255, 255, 255, .07);
-  --line-2:      rgba(255, 255, 255, .11);
+  --line:        rgba(255, 255, 255, .08);
+  --line-2:      rgba(255, 255, 255, .13);
   --edge:        rgba(255, 255, 255, .06);   /* lit top edge of a panel */
 
   /* Elevation */
@@ -123,7 +134,7 @@
 
   /* Geometry */
   --r-sm: 8px;  --r: 12px;  --r-lg: 16px;  --r-xl: 22px;
-  --rail: 244px;
+  --rail: 184px;
 
   /* Type */
   --sans: 'Geist', 'Inter Tight', 'Inter', -apple-system, system-ui, sans-serif;
@@ -187,24 +198,6 @@ body {
   font-feature-settings: 'cv11' 1, 'ss01' 1;
 }
 
-/* Ambient bloom. Fixed so it does not travel with scroll — the light source
-   stays where the light source is. */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(900px 520px at 22% -12%, color-mix(in srgb, var(--cyan) 13%, transparent), transparent 70%),
-    radial-gradient(760px 460px at 88% -6%, color-mix(in srgb, var(--violet) 9%, transparent), transparent 72%);
-}
-[data-theme="light"] body::before {
-  background:
-    radial-gradient(900px 520px at 22% -12%, color-mix(in srgb, var(--cyan) 11%, transparent), transparent 70%),
-    radial-gradient(760px 460px at 88% -6%, color-mix(in srgb, var(--violet) 7%, transparent), transparent 72%);
-}
-
 a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
 svg { display: block; }
@@ -244,92 +237,76 @@ svg { display: block; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 18px 12px 12px;
+  padding: 22px 10px 14px;
   border-right: 1px solid var(--line);
-  background:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--surface) 70%, transparent),
-      color-mix(in srgb, var(--bg) 92%, transparent));
-  backdrop-filter: blur(12px);
+  background: var(--bg);
 }
 
+/* The wordmark: "Aria" in white with the brandmark small and cyan at its
+   shoulder, and "Operations" under it. The mark is the real asset
+   (assets/aria-mark.png, a white silhouette) used as a mask over a cyan box,
+   so it takes the accent and is not redrawn. */
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 4px 8px 18px;
+  display: block;
+  padding: 0 10px 24px;
 }
+.brand-line { display: flex; align-items: flex-start; gap: 3px; }
 
 .brand-mark {
-  position: relative;
-  width: 34px; height: 34px;
+  width: 14px; height: 14px;
   flex: none;
-  border-radius: 11px;
-  display: grid; place-items: center;
-  background: linear-gradient(145deg, var(--cyan-lit), var(--cyan) 55%, color-mix(in srgb, var(--violet) 70%, var(--cyan)));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--cyan) 45%, transparent),
-    0 6px 20px -4px color-mix(in srgb, var(--cyan) 55%, transparent);
+  margin-top: 1px;
+  background: var(--cyan-ink);
+  -webkit-mask: url('aria-mark.png') center / contain no-repeat;
+  mask: url('aria-mark.png') center / contain no-repeat;
 }
-.brand-mark svg { width: 19px; height: 19px; }
-.brand-mark path, .brand-mark circle { stroke: #04161A; }
 
 .brand-name {
-  font-size: 14px; font-weight: 620; letter-spacing: -.012em;
-  line-height: 1.15;
+  font-size: 26px; font-weight: 640; letter-spacing: -.035em;
+  line-height: 1;
 }
 .brand-sub {
-  font-size: 9.5px; font-weight: 560; letter-spacing: .1em;
-  text-transform: uppercase;
+  display: block;
+  font-size: 12.5px; font-weight: 450; letter-spacing: .04em;
   color: var(--ink-3);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
-.nav-group {
-  font-size: 9.5px; font-weight: 600; letter-spacing: .11em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  padding: 16px 10px 7px;
-}
-.nav-group:first-of-type { padding-top: 2px; }
-
-/* The mock drops the links straight into .rail, so its `gap` spaces them. The
-   port wraps each group in role="group" so the heading names its items, which
-   puts one flex child where there were four; the wrapper carries the same gap
-   so the spacing is unchanged. */
 .nav-list { display: flex; flex-direction: column; gap: 2px; }
 
 .nav-item {
   position: relative;
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
   border-radius: var(--r-sm);
   color: var(--ink-2);
-  font-size: 13px; font-weight: 480;
+  font-size: 14px; font-weight: 480;
   transition: background .15s, color .15s;
 }
-.nav-item svg { width: 16px; height: 16px; flex: none; opacity: .85; }
-.nav-item:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+.nav-item svg { width: 18px; height: 18px; flex: none; }
+/* The label gives way before the icon does, so a long name is clipped with an
+   ellipsis instead of pushing a badge out of the rail. */
+.nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); }
 
+/* The selected destination: a thin cyan marker on the rail's edge and a
+   faint shade, not a pill. Aria AI keeps its violet icon either way, because
+   violet is Aria AI's and the icon is how the rail says so. */
 .nav-item.on {
   color: var(--ink);
-  font-weight: 560;
-  background: linear-gradient(90deg,
-    color-mix(in srgb, var(--cyan) 17%, transparent),
-    color-mix(in srgb, var(--cyan) 4%, transparent) 70%,
-    transparent);
-  box-shadow: inset 0 1px 0 var(--edge);
+  font-weight: 540;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 .nav-item.on::before {
   content: '';
-  position: absolute; left: -12px; top: 50%;
-  transform: translateY(-50%);
-  width: 3px; height: 20px;
+  position: absolute; left: -10px; top: 4px; bottom: 4px;
+  width: 3px;
   border-radius: 0 3px 3px 0;
-  background: var(--cyan);
-  box-shadow: 0 0 12px 1px var(--cyan);
+  background: var(--cyan-ink);
 }
-.nav-item.on svg { opacity: 1; color: var(--cyan-ink); }
+.nav-item.on svg { color: var(--cyan-ink); }
+.nav-item[data-destination="ai"] svg,
+.tab-item[data-destination="ai"] svg { color: var(--violet-ink); }
 
 .nav-badge {
   margin-left: auto;
@@ -343,7 +320,6 @@ svg { display: block; }
 .nav-badge.hot {
   background: color-mix(in srgb, var(--rose) 20%, transparent);
   color: var(--rose-ink);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--rose) 28%, transparent);
 }
 .nav-badge.warm {
   background: color-mix(in srgb, var(--amber) 18%, transparent);
@@ -357,44 +333,112 @@ svg { display: block; }
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
-.rail-foot { margin-top: auto; padding-top: 12px; }
+.rail-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
 
-.who {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 10px;
-  border-radius: var(--r);
-  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
+.who { display: flex; align-items: center; gap: 10px; padding: 8px 10px; }
 .who-av {
-  width: 28px; height: 28px; flex: none;
-  border-radius: 9px;
+  width: 30px; height: 30px; flex: none;
+  border-radius: 50%;
   display: grid; place-items: center;
-  font-size: 10.5px; font-weight: 640; letter-spacing: .02em;
-  color: #04161A;
-  background: linear-gradient(145deg, var(--cyan-lit), var(--cyan));
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  color: var(--ink);
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
-.who-name { font-size: 12px; font-weight: 540; line-height: 1.25; }
-.who-meta { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+.who-name { font-size: 13.5px; font-weight: 500; line-height: 1.25; }
 
 /* ------------------------------------------------------------------- main */
 .main { min-width: 0; display: flex; flex-direction: column; }
 
+/* Desktop: the title, the date and the lookup on one line, the lookup and the
+   avatar at the right. Phone: the wordmark and the two controls on the first
+   line, the title under it, and the lookup field opens on a row of its own. */
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 16px;
-  padding: 15px 26px;
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
-  backdrop-filter: blur(16px) saturate(1.3);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; column-gap: 16px;
+  padding: 18px 28px 12px;
+  background: var(--bg);
 }
-.page-title { font-size: 19px; font-weight: 620; letter-spacing: -.021em; }
-.page-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 1px; }
-.topbar-end { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.top-brand { display: none; }
+.page-head { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 14px; row-gap: 2px; min-width: 0; }
+.page-title { font-size: 30px; font-weight: 640; letter-spacing: -.03em; line-height: 1.15; }
+.page-sub { font-size: 13.5px; color: var(--ink-2); }
+.topbar-end { display: flex; align-items: center; gap: 10px; }
+
+.lookup {
+  display: flex; align-items: center; gap: 9px;
+  width: 256px; height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.lookup:focus-within { outline: 2px solid var(--cyan-ink); outline-offset: -2px; }
+.lookup svg { width: 16px; height: 16px; flex: none; color: var(--ink-3); }
+.lookup-input {
+  flex: 1; min-width: 0;
+  border: 0; background: transparent; outline: 0;
+  font-size: 13.5px;
+}
+.lookup-input::placeholder { color: var(--ink-3); }
+.lookup-input::-webkit-search-cancel-button { appearance: none; }
+.lookup-open { display: none; }
+
+/* The avatar and what it opens. The menu is a popover over the page, so it
+   carries its own surface and hairline. */
+.acct { position: relative; }
+.acct-btn {
+  display: grid; place-items: center;
+  width: 44px; height: 44px;
+  padding: 0; border: 0; border-radius: var(--r);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+/* The avatar is a circle and its button is not: a ring drawn round a circle
+   has no straight run to measure, and a focus indicator that cannot be
+   measured cannot be held to a contrast ratio. */
+.acct-btn .who-av { width: 40px; height: 40px; font-size: 13px; }
+.acct-btn svg { width: 18px; height: 18px; }
+.acct-btn:hover .who-av { box-shadow: inset 0 0 0 1px var(--ink-3); }
+
+.menu {
+  position: absolute; right: 0; top: calc(100% + 8px);
+  z-index: 60;
+  width: 264px;
+  padding: 6px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow-3);
+}
+.menu-who { padding: 10px 12px 12px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+.menu-name { font-size: 13.5px; font-weight: 560; overflow-wrap: anywhere; }
+.menu-meta { font-size: 12px; color: var(--ink-3); margin-top: 2px; overflow-wrap: anywhere; }
+.menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 38px;
+  padding: 8px 12px;
+  border: 0; border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 13.5px; font-weight: 480; text-align: left;
+  cursor: pointer;
+}
+.menu-item svg { width: 16px; height: 16px; flex: none; }
+.menu-item:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.menu-item:focus-visible { outline-offset: -2px; }
+.menu-extra { display: flex; flex-direction: column; gap: 2px; }
+.menu-extra:not(:empty) { margin: 6px 0; padding: 6px 0; border-block: 1px solid var(--line); }
+
+/* The phone's navigation. Hidden above the rail's breakpoint, where the rail
+   does the job; the responsive block below turns it on. */
+.bottom-nav { display: none; }
 
 .filters {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  padding: 13px 26px;
+  padding: 13px 28px;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 34%, transparent);
 }
@@ -403,7 +447,7 @@ svg { display: block; }
   text-transform: uppercase; color: var(--ink-3);
 }
 
-.content { padding: 24px 26px 64px; display: flex; flex-direction: column; gap: 26px; }
+.content { padding: 14px 28px 64px; display: flex; flex-direction: column; gap: 26px; }
 
 /* ------------------------------------------------------------------ bands */
 .band { display: flex; flex-direction: column; gap: 13px; }
@@ -427,23 +471,11 @@ svg { display: block; }
   display: flex;
   flex-direction: column;
   border-radius: var(--r-lg);
-  background: linear-gradient(168deg, var(--surface-2), var(--surface) 62%);
-  box-shadow: inset 0 0 0 1px var(--line), var(--shadow-2);
-  transition: box-shadow .2s, transform .2s;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow .2s;
 }
-/* The lit top edge. This is what makes a panel read as a raised object
-   rather than as a rectangle with a border. */
-.card::before {
-  content: '';
-  position: absolute; inset: 0 0 auto;
-  height: 1px;
-  border-radius: var(--r-lg) var(--r-lg) 0 0;
-  background: linear-gradient(90deg, transparent, var(--edge) 22%, var(--edge) 78%, transparent);
-}
-.card.lift:hover {
-  transform: translateY(-2px);
-  box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow-3);
-}
+.card.lift:hover { box-shadow: inset 0 0 0 1px var(--line-2); }
 
 .card-head {
   display: flex; align-items: center; gap: 10px;
@@ -474,7 +506,6 @@ svg { display: block; }
   position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px;
   background: var(--acc, var(--cyan));
-  box-shadow: 0 0 16px 0 var(--acc, var(--cyan));
 }
 
 /* ------------------------------------------------------------------- hero */
@@ -483,18 +514,11 @@ svg { display: block; }
   overflow: hidden;
   border-radius: var(--r-xl);
   padding: 20px 22px;
-  background:
-    radial-gradient(600px 200px at 8% 0%, color-mix(in srgb, var(--st, var(--emerald)) 16%, transparent), transparent 70%),
-    linear-gradient(168deg, var(--surface-2), var(--surface) 60%);
-  box-shadow: inset 0 0 0 1px var(--line), var(--shadow-2);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 20px; align-items: center;
-}
-.hero::before {
-  content: '';
-  position: absolute; inset: 0 0 auto; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--edge) 20%, var(--edge) 80%, transparent);
 }
 /* Bottom light bar keyed to system state. */
 .hero::after {
@@ -968,9 +992,9 @@ svg { display: block; }
 .tone-rose    { --c: var(--rose); }
 .tone-blue    { --c: var(--blue); }
 
-/* Skip link. The rail is a long list of panes and it comes first in the
-   document, so without this the keyboard path to the content is every nav
-   item. Not in the mocks, which had no keyboard story. */
+/* Skip link. The navigation comes first in the document, so without this the
+   keyboard path to the content is every nav item. Not in the mocks, which had
+   no keyboard story. */
 .skip {
   position: absolute; left: 12px; top: -60px; z-index: 40;
   padding: 9px 14px;
@@ -1026,7 +1050,73 @@ svg { display: block; }
   .app { grid-template-columns: minmax(0, 1fr); }
   .rail { display: none; }
   .g2, .g3 { grid-template-columns: minmax(0, 1fr); }
-  .content, .topbar, .filters { padding-left: 16px; padding-right: 16px; }
+  .content, .filters { padding-left: 16px; padding-right: 16px; }
+
+  /* Phone top bar: the wordmark with the search and the avatar on its line,
+     the title under it, and the search field on a row of its own when it is
+     opened. .topbar-end gives its children to the grid so each can sit in its
+     own cell. */
+  .topbar {
+    position: static;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "brand open acct"
+      "search search search"
+      "head head head";
+    column-gap: 10px; row-gap: 10px;
+    padding: 12px 16px 6px;
+  }
+  .topbar-end { display: contents; }
+  .topbar-end > .filter-label, .topbar-end > .seg { grid-column: 1 / -1; }
+  .top-brand { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 3px; grid-area: brand; }
+  .top-brand .brand-name { font-size: 24px; }
+  .top-brand .brand-sub { flex-basis: 100%; margin-top: 2px; font-size: 12px; }
+  .page-head { grid-area: head; }
+  .page-title { font-size: 32px; }
+  .lookup-open {
+    grid-area: open;
+    display: grid; place-items: center;
+    width: 44px; height: 44px;
+    padding: 0; border: 0; border-radius: 50%;
+    background: transparent;
+    color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line-2);
+    cursor: pointer;
+  }
+  .lookup-open svg { width: 18px; height: 18px; }
+  .acct { grid-area: acct; }
+  .acct-btn { width: 44px; height: 44px; }
+  .lookup { display: none; grid-area: search; width: auto; height: 44px; }
+  .topbar.is-searching .lookup { display: flex; }
+
+  /* The bottom bar: five destinations at the thumb, the current one in cyan.
+     Its own surface and hairline, so a card scrolling under it never reads as
+     part of it, and the safe-area inset keeps it clear of a home indicator. */
+  .bottom-nav {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tab-item {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px;
+    min-height: 60px; padding: 8px 2px;
+    font-size: 12px; font-weight: 500;
+    color: var(--ink-3);
+  }
+  .tab-item svg { width: 24px; height: 24px; }
+  .tab-item.on { color: var(--cyan-ink); }
+  .tab-item .nav-badge { position: absolute; top: 6px; left: calc(50% + 8px); margin: 0; }
+  .content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+
+  /* Touch targets. */
+  .menu-item { min-height: 44px; }
+
   .hero { grid-template-columns: auto minmax(0, 1fr); }
   /* Both shapes a hero can end with, because the first track is `auto` and so
      sizes to the widest thing left in it. The approved design ends a hero with

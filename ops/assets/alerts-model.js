@@ -215,6 +215,7 @@
       return time(r.lastEvaluatedAt) !== null && JUDGING[r.lastEvaluationStatus] === true;
     });
     var lastEvaluated = latest(enabled.map(function (r) { return r.lastEvaluatedAt; }));
+    var lastJudged = latest(checking.map(function (r) { return r.lastEvaluatedAt; }));
 
     var channels = Array.isArray(rules.channels) ? rules.channels : [];
     /* `=== true`, and the two panes spell it the same way. A row saying
@@ -293,6 +294,10 @@
       /* Over the enabled rules only. A disabled rule's last run says nothing
          about whether anything is being checked now. */
       lastEvaluatedAt: iso(lastEvaluated),
+      /* The newest stamp among the rules counted in `checking`: when a verdict
+         was last reached, which is the age of whatever a calm line rests on.
+         A rule that ran and found no data does not make a verdict current. */
+      lastJudgedAt: iso(lastJudged),
       lastFiredAt: iso(latest(list.map(function (r) { return r.lastFiredAt; }))),
       trustworthy: checking.length > 0
     };
