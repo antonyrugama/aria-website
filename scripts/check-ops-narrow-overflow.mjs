@@ -224,9 +224,10 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today carries the date and when its figures were read under the title, not
-   its registry question. The sub is still asserted to the character, off this
-   file's own summary stamp. */
+/* Today, Health and Money carry the date and when their figures were read
+   under the title, not their registry question. The sub is still asserted to
+   the character, off this file's own stamps: Today's summary, Health's job
+   queue, Money's cost answer. */
 const datedSub = (iso) => {
   const t = new Date(iso);
   const two = (n) => String(n).padStart(2, '0');
@@ -235,11 +236,12 @@ const datedSub = (iso) => {
   });
   return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
 };
-/* Money carries the same line, off the cost answer's own collection time, so
-   the longest header the pane draws is the one measured at 320px. Delivery
-   carries the same dated head as Today, off the same summary read. */
+/* Money's line comes off the cost answer's own collection time, so the longest
+   header the pane draws is the one measured at 320px. Delivery carries the same
+   dated head as Today, off the same summary read. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
+  alerts: () => datedSub(JOBS.generatedAt),
   delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(COSTS.asOf),
   /* Growth carries the date and which seven days it is about. */
@@ -737,9 +739,13 @@ const PROOF = {
   /* RUNS.failures[0].failureCode and the model its first run used. Both are
      inside cells this sweep measures, and neither is on an empty state. */
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
+  /* The worst open problem's title, which a failed problems read replaces with
+     a failure line, and the count of checks reporting, which Health prints only
+     once the rules have been read. */
+  alerts: [PROBLEM.title, 'checks reporting'],
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
-  alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
+  problems: [PROBLEM.workPaneLabel, PROBLEM.reference],
   /* The platform count off the summary, an app's feature row and a signup week.
      The failure card has none of them. */
   analytics: ['1,102', 'Training plan', 'Oct 5'],
@@ -797,6 +803,10 @@ function stub(pathname, query) {
           lastDeliveredAt: ago(2 * HOUR), failureReason: 'auth' }
       ]
     } };
+  }
+  if (pathname === '/api/ops/moderation/reports') {
+    // Health's one-row safety summary needs a readable queue; an empty answer would draw its failure row on every Health measurement.
+    return { data: { items: [{ id: 1, status: 'open', category: 'safety', targetType: 'post', actionDueAt: ago(-2 * HOUR) }], nextCursor: null } };
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
@@ -1150,7 +1160,7 @@ try {
             `in it — it starts ${JSON.stringify(seen.contentText.slice(0, 120))}.`);
           continue;
         }
-        if (page.key === 'alerts') {
+        if (page.key === 'problems') {
           if (seen.ruleRows < RULES.length) {
             failures.push(`${where}: expected at least ${RULES.length} rule rows, saw ${seen.ruleRows}`);
             continue;

@@ -76,7 +76,7 @@ function buildPage(dom, body) {
     parent.appendChild(node);
     return node;
   };
-  body.setAttribute('data-pane', 'alerts');
+  body.setAttribute('data-pane', 'problems');
   body.className = 'is-booting';
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
@@ -86,7 +86,7 @@ function buildPage(dom, body) {
 }
 
 async function boot() {
-  const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/alerts.html' });
+  const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/problems.html' });
   const body = dom.element('body');
   dom.root.appendChild(body);
   dom.doc.body = body;

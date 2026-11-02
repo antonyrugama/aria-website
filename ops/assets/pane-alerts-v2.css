@@ -1,7 +1,7 @@
 /* =========================================================================
    Aria Operations — Problems pane (v2)
    Loaded after assets/aria.css and assets/shell-pane-v2.css, on
-   ops/alerts.html and nowhere else — scripts/ops-alerts-v2.test.mjs reads
+   ops/problems.html and nowhere else — scripts/ops-alerts-v2.test.mjs reads
    every ops/*.html to say so ("the page loads one design system and one
    theme decision").
 

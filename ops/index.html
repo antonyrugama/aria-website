@@ -13,6 +13,7 @@
      token sets, so a page loads one system or the other, never both. -->
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
+<link rel="stylesheet" href="assets/pane-status-v2.css">
 <link rel="stylesheet" href="assets/pane-overview-v2.css">
 <link rel="stylesheet" href="assets/tour-v2.css">
 </head>
@@ -59,8 +60,10 @@
 <script src="assets/shell-pane-v2.js"></script>
 <!-- Today reads its own set of APIs. The problems half shares the Problems
      pane's model, so the two panes cannot disagree about what "still open"
-     means. -->
+     means, and the status line, problem rows and retry engine come from the
+     one asset Health uses too. -->
 <script src="assets/alerts-model.js"></script>
+<script src="assets/pane-status.js"></script>
 <script src="assets/pane-overview.js"></script>
 <!-- The guided tour reads the registry and the page this shell drew, so it
      loads after both and after the pane's own module. -->

@@ -109,7 +109,7 @@ import vm from 'node:vm';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PROOF, SUMMARY, USAGE_WEEK, stub } from './ops-api-stub.mjs';
+import { PROOF, SUMMARY, JOBS, USAGE_WEEK, stub } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
@@ -235,10 +235,11 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today and Delivery carry the date and when their figures were read under the
-   title, not their registry question, and Growth carries the date and which
-   seven days it is about. The sub is still asserted to the character, off the stub's own
-   summary stamp and its own seven day window. */
+/* Today, Health, Delivery and Money carry the date and when their figures were
+   read under the title, not their registry question, and Growth carries the
+   date and which seven days it is about. The sub is still asserted to the
+   character, off the stub's own stamps: Today's and Delivery's summary,
+   Health's job queue, Money's cost answer and Growth's own seven day window. */
 const datedSub = (iso) => {
   const t = new Date(iso);
   const two = (n) => String(n).padStart(2, '0');
@@ -247,10 +248,11 @@ const datedSub = (iso) => {
   });
   return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
 };
-/* Money carries the same line, off the stub's own cost answer: the time the
-   server collected the bill. */
+/* Money's line comes off the stub's own cost answer: the time the server
+   collected the bill. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
+  alerts: () => datedSub(JOBS.generatedAt),
   delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(stub('/api/ops/costs').data.asOf),
   analytics: () => {

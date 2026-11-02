@@ -3667,7 +3667,7 @@ test('every doorway points at the pane the registry says owns it', async () => {
     assert.ok(panes[id], 'the registry no longer declares ' + id);
     return panes[id].file;
   };
-  assert.deepEqual([...new Set(links)].sort(), [fileOf('alerts'), fileOf('users')].sort(),
+  assert.deepEqual([...new Set(links)].sort(), [fileOf('problems'), fileOf('users')].sort(),
     'the drawn pane offers ' + [...new Set(links)].join(', ') + ': what the watchers caught '
     + 'belongs to Problems and where a reveal is recorded to Look up a user.');
 
@@ -3685,7 +3685,7 @@ test('every doorway points at the pane the registry says owns it', async () => {
   const bareLinks = [...new Set(findAll(emptyPanel(bare), (n) => n.tagName === 'A')
     .map((n) => (n.getAttribute('href') || '').split('?')[0])
     .filter((href) => href && href.endsWith('.html')))].sort();
-  assert.deepEqual(bareLinks, [fileOf('alerts'), fileOf('jobs')].sort(),
+  assert.deepEqual(bareLinks, [fileOf('problems'), fileOf('jobs')].sort(),
     'the unread pane offers ' + bareLinks.join(', ') + ': what is running now belongs to '
     + 'Happening now, and what the watchers caught to Problems.');
 });

@@ -64,7 +64,8 @@ const PANES = [
   { pane: 'overview', url: '/ops/index.html', title: 'Today' },
   { pane: 'jobs', url: '/ops/jobs-live.html', title: 'Jobs live' },
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
-  { pane: 'alerts', url: '/ops/alerts.html', title: 'Alerts' },
+  { pane: 'alerts', url: '/ops/alerts.html', title: 'Health' },
+  { pane: 'problems', url: '/ops/problems.html', title: 'Problems' },
   { pane: 'analytics', url: '/ops/analytics.html', title: 'Growth' },
   { pane: 'usage', url: '/ops/usage.html', title: 'Usage detail' },
   { pane: 'spend', url: '/ops/spend.html', title: 'Money' },
@@ -717,7 +718,7 @@ for (const p of PANES) {
     await load(p.url, v);
     await helpers();
     let moderation = null;
-    if (p.pane === 'alerts') {
+    if (p.pane === 'problems') {
       moderation = await moderationProbe(v);
       await load(p.url, v);
       await helpers();

@@ -1596,6 +1596,14 @@ for (const label of ['What happened', 'Open Problems']) {
   });
 }
 
+test('the footer\'s Open Problems link goes to the Problems page, not Health', async () => {
+  const dom = await boot({ view: WITH_ROWS() });
+  const link = linkNamed(dom, 'Open Problems');
+  assert.ok(link, 'no Open Problems link, so this proves nothing');
+  assert.equal(link.getAttribute('href'), 'problems.html',
+    'the link opens the Health page, which no longer holds the problem list');
+});
+
 test('a refresh does not steal focus from somewhere else on the page', async () => {
   const dom = await boot({ view: WITH_ROWS() });
   /* Focus outside the pane, on a node that happens to carry the same retain

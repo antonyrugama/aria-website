@@ -156,3 +156,24 @@ test('failed audit remains retryable; private evidence uses authenticated binary
   form.dispatch('submit'); await settle();
   assert.deepEqual(toasts, ['Decision recorded in the audit']);
 });
+
+test('the queue binds to Problems only: Health draws a compact row of its own and never this list', async () => {
+  const { dom, content, calls } = fixture([report]);
+  await settle();
+  const reads = () => calls.filter(call => call.path === '/api/ops/moderation/reports').length;
+  const queues = () => content.querySelectorAll('.ugc-queue').length;
+  const [baseReads, baseQueues] = [reads(), queues()];
+  assert.equal(baseQueues, 1, 'the direct render drew no queue');
+
+  for (const pane of ['alerts', 'overview', 'spend', 'alert-rules']) {
+    dom.window.dispatchEvent({ type: 'ops:ready', detail: { pane } });
+    await settle();
+  }
+  assert.equal(queues(), baseQueues, 'a pane other than Problems was handed the queue');
+  assert.equal(reads(), baseReads, 'a pane other than Problems asked for private reports');
+
+  dom.window.dispatchEvent({ type: 'ops:ready', detail: { pane: 'problems' } });
+  await settle();
+  assert.equal(queues(), baseQueues + 1, 'Problems was not handed the queue');
+  assert.equal(reads(), baseReads + 1, 'Problems did not read the queue');
+});

@@ -186,7 +186,7 @@ function buildPage(dom, body) {
     parent.appendChild(node);
     return node;
   };
-  body.setAttribute('data-pane', 'alerts');
+  body.setAttribute('data-pane', 'problems');
   body.className = 'is-booting';
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
@@ -199,13 +199,13 @@ async function settle(times) {
   for (let i = 0; i < (times || 10); i += 1) await new Promise((r) => setImmediate(r));
 }
 
-/* Loads the page the way ops/alerts.html loads it, answers every read from
+/* Loads the page the way ops/problems.html loads it, answers every read from
    `given`, then opens every Details disclosure on the page so the record read
    is drawn as well. */
 async function boot(given, search) {
   const dom = makeDom({
     tokens: TOKENS,
-    href: 'https://ops.example.invalid/ops/alerts.html' + (search || ''),
+    href: 'https://ops.example.invalid/ops/problems.html' + (search || ''),
   });
   const body = dom.element('body');
   dom.root.appendChild(body);

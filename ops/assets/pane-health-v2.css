@@ -1,0 +1,261 @@
+/* =========================================================================
+   Aria Operations — Health (v2)
+   Loaded after assets/aria.css, assets/shell-pane-v2.css and
+   assets/pane-status-v2.css (the status line, problem rows and tile shape it
+   shares with Today), on ops/alerts.html and nowhere else.
+
+   Four flat cards under the status line and the problem rows. The one light on
+   the page is the live pulse in the status line; green, amber and red are tiny
+   dots and the end of a bar, never a surface. Violet is the colour of work the
+   system is doing (a job's icon, its bar, the worked bar).
+
+   No new colour value and no new custom property: every rule paints in a token
+   aria.css declares, so both themes repaint from the sheet and nothing is
+   resolved in script.
+   ========================================================================= */
+
+.health { gap: 18px; }
+.health .prob-view svg { display: block; }
+
+.health-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  grid-template-areas:
+    "now  day"
+    "runs checks";
+  gap: 16px;
+}
+.tile-now { grid-area: now; }
+.tile-day { grid-area: day; }
+.tile-runs { grid-area: runs; }
+.tile-checks { grid-area: checks; }
+
+.health .tile { gap: 6px; }
+.health .tile-title { margin-bottom: 4px; }
+.tile-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tile-bar .tile-title { margin-bottom: 0; }
+
+.tile-go {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  font-size: 15.5px; font-weight: 540; color: var(--cyan-ink);
+}
+.tile-go svg { width: 16px; height: 16px; }
+.tile-go:hover { text-decoration: underline; text-underline-offset: 3px; }
+.go-short { display: none; }
+.tile-more { align-self: flex-start; margin-top: 8px; font-size: 14.5px; color: var(--cyan-ink); }
+.tile-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.day-words { margin-top: 10px; font-size: 15px; color: var(--ink-2); }
+.day-words + .day-words { margin-top: 2px; }
+
+/* ------------------------------------------------------- happening now */
+
+.counts { display: flex; margin: 8px 0 14px; }
+.count {
+  display: flex; flex-direction: column; gap: 2px;
+  flex: 1 1 0; min-width: 0;
+  padding: 0 22px;
+}
+.count:first-child { padding-left: 0; }
+.count + .count { border-left: 1px solid var(--line-2); }
+.count-n { font-size: 36px; font-weight: 600; line-height: 1.1; color: var(--ink); overflow-wrap: anywhere; }
+.count-l { font-size: 15px; color: var(--ink-2); text-transform: capitalize; }
+.count.is-stuck.is-hot .count-n { color: var(--amber-ink); }
+.count.is-abandoned.is-hot .count-n { color: var(--rose-ink); }
+
+.job-table { display: flex; flex-direction: column; }
+.job-head, .job-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr) 76px 100px;
+  align-items: center; column-gap: 18px;
+}
+.job-head, .run-head { font-size: 14px; color: var(--ink-3); }
+.job-head { padding: 10px 0; border-top: 1px solid var(--line); }
+.job-line { min-height: 52px; border-top: 1px solid var(--line); }
+.job-name { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.job-ico { display: grid; place-items: center; flex: none; color: var(--violet-ink); }
+.job-ico svg { width: 18px; height: 18px; }
+.job-words { display: flex; flex-direction: column; min-width: 0; }
+.job-type { font-size: 16px; color: var(--ink); overflow-wrap: anywhere; }
+.job-sub { display: none; font-size: 14px; color: var(--ink-2); }
+.job-prog { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.job-bar {
+  position: relative; flex: 1 1 auto; height: 8px; min-width: 40px;
+  border-radius: 4px; background: var(--surface-3);
+}
+.job-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 4px; background: var(--violet); }
+.job-fill.is-warn { background: var(--amber); }
+.job-fill.is-crit { background: var(--rose); }
+.job-pct { flex: none; width: 42px; text-align: right; font-size: 15px; color: var(--ink-2); }
+.job-time { font-size: 15px; color: var(--ink-2); }
+.job-state { font-size: 15px; color: var(--ink-2); }
+.job-line.is-warn .job-state { color: var(--amber-ink); }
+.job-line.is-crit .job-state { color: var(--rose-ink); }
+
+/* ------------------------------------------------------------- last 24h */
+
+.day-main { display: flex; flex-direction: column; margin-top: 4px; }
+.day-big { font-size: 44px; font-weight: 600; line-height: 1.1; color: var(--ink); }
+.day-l { font-size: 15px; color: var(--ink-2); text-transform: capitalize; }
+.day-window { display: none; }
+.tile-day .ai-bar { margin: 14px 24px 0 0; }
+
+.day-split {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin-top: 18px; padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.day-tally { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.day-fig { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.day-fig + .day-fig, .day-tally + .day-fig { padding-left: 22px; border-left: 1px solid var(--line-2); }
+.day-n { font-size: 30px; font-weight: 600; line-height: 1.15; color: var(--ink); }
+.day-fig.is-failed.is-hot .day-n { color: var(--rose-ink); }
+.day-fig .day-l { text-transform: capitalize; }
+.day-sub { font-size: 14px; color: var(--ink-3); }
+.day-foot { font-size: 15px; color: var(--ink-3); }
+
+/* --------------------------------------------------------- recent runs */
+
+.run-table { display: flex; flex-direction: column; margin-top: 6px; }
+.run-head, .run-line {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1.5fr) minmax(0, 1fr) 64px;
+  align-items: center; column-gap: 18px;
+}
+.run-head { padding: 10px 0; border-top: 1px solid var(--line); }
+.run-line { min-height: 52px; border-top: 1px solid var(--line); }
+.run-when, .run-took { font-size: 15px; color: var(--ink-2); }
+.run-job { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.run-out { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink-2); }
+.run-out .dot { flex: none; }
+.run-out.is-crit { color: var(--ink); }
+
+/* -------------------------------------------------------------- checks */
+
+.chk-sum { display: flex; flex-direction: column; margin-top: 4px; }
+.chk-big { font-size: 40px; font-weight: 600; line-height: 1.1; color: var(--ink); }
+.chk-words { font-size: 15px; color: var(--ink-2); }
+.chk-notes {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.chk-note { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--ink); }
+.chk-note .dot { flex: none; }
+.chk-rows {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 12px 0 0; padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.chk-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
+.chk-l { margin: 0; font-size: 15px; color: var(--ink-2); }
+.chk-v { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 15px; color: var(--ink-2); }
+.chk-v .dot { flex: none; }
+
+/* ------------------------------------------------- the safety reports */
+
+/* One row in the shape of a problem row (assets/pane-status-v2.css). Amber
+   while every deadline is ahead; red once one has passed or a report has no
+   deadline. The words say the same thing, so the colour is never the only
+   signal. */
+.prob-since.is-late { color: var(--rose-ink); font-weight: 560; }
+.prob-retry { margin-left: auto; }
+
+/* --------------------------------------------------------------- phone */
+
+@media (max-width: 980px) {
+  .health { gap: 14px; }
+  .health-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "now" "day" "runs" "checks";
+    gap: 14px;
+  }
+  .health .tile { padding: 16px 16px 18px; min-height: 0; }
+
+  /* The row's one action is a finger target, and sits in the grid's last
+     column beside both lines. */
+  .health .prob-view, .prob-retry .btn { min-height: 44px; }
+  .prob-retry { grid-area: view; margin: 0; }
+  /* The heading stays for a screen reader and goes from the sighted card. */
+  .tile-day .tile-title, .tile-runs .tile-title { margin: 0; }
+  .tile-day .tile-title {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .tile-title a, .tile-go, .tile-more {
+    display: inline-flex; align-items: center; min-height: 44px;
+  }
+  .tile-now .tile-title { margin: 0; }
+  .go-long { display: none; }
+  .go-short { display: inline; }
+  .tile-go { font-size: 16.5px; }
+
+  .counts { margin: 2px 0 12px; }
+  .count { align-items: center; padding: 0 10px; text-align: center; }
+  .count:first-child { padding-left: 10px; }
+  .count-n { font-size: 32px; }
+  .count.is-abandoned:not(.is-hot) { display: none; }
+
+  .job-head, .run-head {
+    position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .job-line {
+    grid-template-columns: minmax(0, 1fr) minmax(70px, .9fr) auto;
+    column-gap: 14px; min-height: 56px;
+  }
+  .job-state { display: none; }
+  .job-sub { display: block; }
+  .job-type { font-size: 16.5px; }
+  .job-time { text-align: right; font-size: 16px; color: var(--ink); }
+
+  .tile-day { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 20px; }
+  .tile-day > * { grid-column: 1 / -1; }
+  .tile-day .day-main { grid-column: 1; grid-row: 1; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin: 0; }
+  .day-big { font-size: 36px; white-space: nowrap; flex: 0 0 100%; }
+  .day-window { display: inline; font-size: 15px; color: var(--ink-3); }
+  .tile-day .ai-bar { grid-column: 1; grid-row: 2; margin-top: 10px; }
+  .day-split { display: contents; }
+  .day-tally { grid-column: 1; grid-row: 3; flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 0 8px; margin-top: 8px; }
+  .day-tally .day-fig { flex-direction: row; align-items: baseline; gap: 5px; padding: 0; border: 0; }
+  .day-tally .day-n { font-size: 15px; font-weight: 520; }
+  .day-tally .day-fig .day-l { font-size: 15px; text-transform: none; }
+  .day-foot::before { content: '\00b7'; margin-right: 8px; }
+  .day-fig.is-typical {
+    grid-column: 2; grid-row: 1 / span 3; align-self: center;
+    align-items: center; text-align: center;
+    padding: 0 0 0 16px; border-left: 1px solid var(--line-2);
+  }
+  .day-fig.is-typical .day-n { font-size: 30px; }
+  .day-fig.is-typical .day-l { font-size: 15px; }
+
+  .run-table { margin-top: 0; }
+  .run-line {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "job out when";
+    column-gap: 14px; min-height: 56px;
+  }
+  .run-job { grid-area: job; }
+  .run-out { grid-area: out; }
+  .run-when { grid-area: when; text-align: right; font-size: 16px; color: var(--ink); }
+  .run-took { display: none; }
+
+  .tile-checks .tile-bar { min-height: 44px; }
+  .chk-sum { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 8px; margin-top: 0; }
+  .chk-big { font-size: 24px; }
+  .chk-words { font-size: 16px; }
+  .chk-notes { margin-top: 8px; padding-top: 8px; }
+  .chk-row.is-quiet { display: none; }
+}
+
+@media (max-width: 380px) {
+  .count { padding: 0 6px; }
+  .count:first-child { padding-left: 6px; }
+  .count-n { font-size: 28px; }
+  .job-line { grid-template-columns: minmax(0, 1fr) minmax(82px, .8fr) auto; column-gap: 10px; }
+  .job-prog { gap: 8px; }
+  .job-pct { width: 36px; }
+  .run-line { column-gap: 10px; }
+  .day-fig.is-typical { padding-left: 14px; }
+  .day-fig.is-typical .day-n { font-size: 26px; }
+}

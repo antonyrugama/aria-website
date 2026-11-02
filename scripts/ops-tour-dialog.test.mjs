@@ -246,16 +246,16 @@ test('an action step says what it does, who may, what is recorded and what canno
 /* ----------------------------------------------------------------- roles */
 
 test('an operator is told an owner-only control is not theirs, and still told what it does', async () => {
-  const operator = await openGuide('alerts', { role: 'operator' });
-  stepTo(operator, 'alerts-rules');
+  const operator = await openGuide('problems', { role: 'operator' });
+  stepTo(operator, 'problems-rules');
   const note = allText(operator.box.querySelector('.tour-note'));
   assert.match(note, /limited to the owner role/, 'the operator was not told who may use it');
   assert.match(note, /signed in as operator/, 'the operator was not told which role they have');
   assert.ok(facts(operator.box)['What it does'], 'the operator was not told what the control does');
 
   /* And the other direction: an owner at the same step is not refused. */
-  const owner = await openGuide('alerts', { role: 'owner' });
-  stepTo(owner, 'alerts-rules');
+  const owner = await openGuide('problems', { role: 'owner' });
+  stepTo(owner, 'problems-rules');
   assert.ok(owner.box.querySelector('.tour-note') === null, 'the owner was told the control is not theirs');
 });
 

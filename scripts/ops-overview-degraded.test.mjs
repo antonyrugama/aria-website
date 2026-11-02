@@ -47,6 +47,7 @@ const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const MODEL_SRC = read('assets/alerts-model.js');
+const STATUS_SRC = read('assets/pane-status.js');
 const PANE_SRC = read('assets/pane-overview.js');
 
 const TOKENS = {
@@ -219,6 +220,7 @@ async function boot(options) {
   };
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
+  vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
   return Object.assign(dom, { states });

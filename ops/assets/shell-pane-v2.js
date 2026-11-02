@@ -1277,7 +1277,10 @@
       var panel = shownPanel();
       if (!panel) return;
       var host = sectionId ? first(panel, '[id="' + prefix + '-' + sectionId + '"]') : null;
-      var head = first(host || panel, '.sec-title, .state-title');
+      /* A section that came back with nothing to draw (a row that appears only
+         while something is waiting) has no heading left, so focus goes to the
+         first heading on the screen rather than to <body>. */
+      var head = first(host || panel, '.sec-title, .state-title') || first(panel, '.sec-title, .state-title');
       if (!head) return;
       head.setAttribute('tabindex', '-1');
       head.focus();
@@ -1393,13 +1396,14 @@
   }
 
   /* The row of sibling panes under the title. A destination is five links in
-     the rail, but Health is three pages (problems, what is running, what
-     happened) and Growth two, and a deep link to any of them has to land
+     the rail, but Health is four pages (its own, problems, what is running,
+     what happened) and Growth two, and a deep link to any of them has to land
      somewhere that can reach the others. The destination's own pages are
      listed with the one on screen marked; a destination with a single page, and
-     a page that belongs to none, has no row. */
+     a page that belongs to none, has no row. A destination's home that says
+     `subnav: false` links to the others from its own cards and draws no row. */
   function renderSubnav(pane) {
-    if (!pane.destination) return null;
+    if (!pane.destination || pane.subnav === false) return null;
     var ids = registry.panesOf(pane.destination);
     if (ids.length < 2) return null;
 
@@ -1563,6 +1567,24 @@
     return badges;
   }
 
+  /* Where a link made for the pane this file used to be should go, or null.
+     Only the parameters the registry names are carried, and only when the link
+     has one: a bare link to the file is the pane that owns it now. The value
+     is carried as written, because the pane it lands on already turns a value
+     it does not offer into its own default. */
+  function legacyTarget(pane) {
+    var legacy = pane.legacy;
+    var to = legacy && PANES[legacy.to];
+    if (!to) return null;
+    var q = new URLSearchParams(global.location.search);
+    var carried = new URLSearchParams();
+    legacy.carry.forEach(function (name) {
+      if (q.has(name)) carried.set(name, q.get(name));
+    });
+    var qs = carried.toString();
+    return qs ? to.file + '?' + qs : null;
+  }
+
   /* Boots a pane page. The app markup stays behind the gate until the API has
      confirmed a session, so there is no state in which a partly built shell is
      on screen: it is the boot placeholder, the failure card, or the real
@@ -1571,6 +1593,14 @@
     var pageId = document.body.getAttribute('data-pane');
     var pane = PANES[pageId];
     if (!pane) throw new Error('Unknown pane: ' + pageId);
+
+    /* Before the session is asked for, so the page this link was not made for
+       neither draws nor reads on its way to the one it was. */
+    var handedOn = legacyTarget(pane);
+    if (handedOn) {
+      global.location.replace(handedOn);
+      return;
+    }
 
     activePane = pane;
     document.title = (pane.heading ? pane.heading + ' \u00b7 ' + pane.label : pane.label) + ' | Aria Operations';

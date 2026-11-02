@@ -262,11 +262,13 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today does not carry its registry question under the title. It carries the
-   date and when the figures were read, which are the figures' own stamp: the
-   summary read's generatedAt. The sub is still asserted to the character, off
-   that same fixture, so a Today whose sub stopped saying when it was read
-   would fail here exactly as a pane with the wrong question does. */
+/* Today, Health and Money do not carry their registry question under the
+   title. They carry the date and when their figures were read, which are the
+   figures' own stamp: Today's summary read, Health's job-queue read
+   (generatedAt on each), Money's cost answer (asOf). The sub is still asserted
+   to the character, off that same fixture, so a pane whose sub stopped saying
+   when it was read would fail here exactly as a pane with the wrong question
+   does. */
 const datedSub = (iso) => {
   const t = new Date(iso);
   const two = (n) => String(n).padStart(2, '0');
@@ -275,11 +277,12 @@ const datedSub = (iso) => {
   });
   return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
 };
-/* Money carries the same line, off the cost answer's own `asOf`: the time the
-   server collected the bill, not the time the page was opened. Delivery carries
-   the same dated head as Today, off the same summary read. */
+/* Money's line comes off the cost answer's own `asOf`: the time the server
+   collected the bill, not the time the page was opened. Delivery carries the
+   same dated head as Today, off the same summary read. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
+  alerts: () => datedSub(JOBS.generatedAt),
   delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(COSTS.asOf),
   /* Growth carries the date and which seven days it is about, off the seven
@@ -865,6 +868,10 @@ function stub(pathname, body, query) {
       ]
     } };
   }
+  if (pathname === '/api/ops/moderation/reports') {
+    // Readable and empty: Health's safety row stays out of the way, and no report card is drawn, because the queue's own `ugc-delivery` class has no rule on main either (Stadiora/Aria#10456) and is not this pane's to fix.
+    return { data: { items: [], nextCursor: null } };
+  }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname === '/api/ops/runs') {
@@ -1032,7 +1039,11 @@ const RESULT_PROOF = {
   /* RUNS.failures[0].failureCode and the model its first run used. Neither
      is on this pane's landing state, either empty state, or failure card. */
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
-  alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
+  /* The worst problem's title and the count of checks reporting. Health draws
+     both only once the problems and the rules have been read, and neither is on
+     its loading state or a failure line. */
+  alerts: [PROBLEMS[0].title, 'checks reporting'],
+  problems: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
   usage: ['1,061', '8,430', USAGE.apps[1].label],
   spend: [COST_ROWS[0].label, COST_ROWS[2].label],
@@ -1114,13 +1125,13 @@ const KNOWN_UNPAINTED_STATE = [];
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Nine panes are zero because their result views declare no ARIA state at
+   Eleven panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
-   silently compared nothing. Nine, not eleven: releases draws state too, and
+   silently compared nothing. Eleven, not twelve: releases draws state too, and
    this table said 0 for it until round 15 read the number the sweep prints
    against the number this table demands. */
 const EXPECTED_PAIRS = {
-  overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0, usage: 0, delivery: 0,
+  overview: 0, jobs: 0, history: 0, alerts: 0, problems: 0, analytics: 0, usage: 0, delivery: 0,
   /* One pair: the Group-the-bill-by switch's buttons, one `aria-pressed`
      group over the cuts the answer carries (ops/assets/pane-spend.js,
      `viewSwitch()`). The switch is drawn only when two or more cuts have rows,

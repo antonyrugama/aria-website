@@ -195,7 +195,7 @@
         id: 'overview-problems', kind: 'section', title: 'What needs a person',
         anchor: { selector: '#today-problems' },
         body: 'Each row is an open problem, worst first, with the date it began and ' +
-          'whether anybody is on it. View opens the problem on Health, and taking a ' +
+          'whether anybody is on it. View opens the problem on Problems, and taking a ' +
           'problem on happens there, not here.',
         live: function (ctx) {
           var n = ctx.count('.prob-row');
@@ -446,7 +446,132 @@
 
     alerts: [
       {
-        id: 'alerts-community-safety', kind: 'action', title: 'Community safety',
+        id: 'alerts-status', kind: 'section', title: 'The status line',
+        anchor: { selector: '#health-status' },
+        body: 'The line at the top says whether anything critical is open and how many jobs ' +
+          'are running right now. It never says all is well when a read behind it failed: ' +
+          'it says the problems or the checks could not be read.',
+        live: function (ctx) {
+          var health = ctx.read('.health-text');
+          var live = ctx.read('.live-text');
+          return health ? 'Right now it reads: ' + health + (live ? ', ' + live : '') + '.' : '';
+        },
+        facts: [
+          ['Where it comes from', 'The problems the alert rules have raised, the alert rules ' +
+            'themselves, and the queue of jobs, all read live.'],
+          ['Looks healthy when', 'No critical issues, and every alert rule that is turned on ' +
+            'was able to check.'],
+          ['Worth a closer look when', 'A critical issue is open, the list of problems is cut ' +
+            'short, or some checks are not reporting.']
+        ]
+      },
+      {
+        id: 'alerts-safety', kind: 'section', title: 'Safety reports waiting',
+        anchor: { selector: '#health-safety' },
+        roles: ['owner', 'operator'],
+        body: 'When people have reported something in the community and nobody has dealt with ' +
+          'it yet, one row says how many reports are waiting and when the oldest is due. It ' +
+          'turns red once a deadline has passed or a report has no deadline. Review opens the ' +
+          'queue at the top of Problems, where a report is decided. If the queue could not be ' +
+          'read, the row says so and offers Try again.',
+        live: function (ctx) {
+          var row = ctx.read('.prob-title');
+          var when = ctx.read('.prob-since');
+          return row ? 'Right now it reads: ' + row + (when ? ', ' + lowerFirst(when) : '') + '.' : '';
+        },
+        missing: 'No safety report is waiting, so there is no row to point at. The row ' +
+          'appears for owners and operators only.'
+      },
+      {
+        id: 'alerts-problems', kind: 'section', title: 'Problems that need a person',
+        anchor: { selector: '#health-problems' },
+        body: 'Each row is an open problem, worst first, with the date and hour it began and ' +
+          'whether anybody is on it. View opens the problem on Problems, and taking a ' +
+          'problem on or closing it happens there, not here.',
+        live: function (ctx) {
+          var n = ctx.count('.prob-row');
+          return n ? 'It lists ' + plural(n, 'problem') + ' right now.' : '';
+        }
+      },
+      {
+        id: 'alerts-now', kind: 'metric', title: 'Happening now',
+        anchor: { selector: '#health-now' },
+        live: function (ctx) {
+          var rows = ctx.readPairs('.count', '.count-l', '.count-n');
+          return rows.length ? 'This card reads: ' + rows.join(', ') + '.' : '';
+        },
+        metric: {
+          counts: 'Jobs in the queue this moment by state, with how many are stuck or ' +
+            'abandoned, and the first few jobs with their progress where the job reported ' +
+            'any. A waiting job says Queued, not a percentage.',
+          grain: 'The present moment, not a window. When the queue read came back cut short, ' +
+            'a stuck or abandoned count reads "at least", and one the queue did not send ' +
+            'reads as a dash, never as zero.',
+          source: 'The record the server keeps of every job Aria works on.',
+          healthy: 'Work is running, little is waiting, and nothing is stuck or abandoned.',
+          worrying: 'A stuck or abandoned job, or a long wait with nothing running. What is ' +
+            'running shows every job.'
+        }
+      },
+      {
+        id: 'alerts-day', kind: 'metric', title: 'Last 24h',
+        anchor: { selector: '#health-day' },
+        live: function (ctx) {
+          var big = ctx.read('.day-big');
+          var words = ctx.read('.day-words');
+          return big ? 'This card reads ' + big + (words ? ', ' + lowerFirst(words) : '') + '.' : '';
+        },
+        metric: {
+          counts: 'AI runs that worked out of those attempted in the last 24 hours, with ' +
+            'cancelled runs left out of both and counted beside them, and the typical time a ' +
+            'run took.',
+          grain: 'The last 24 hours. The typical time is printed only when enough runs were ' +
+            'timed, and says how many. A day the record does not cover in full says so in ' +
+            'words and prints no figure.',
+          source: 'Every AI run Aria finishes, reported by the AI service when it ends.',
+          healthy: 'Nearly every attempted run worked, and the typical time is steady.',
+          worrying: 'Runs that did not work piling up, or the typical time growing. What ' +
+            'happened shows the runs themselves.'
+        }
+      },
+      {
+        id: 'alerts-runs', kind: 'section', title: 'Recent runs',
+        anchor: { selector: '#health-runs' },
+        body: 'The newest runs, five at most, with when each began and how it ended. A run ' +
+          'with no start time is left out rather than guessed. What happened has every ' +
+          'run, and the steps each one took.',
+        live: function (ctx) {
+          var n = ctx.count('.run-line');
+          return n ? 'It lists ' + plural(n, 'run') + ' right now.' : '';
+        }
+      },
+      {
+        id: 'alerts-checks', kind: 'metric', title: 'Checks',
+        anchor: { selector: '#health-checks' },
+        live: function (ctx) {
+          var big = ctx.read('.chk-big');
+          var words = ctx.read('.chk-words');
+          return big ? 'This card reads ' + big + (words ? ' ' + words : '') + '.' : '';
+        },
+        metric: {
+          counts: 'How many of the alert checks that are turned on reported a verdict, when ' +
+            'the last check ran, whether the job recorder has ever recorded, and whether the ' +
+            'billing feed is current.',
+          grain: 'The present moment. A check that is not reporting and one gone stale are ' +
+            'counted apart and never as passing. The billing feed is behind ' +
+            'once it is older than twice its own publishing lag.',
+          source: 'The alert rules, the job recorder and the billing feed, each read live. A ' +
+            'feed that could not be read says Not read.',
+          healthy: 'Every check that is turned on is reporting, and the last one ran lately.',
+          worrying: 'Fewer checks reporting than are turned on, a feed that is behind, or one ' +
+            'that could not be read. Problems lists each rule and what it watches.'
+        }
+      }
+    ],
+
+    problems: [
+      {
+        id: 'problems-community-safety', kind: 'action', title: 'Community safety',
         anchor: { selector: '.ugc-queue' },
         roles: ['owner', 'operator'],
         action: {
@@ -457,7 +582,7 @@
         }
       },
       {
-        id: 'alerts-status', kind: 'section', title: 'How many problems are open',
+        id: 'problems-status', kind: 'section', title: 'How many problems are open',
         anchor: { selector: '.hero' },
         body: 'The count of open problems and the worst of them. When a read came back full, ' +
           'every count reads as "at least", because the rest could not be fetched.',
@@ -467,7 +592,7 @@
         }
       },
       {
-        id: 'alerts-open', kind: 'section', title: 'Open problems',
+        id: 'problems-open', kind: 'section', title: 'Open problems',
         anchor: { selector: 'section', title: 'Open problems' },
         body: 'Each problem says what tripped, how bad it is in a word as well as a colour, ' +
           'who has it, and where the work is. Details opens its runbook and timeline in place.',
@@ -477,7 +602,7 @@
         }
       },
       {
-        id: 'alerts-take-on', kind: 'action', title: 'Take a problem on',
+        id: 'problems-take-on', kind: 'action', title: 'Take a problem on',
         anchor: { selector: 'section', title: 'Open problems' },
         roles: ['owner', 'operator'],
         action: {
@@ -489,7 +614,7 @@
         }
       },
       {
-        id: 'alerts-close', kind: 'action', title: 'Close a problem',
+        id: 'problems-close', kind: 'action', title: 'Close a problem',
         anchor: { selector: 'section', title: 'Open problems' },
         roles: ['owner', 'operator'],
         action: {
@@ -501,7 +626,7 @@
         }
       },
       {
-        id: 'alerts-rules', kind: 'action', title: 'What is being watched',
+        id: 'problems-rules', kind: 'action', title: 'What is being watched',
         anchor: { selector: 'section', title: 'What is being watched' },
         roles: ['owner'],
         body: 'Each alert rule, what it watches, the line it has to cross, and whether it could ' +
@@ -520,7 +645,7 @@
         }
       },
       {
-        id: 'alerts-closed', kind: 'metric', title: 'Closed, and how the watching is doing',
+        id: 'problems-closed', kind: 'metric', title: 'Closed, and how the watching is doing',
         anchor: { selector: 'section', title: 'Closed, and how the watching is doing' },
         metric: {
           counts: 'Problems recently closed, how many were opened and closed, how long it took ' +

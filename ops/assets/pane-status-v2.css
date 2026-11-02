@@ -1,0 +1,182 @@
+/* =========================================================================
+   Aria Operations — shared status parts (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on the two pages
+   that draw the status line and the compact problem rows: ops/index.html
+   (Today) and ops/alerts.html (Health). assets/pane-status.js draws the nodes
+   these rules paint, so the two pages cannot drift apart.
+
+   Everything here is scoped to `.status-pane`, the class both pages put on the
+   root of their pane, except the few names the shell's header slot owns.
+
+   No new colour value and no new custom property: every rule paints in a token
+   aria.css declares, so both themes repaint from the sheet.
+   ========================================================================= */
+
+/* A host never widens its row or its grid track by an unbroken word, and a
+   section that drew nothing leaves no gap behind it. */
+.status-pane .sec { min-width: 0; }
+.status-pane .sec:empty { display: none; }
+
+.status-pane .num {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
+.status-pane h2, .status-pane h3 { margin: 0; }
+.status-pane p { margin: 0; }
+.status-pane a { text-decoration: none; }
+
+/* ---------------------------------------------------------- status line */
+
+.status-line {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px 24px; flex-wrap: wrap;
+  min-height: 24px;
+}
+.status-health, .status-live {
+  display: flex; align-items: center; gap: 11px;
+  min-width: 0;
+}
+.status-health { flex-wrap: wrap; row-gap: 2px; }
+/* What the calm line leaves out, beside it in the secondary ink, so the claim
+   stays a claim about problems only. It wraps under the claim rather than
+   widening the row. */
+.health-notes { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
+.health-note { font-size: 14px; color: var(--ink-3); }
+.status-line .sec-title { font-size: 15.5px; font-weight: 500; color: var(--ink); }
+/* The line can say a long thing ("At least 100 open problems", "No alert
+   destination set") on a 360px phone beside a dot, so it wraps rather than
+   pushing the row wider than the screen. */
+.health-text, .live-text { min-width: 0; overflow-wrap: anywhere; }
+
+.status-pane .dot {
+  width: 9px; height: 9px;
+  box-shadow: none;
+  animation: none;
+}
+.status-pane .dot.is-ok { --c: var(--emerald); }
+.status-pane .dot.is-warn { --c: var(--amber); }
+.status-pane .dot.is-crit { --c: var(--rose); }
+.status-pane .dot.is-info { --c: var(--blue); }
+.status-pane .dot.is-idle { --c: var(--ink-3); }
+
+/* The one dot that moves: something is running. */
+.pulse {
+  width: 9px; height: 9px; flex: none; border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 20%, transparent);
+  animation: today-pulse 2.4s ease-in-out infinite;
+}
+@keyframes today-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 20%, transparent); }
+  50%      { box-shadow: 0 0 0 7px color-mix(in srgb, var(--cyan) 5%, transparent); }
+}
+
+/* ----------------------------------------------------------- problems */
+
+.problem-rows { display: flex; flex-direction: column; gap: 8px; }
+.prob-row {
+  display: flex; align-items: center; gap: 14px;
+  min-height: 62px; padding: 12px 24px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.prob-title { font-size: 16.5px; font-weight: 520; letter-spacing: -.01em; color: var(--ink); min-width: 0; }
+.prob-meta { display: flex; align-items: center; gap: 0; min-width: 0; flex-wrap: wrap; font-size: 14.5px; color: var(--ink-2); }
+.prob-meta > * { display: inline-flex; align-items: center; gap: 9px; }
+.prob-meta > * + *,
+.prob-since {
+  margin-left: 14px; padding-left: 14px;
+  border-left: 1px solid var(--line-2);
+}
+.prob-who .who-av { width: 28px; height: 28px; }
+.prob-who .who-av svg { width: 15px; height: 15px; }
+.prob-view {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 16px; font-weight: 560; color: var(--cyan-ink);
+}
+.prob-view svg { display: none; width: 16px; height: 16px; }
+.prob-view:hover { text-decoration: underline; text-underline-offset: 3px; }
+.prob-more { align-self: flex-start; padding: 4px 24px; font-size: 14px; color: var(--cyan-ink); }
+.prob-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* -------------------------------------------------------------- tiles */
+
+/* A card with a heading and a few figures. Today lays three of them out in a
+   row and Health lays four out in a grid, so this is the card and not the
+   layout. A bare `.tile`, not `.status-pane .tile`, so a page's own tile
+   (Today's grid-based spend tile) can restyle it at the same specificity. */
+.tile {
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0;
+  padding: 22px 26px 24px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.tile-title {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 8px;
+  font-size: 16px; font-weight: 520; letter-spacing: -.01em; color: var(--ink);
+}
+.tile-ico { display: grid; place-items: center; color: var(--cyan-ink); }
+.tile-ico.is-violet { color: var(--violet-ink); }
+.tile-ico svg { width: 22px; height: 22px; }
+.tile-link { color: inherit; }
+.tile-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Worked over attempted, with a red end dot when something failed. */
+.ai-bar {
+  position: relative; height: 10px;
+  border-radius: 5px; background: var(--surface-3);
+}
+.ai-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; background: var(--violet); }
+.ai-miss {
+  position: absolute; left: 100%; top: 50%;
+  width: 9px; height: 9px; margin: -4.5px 0 0 10px;
+  border-radius: 50%; background: var(--rose);
+}
+
+/* ------------------------------------------------------------ failure */
+
+.status-pane .state-block { padding: 24px 12px; }
+
+/* -------------------------------------------------------------- phone */
+
+@media (max-width: 980px) {
+  .status-line .sec-title { font-size: 16px; }
+
+  .prob-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot title view"
+      ".   meta  view";
+    align-items: center; column-gap: 14px; row-gap: 2px;
+    padding: 14px 18px;
+  }
+  .prob-row > .dot { grid-area: dot; align-self: start; margin-top: 7px; }
+  .prob-title { grid-area: title; font-size: 17px; }
+  .prob-meta { grid-area: meta; font-size: 13.5px; flex-wrap: nowrap; white-space: nowrap; }
+  .prob-since { margin-left: 0; padding-left: 0; border-left: 0; }
+  .prob-meta > * + * { margin-left: 8px; padding-left: 0; border-left: 0; }
+  .prob-meta > * + *::before { content: '\00b7'; margin-right: 1px; color: var(--ink-3); }
+  .prob-who { gap: 6px; }
+  .prob-who .who-av { width: 22px; height: 22px; }
+  .prob-who .who-av svg { width: 12px; height: 12px; }
+  .prob-view { grid-area: view; margin: 0; font-size: 16.5px; }
+  .prob-view svg { display: block; }
+  .prob-more { padding: 4px 18px; }
+}
+
+@media (max-width: 380px) {
+  .prob-meta { flex-wrap: wrap; white-space: normal; }
+  .prob-meta > * + *::before { content: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; }
+}

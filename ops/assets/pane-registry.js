@@ -40,6 +40,15 @@
                 against what aria.js drew, and the pair cannot drift.
      datedHead  the pane writes its own line under the title (a date and when
                 it last read) instead of the one-line question the others show
+     subnav     false on a destination's home that links to its other pages from
+                its own cards, so no row of siblings is drawn above them. The
+                destination's other pages still draw the row, home first
+     legacy     { to, carry }: this pane's file used to be another pane's, so a
+                link to it that carries one of the `carry` parameters was made
+                for the pane named in `to`. The shell hands it on, parameters
+                included, before it asks for a session or draws anything, so
+                the old link keeps the window it was written for instead of
+                landing on a page that has no such control
      scopeInPane the pane draws the App control itself, inside its own form, so
                 the shell draws no App segment for it. The shell still does
                 everything else `scope` means: it reads the querystring, writes
@@ -145,7 +154,24 @@
         'outcome are the narrowings — both are on the pane'
     },
     alerts: {
-      file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',
+      file: 'alerts.html', icon: 'pulse', label: 'Health', group: 'Right now',
+      destination: 'health', datedHead: true, subnav: false,
+      /* Until Health took this file, alerts.html was Problems, and the window
+         was the one thing a link to it could say: ?range=open, 7d or 30d. Those
+         links are in bookmarks, chat and old alert messages, and Health draws
+         nothing a window could narrow, so a link that still names one goes to
+         Problems with it. A bare alerts.html is Health. */
+      legacy: { to: 'problems', carry: ['range'] },
+      question: 'Is anything wrong, and is Aria keeping up?',
+      /* Health reads the present and the last day, and nothing it draws can be
+         narrowed: the window is part of each figure's name. So no control, and
+         so no note about one. The deeper pages below carry their own windows.
+         No row of sibling pages either: the cards link to them, and each of
+         them has the row back. */
+      wave: 'W2', scope: false, range: false, env: false
+    },
+    problems: {
+      file: 'problems.html', icon: 'alerts', label: 'Problems', group: 'Right now',
       destination: 'health',
       question: 'What needs a person right now, and who is on it?',
       /* The window is real: it is applied to the problems that were read, and

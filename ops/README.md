@@ -31,11 +31,19 @@ between them, so signing in to the mobile app grants exactly zero dashboard acce
 
 ## Community safety queue
 
-Owners and operators see the private moderation queue at the top of **Problems**.
-It is independent of the Problems filters and lists pending reports oldest first,
+Owners and operators see the private moderation queue at the top of **Problems**
+(`problems.html`, the pane id `problems`). It is independent of the Problems filters and lists pending reports oldest first,
 with a 24-hour action deadline and separate Teams/email delivery states. Missing,
 failed or unconfigured delivery is visible, not treated as success. Queue labels
 can be switched between Spanish, English and Portuguese.
+
+**Health** (`alerts.html`) carries one compact row about this queue, for owners and
+operators only: "3 safety reports to review", with the time the oldest is due and a
+**Review** link to the queue on Problems. It is amber while every deadline is ahead and
+red once one has passed or a report has no deadline. It appears only while a report is
+pending, and a role that cannot see the queue is never sent the read. When the queue
+cannot be read the row says "Couldn't load safety reports" and offers Try again. The
+full queue, with its language switch, is on Problems only.
 
 Remove content, remove access and dismiss each require an explicit confirmation
 and a reason of 3 to 500 characters. Profiles offer remove access or dismiss,
@@ -189,7 +197,7 @@ font-src = 'self'
 connect-src = 'self' https://api.runwitharia.com
 base-uri = 'none'
 form-action = 'none'
-pages carrying this exact policy = 16
+pages carrying this exact policy = 17
 ```
 
 What follows from wanting it this strict:
@@ -201,9 +209,9 @@ What follows from wanting it this strict:
   from the markup, is counted rather than remembered:
 
   ```claims id=csp-pages
-  pages in ops/ = 16
-  pages declaring the policy in a <meta> = 16
-  pages loading assets/theme.js = 16
+  pages in ops/ = 17
+  pages declaring the policy in a <meta> = 17
+  pages loading assets/theme.js = 17
   pages with an inline <script> = 0
   pages with a style attribute in markup = 0
   ```
@@ -268,7 +276,8 @@ ops/
   index.html            Today
   jobs-live.html        Happening now
   run-history.html      What happened
-  alerts.html           Problems
+  alerts.html           Health
+  problems.html         Problems
   analytics.html        Growth
   usage.html            Usage detail
   spend.html            Money
@@ -295,6 +304,8 @@ ops/
     alerts-model.js     the problems API in plain words; which pages load it is
                         assets-by-page, and no count is kept here
     pane-overview.js    Today
+    pane-status.js      the status line, retry and problem rows Today and Health share
+    pane-health.js      Health
     pane-alerts.js      Problems
     pane-data.js        v1 plumbing for the understand panes: source, formatting,
                         states, charts — no page loads it; likewise
@@ -314,9 +325,11 @@ ops/
                         filter bar, roles, definePane, the four states
     shell-pane-v2.css   what a v2 pane page needs and aria.css does not carry:
                         the three gates, the sub-navigation, the toast
+    pane-status-v2.css    the shapes Today and Health share: status line, bare tile, problem rows
     pane-overview-v2.css  Today's own shapes
+    pane-health-v2.css    Health's own shapes, and the safety-report row's
     pane-releases-v2.css  App releases' own shapes
-    pane-alerts-v2.css    Problems' own shapes
+    pane-alerts-v2.css    Problems' own shapes, and the Community safety queue's
     pane-settings-v2.css  Settings' own shapes
     pane-users-v2.css     Look up a user's own shapes
     pane-run-history-v2.js   What happened
@@ -343,17 +356,17 @@ code behaves. The block below is read out of the `<link>` and `<script>` tags in
 something, or a file that is deleted, is a red test rather than a stale sentence.
 
 ```claims id=assets-by-page
-alerts-model.js = alerts.html, index.html
-api.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, usage.html, users.html
-aria.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, usage.html, users.html
-aria.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, usage.html, users.html
+alerts-model.js = alerts.html, index.html, problems.html
+api.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, problems.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, usage.html, users.html
+aria.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, problems.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, usage.html, users.html
+aria.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, problems.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, usage.html, users.html
 icons.js = login.html, setup.html
 job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
 operate.js = (no page)
 ops.css = login.html, setup.html
-pane-alerts-v2.css = alerts.html
-pane-alerts.js = alerts.html
+pane-alerts-v2.css = problems.html
+pane-alerts.js = problems.html
 pane-analytics-v2.css = analytics.html
 pane-analytics.js = analytics.html
 pane-data.js = (no page)
@@ -361,11 +374,13 @@ pane-delivery-v2.css = delivery.html
 pane-delivery.js = delivery.html
 pane-evaluations-v2.css = evaluations.html
 pane-evaluations.js = evaluations.html
+pane-health-v2.css = alerts.html
+pane-health.js = alerts.html
 pane-jobs-live-v2.css = jobs-live.html
 pane-jobs-live-v2.js = jobs-live.html
 pane-overview-v2.css = index.html
 pane-overview.js = index.html
-pane-registry.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, usage.html, users.html
+pane-registry.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, problems.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, usage.html, users.html
 pane-releases-v2.css = releases.html
 pane-releases.js = releases.html
 pane-review-admin.css = review.html
@@ -375,21 +390,23 @@ pane-run-history-v2.js = run-history.html
 pane-settings-v2.css = settings.html
 pane-spend-v2.css = spend.html
 pane-spend.js = spend.html
-pane-ugc.js = alerts.html
+pane-status-v2.css = alerts.html, index.html
+pane-status.js = alerts.html, index.html
+pane-ugc.js = problems.html
 pane-usage-v2.css = usage.html
 pane-usage.js = usage.html
 pane-users-v2.css = users.html
 pane-users.js = users.html
-session.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
+session.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, problems.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
 settings.js = settings.html
 setup.js = setup.html
-shell-pane-v2.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
-shell-pane-v2.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
+shell-pane-v2.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, problems.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
+shell-pane-v2.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, problems.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
 shell-v2.js = shell-v2.html
 shell.js = (no page)
-theme.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, usage.html, users.html
-tour-v2.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
-tour.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
+theme.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, problems.html, releases.html, review.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, usage.html, users.html
+tour-v2.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, problems.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
+tour.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, problems.html, releases.html, review.html, run-history.html, settings.html, spend.html, usage.html, users.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load
@@ -506,10 +523,11 @@ one. A pane that moves across layers changes this block in the same change that 
 suite is red.
 
 ```claims id=panes
-overview = index.html, shell-pane-v2.js, pane-overview-v2.css
+overview = index.html, shell-pane-v2.js, pane-status-v2.css + pane-overview-v2.css
 jobs = jobs-live.html, shell-pane-v2.js, pane-jobs-live-v2.css
 history = run-history.html, shell-pane-v2.js, pane-run-history-v2.css
-alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
+alerts = alerts.html, shell-pane-v2.js, pane-status-v2.css + pane-health-v2.css
+problems = problems.html, shell-pane-v2.js, pane-alerts-v2.css
 analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
 spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
 delivery = delivery.html, shell-pane-v2.js, pane-delivery-v2.css
@@ -610,16 +628,21 @@ querystring itself.
 Navigation badges and the account are passed through `Aria.boot({ badges, account })` and render
 nothing when absent. Wire them from a real read or pass nothing: a dashboard that invents a count
 is worse than one that shows nothing. Today's Problems badge is the count from
-`/api/ops/alerts/problems`, filed under the Problems pane's id and worn by the Health destination
-(and by the Problems link in its sub-navigation), and it is removed when that read comes back
-empty.
+`/api/ops/alerts/problems`, filed under the Health pane's id (`alerts`) and worn by the Health
+destination (and by the Health link in the sub-navigation of its other pages), and it is removed
+when that read comes back empty. Today, Health and Problems each set it from the same read.
 
 ## What this release does and does not do
 
 The shell, the sign in, and the design system are built. Of the panes, **Problems** is complete:
 it reads the live problems and alert rules, takes a problem on, closes it with a reason, tunes a
 rule where the role allows it, and states whether the alerting is armed and where what it finds
-is sent. **Today** answers its three questions from live reads — how many people used the app this
+is sent; it is `problems.html`, and Health's cards open it. **Health** answers whether anything
+is wrong and whether Aria is keeping up, from `/api/ops/alerts/problems`, `/api/ops/alerts/rules`,
+`/api/ops/jobs`, `/api/ops/runs?range=24h` and `/api/ops/costs?range=month`, each on its own terms:
+a read that fails takes its own card and says so, with its own Try again, and the page says it
+could not be read only when every core read failed. The cost feed is not core, so its failure is a
+"Not read" row and no more. **Today** answers its three questions from live reads — how many people used the app this
 week, is it working, and is anything wrong — and owns no detail: every figure on it is a doorway
 into the page that owns the question. It makes seven reads, each on its own terms: the people
 figure and the AI run count from `GET /api/ops/summary`; the daily lines from `/api/ops/usage`;
@@ -720,7 +743,7 @@ says why, and Hide content removes the text from the DOM.
 A read answers with at most 100 problems, worst first and then oldest, and there is no second
 page. A full page therefore keeps the oldest problem in each severity and drops the most recent,
 which is the opposite of what a window ending today needs. When a page comes back full, both
-Today and Problems say so and every count reads as "at least"; on Problems the whole of the
+Today, Health and Problems say so and every count reads as "at least"; on Problems the whole of the
 "how the watching is doing" card — the fortnight's opened and closed counts, the median time to
 take one on, and the false-alarm figure — says it cannot be worked out rather than showing a
 number that is quietly short.
@@ -1178,13 +1201,15 @@ pane-analytics.js = /api/ops/releases, /api/ops/summary, /api/ops/usage
 pane-data.js = (no route literal)
 pane-delivery.js = /api/ops/costs, /api/ops/runs, /api/ops/seval/admin/reviews/queue, /api/ops/summary
 pane-evaluations.js = /api/ops/seval/admin/datasets/, /api/ops/seval/admin/overview, /api/ops/seval/admin/scenarios/, /api/ops/seval/operations
+pane-health.js = /api/ops/costs, /api/ops/moderation/reports
 pane-jobs-live-v2.js = /api/ops/jobs
-pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/costs, /api/ops/jobs, /api/ops/runs, /api/ops/summary, /api/ops/usage
+pane-overview.js = /api/ops/costs, /api/ops/summary, /api/ops/usage
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
 pane-review-admin.js = /api/ops/seval/admin/reviews/adjudications, /api/ops/seval/admin/reviews/items/, /api/ops/seval/admin/reviews/labels, /api/ops/seval/admin/reviews/queue
 pane-run-history-v2.js = /api/ops/runs
 pane-spend.js = /api/ops/costs, /api/ops/summary
+pane-status.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/jobs, /api/ops/runs
 pane-ugc.js = /api/ops/moderation/reports, /api/ops/moderation/reports/
 pane-usage.js = /api/ops/usage
 pane-users.js = /api/ops/users/, /api/ops/users/lookup
@@ -1559,10 +1584,13 @@ those panes now.
     the most expensive way — a reassuring sentence nobody re-derived. Panes ship them:
 
     ```claims id=sr-span-classes
-    absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
-    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-delivery.js, pane-overview.js, pane-releases.js, pane-spend.js, pane-usage.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only, pane-health-v2.css .job-head, pane-health-v2.css .run-head
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-delivery.js, pane-health.js, pane-releases.js, pane-spend.js, pane-status.js, pane-usage.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
     ```
 
+    Health's job and run tables hide their header rows the same way on a phone (`.job-head`, `.run-head`),
+    and neither table sits in a sideways scroller, so there is no wrapper for the row to resolve past.
+    `pane-status.js` draws the `.sr` text for the problem rows that Today and Health share.
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-releases.js`
     does the same inside `div.tbl-scroll`, and `pane-users.js` puts one on its access table, which
     sits in no wrapper at all. Of those wrappers, Releases' is positioned and Alerts' `.scrollx` is still static in
@@ -1613,8 +1641,9 @@ on purpose and here is why", not as "everything else is identical".
    the last of those carries the check-coverage line beside it.
 3. **Health is a pulse glyph and Money is a coin**, where the mock draws a heart and a database.
    The brand mark is the existing arrow glyph rather than the mock's cyan dot.
-4. **No drawer.** The phone navigation is the bottom bar. Growth, Health and Aria AI each carry a
-   row of sibling pages under the title, because five destinations hold eleven pages.
+4. **No drawer.** The phone navigation is the bottom bar. Growth, Aria AI and Health's other
+   pages each carry a row of sibling pages under the title, because five destinations hold twelve
+   pages. Health's own page does not: its cards link to the others.
 5. **The rail foot is a plain avatar and a first name, with no caret.** The account menu is in the
    top bar, which is also where the tour's entries moved to; the account button is a rounded
    rectangle around the round avatar.
@@ -1915,6 +1944,66 @@ departures that carry a decision.
    a lookup, so a live read and a deleted field cannot end up on the same fallback branch.
 
 `assets/pane-jobs-live-v2.css` carries this pane's own shapes.
+### Health on v2: where the page departs from the mock
+
+The approved design is the Health pair in the R54 set, `H-desktop` and `H-phone`. `alerts.html` is
+the destination's home and answers one question, "is anything wrong, and is Aria keeping up?",
+from six reads: the problems, the alert rules, the job queue, the last 24 hours of runs, the
+cloud-cost feed's age and, for owners and operators only, the Community safety queue. The depth moved out: the old Problems page is `problems.html` (the pane id
+`problems`, `pane-alerts.js`), unchanged, and Happening now and What happened stay as they were.
+A link from before the move, `alerts.html?range=open`, `7d` or `30d` (the window was the only thing
+Problems took from its address), is handed on to `problems.html` with that window before the shell
+asks for a session or Health reads anything (`legacy` in `pane-registry.js`, followed by
+`shell-pane-v2.js`); a bare `alerts.html`, or one that names only what Problems never read
+(`scope`, `env`, `severity`, `category`), is Health.
+Each card on Health is a doorway to the page that owns the depth. The status line, the retry
+control and the problem rows are not Health's: `pane-status.js` draws them for Today and Health
+both, so the two cannot say different things about the same read. The list is the departures that
+carry a decision, and wording and dates differ in more places than are listed.
+
+1. **The owner of a problem is "Someone is on it" or "Nobody on it"**, with a person glyph. The
+   session layer masks `acknowledgedByEmail`, so the mock's "Anthony", its avatar and its separate
+   "Acknowledged" word cannot be drawn. The since-date carries the hour here and not on Today.
+2. **No sub-navigation row, no footer.** Health's cards link to Happening now, What happened and
+   Problems, and each of those draws the row back. The mock's footer is not drawn.
+3. **The status line's right side counts the queue.** It reads "N running now" or "Nothing
+   running" from the job counts rather than the mock's "Live · 09:00 UTC". "Updated HH:MM UTC" is
+   beside the date in the page head, taken from the read and not from the clock.
+4. **The status line says when checks are not reporting**, as Today's does, which the mock has no
+   place for.
+5. **The Checks card never says the system is healthy.** It says "N of M checks reporting" and
+   adds a line only for checks gone stale. It does not say a second time how many are not
+   reporting: the count says it, and so does the status line, in the same plain words ("2 checks
+   not reporting"). Its rows are Last checked, Job
+   recorder and Billing feed; a row draws a dot only for a bad or a recorded state. On a phone only
+   Last checked and a row that is wrong or unread are drawn. The billing feed is behind past twice
+   its own `publishLagHours` (8 hours when none is sent), and "Not read" when `/api/ops/costs`
+   fails, which takes that row and nothing else with it.
+6. **A count the queue did not send is a dash, never a zero**, and a stuck or abandoned count
+   reads "N+" when the queue answered with only its working set. A queued job says "Queued" and
+   draws no bar and no 0%. A typical time is printed only over a measured base and names the base.
+   Worked over attempted leaves cancellations out and counts them beside it. A day where nothing
+   worked and nothing failed says "No runs finished" and still counts its cancellations, with no bar.
+   The failed count is drawn in the problem colour only when it is above zero (`.day-fig.is-failed.is-hot`
+   in `pane-health-v2.css`); a zero is a number, not news.
+   A day that was not
+   fully recorded prints words and no numeral.
+7. **Abandoned is a fourth count only when it is above zero on a phone**, and the cyan dot after
+   "Happening now" is not drawn: the title carries the pulse glyph, as the Checks title carries a
+   chart glyph. The Checks card on a phone is a small card with a title, not one compact row.
+8. **Health has one compact safety row, and the queue stays on Problems.** The full Community
+   safety queue, with its language switch and its evidence, is at the top of `problems.html`
+   (`pane-ugc.js` listens for the pane id `problems`), as it was before this page was rebuilt.
+   Health draws one row in the problem-row shape when reports are pending, for owners and
+   operators only: "3 safety reports to review", the time the oldest is due, and Review, which
+   opens the queue. It is amber while every deadline is ahead and red once one has passed or a
+   report has no deadline. Nothing is drawn with no pending report, and a role that cannot see the
+   queue is never sent the read. A read that failed draws "Couldn't load safety reports" and Try
+   again in the same row; it is never silence. The row is English only, because the language
+   switch belongs to the queue.
+9. **The capabilities the old page had are on Problems:** take on, close, details, the rules
+   table, the closed list, the routing card and the filters. None is dropped.
+
 ### Problems on v2: where the pane departs from the mock
 
 `docs/mocks/ops-dashboard-v2/alerts.html` in the Aria monorepo is the approved design. The pane
@@ -2386,7 +2475,7 @@ Which of these classes any page can still draw is therefore derived rather than 
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
 .btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
-.field-error = declared in ops.css, pane-alerts-v2.css, pane-evaluations-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by alerts.html, evaluations.html, login.html, review.html, setup.html, users.html; painted where drawn
+.field-error = declared in ops.css, pane-alerts-v2.css, pane-evaluations-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by evaluations.html, login.html, problems.html, review.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:
@@ -2845,7 +2934,7 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 584
 ops/assets/pane-usage.js "`features.coverageNote` carries two facts" = line 1033
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 226
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 252
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Health data has no reveal control at all, and no row. Not a disabled" = line 21

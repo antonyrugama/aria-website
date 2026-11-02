@@ -1,7 +1,8 @@
 /* =========================================================================
    Aria Operations — Today (v2)
-   Loaded after assets/aria.css and assets/shell-pane-v2.css, on ops/index.html
-   and nowhere else.
+   Loaded after assets/aria.css, assets/shell-pane-v2.css and
+   assets/pane-status-v2.css (the status line, problem rows and tile shape it
+   shares with Health), on ops/index.html and nowhere else.
 
    Flat panels on the near-black page. Cyan is the only accent; violet is the
    Aria AI tile's and nothing else's. Green, amber and red are tiny dots and
@@ -15,65 +16,6 @@
    ========================================================================= */
 
 .today { gap: 18px; }
-
-/* A section that drew nothing leaves no gap behind it. */
-.today .sec:empty { display: none; }
-
-.today .num {
-  font-family: var(--sans);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -.02em;
-}
-
-.today h2, .today h3 { margin: 0; }
-.today p { margin: 0; }
-.today a { text-decoration: none; }
-
-/* ---------------------------------------------------------- status line */
-
-.status-line {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 8px 24px; flex-wrap: wrap;
-  min-height: 24px;
-}
-.status-health, .status-live {
-  display: flex; align-items: center; gap: 11px;
-  min-width: 0;
-}
-.status-health { flex-wrap: wrap; row-gap: 2px; }
-/* What the calm line leaves out, beside it in the secondary ink, so the claim
-   stays a claim about problems only. It wraps under the claim rather than
-   widening the row. */
-.health-notes { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
-.health-note { font-size: 14px; color: var(--ink-3); }
-.status-line .sec-title { font-size: 15.5px; font-weight: 500; color: var(--ink); }
-/* The line can say a long thing ("At least 100 open problems", "No alert
-   destination set") on a 360px phone beside a dot, so it wraps rather than
-   pushing the row wider than the screen. */
-.health-text, .live-text { min-width: 0; overflow-wrap: anywhere; }
-
-.today .dot {
-  width: 9px; height: 9px;
-  box-shadow: none;
-  animation: none;
-}
-.today .dot.is-ok { --c: var(--emerald); }
-.today .dot.is-warn { --c: var(--amber); }
-.today .dot.is-crit { --c: var(--rose); }
-.today .dot.is-info { --c: var(--blue); }
-.today .dot.is-idle { --c: var(--ink-3); }
-
-/* The one dot that moves: something is running. */
-.pulse {
-  width: 9px; height: 9px; flex: none; border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 20%, transparent);
-  animation: today-pulse 2.4s ease-in-out infinite;
-}
-@keyframes today-pulse {
-  0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 20%, transparent); }
-  50%      { box-shadow: 0 0 0 7px color-mix(in srgb, var(--cyan) 5%, transparent); }
-}
 
 /* ------------------------------------------------------------- the hero */
 
@@ -170,57 +112,11 @@
 .moment-label { font-size: 16px; font-weight: 450; color: var(--ink); }
 .moment-sub { font-size: 14px; color: var(--ink-3); }
 
-/* ----------------------------------------------------------- problems */
-
-.problem-rows { display: flex; flex-direction: column; gap: 8px; }
-.prob-row {
-  display: flex; align-items: center; gap: 14px;
-  min-height: 62px; padding: 12px 24px;
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.prob-title { font-size: 16.5px; font-weight: 520; letter-spacing: -.01em; color: var(--ink); min-width: 0; }
-.prob-meta { display: flex; align-items: center; gap: 0; min-width: 0; flex-wrap: wrap; font-size: 14.5px; color: var(--ink-2); }
-.prob-meta > * { display: inline-flex; align-items: center; gap: 9px; }
-.prob-meta > * + *,
-.prob-since {
-  margin-left: 14px; padding-left: 14px;
-  border-left: 1px solid var(--line-2);
-}
-.prob-who .who-av { width: 28px; height: 28px; }
-.prob-who .who-av svg { width: 15px; height: 15px; }
-.prob-view {
-  margin-left: auto;
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 16px; font-weight: 560; color: var(--cyan-ink);
-}
-.prob-view svg { display: none; width: 16px; height: 16px; }
-.prob-view:hover { text-decoration: underline; text-underline-offset: 3px; }
-.prob-more { align-self: flex-start; padding: 4px 24px; font-size: 14px; color: var(--cyan-ink); }
-.prob-more:hover { text-decoration: underline; text-underline-offset: 3px; }
-
 /* -------------------------------------------------------------- tiles */
 
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.tile {
-  display: flex; flex-direction: column; gap: 4px;
-  min-width: 0; min-height: 236px;
-  padding: 22px 26px 24px;
-  border-radius: var(--r-lg);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.tile-title {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 8px;
-  font-size: 16px; font-weight: 520; letter-spacing: -.01em; color: var(--ink);
-}
-.tile-ico { display: grid; place-items: center; color: var(--cyan-ink); }
-.tile-ico.is-violet { color: var(--violet-ink); }
-.tile-ico svg { width: 22px; height: 22px; }
-.tile-link { color: inherit; }
-.tile-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* The tile's own shape is in pane-status-v2.css, shared with Health. */
+.tile { min-height: 236px; }
 .tile .big .num { font-size: 44px; }
 
 .job-rows { display: flex; flex-direction: column; gap: 9px; margin-top: auto; padding-top: 14px; }
@@ -237,16 +133,7 @@
 .ai-worked .num { font-weight: 600; }
 .ai-worked.is-words { font-size: 15px; color: var(--ink-2); }
 .ai-window { font-size: 14.5px; color: var(--ink-3); }
-.ai-bar {
-  position: relative; height: 10px; margin: auto 24px 6px 0;
-  border-radius: 5px; background: var(--surface-3);
-}
-.ai-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; background: var(--violet); }
-.ai-miss {
-  position: absolute; left: 100%; top: 50%;
-  width: 9px; height: 9px; margin: -4.5px 0 0 10px;
-  border-radius: 50%; background: var(--rose);
-}
+.ai-bar { margin: auto 24px 6px 0; }
 
 .tile-spend {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-content: start;
@@ -267,15 +154,10 @@
 .spend-link svg { width: 16px; height: 16px; }
 .spend-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
-/* ------------------------------------------------------------ failure */
-
-.today .state-block { padding: 24px 12px; }
 /* -------------------------------------------------------------- phone */
 
 @media (max-width: 980px) {
   .today { gap: 16px; }
-
-  .status-line .sec-title { font-size: 16px; }
 
   .hero-card { padding: 18px 18px 20px; }
   .hero-grid {
@@ -327,27 +209,6 @@
   .moment-label { font-size: 12.5px; line-height: 1.25; letter-spacing: -.015em; }
   .moment-sub { font-size: 12.5px; }
 
-  .prob-row {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    grid-template-areas:
-      "dot title view"
-      ".   meta  view";
-    align-items: center; column-gap: 14px; row-gap: 2px;
-    padding: 14px 18px;
-  }
-  .prob-row > .dot { grid-area: dot; align-self: start; margin-top: 7px; }
-  .prob-title { grid-area: title; font-size: 17px; }
-  .prob-meta { grid-area: meta; font-size: 13.5px; flex-wrap: nowrap; white-space: nowrap; }
-  .prob-since { margin-left: 0; padding-left: 0; border-left: 0; }
-  .prob-meta > * + * { margin-left: 8px; padding-left: 0; border-left: 0; }
-  .prob-meta > * + *::before { content: '\00b7'; margin-right: 1px; color: var(--ink-3); }
-  .prob-who { gap: 6px; }
-  .prob-who .who-av { width: 22px; height: 22px; }
-  .prob-who .who-av svg { width: 12px; height: 12px; }
-  .prob-view { grid-area: view; margin: 0; font-size: 16.5px; }
-  .prob-view svg { display: block; }
-  .prob-more { padding: 4px 18px; }
 
   /* Aria AI and Cloud spend are one card with a hairline between them, and
      Happening now is a row of its own beneath it. Each half leaves out the
@@ -401,10 +262,4 @@
   .moment-value { font-size: 28px; }
   .tile .big .num { font-size: 32px; }
   .tile-spend .big .num { font-size: 24px; }
-  .prob-meta { flex-wrap: wrap; white-space: normal; }
-  .prob-meta > * + *::before { content: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pulse { animation: none; }
 }
