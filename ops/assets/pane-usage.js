@@ -917,6 +917,7 @@
        own. Same treatment as the Settings pane's wide tables
        (ops/assets/settings.js), named so the region says which app's grid it
        is rather than announcing an unlabelled region. */
+    var held = list(cohort.rows).some(function (row) { return !reportable(row.size); });
     card.appendChild(h('div', { className: 'card-body' }, [
       h('div', {
         className: 'u-scroll',
@@ -926,7 +927,15 @@
           (typeof cohort.label === 'string' && cohort.label ? ', ' + cohort.label : '')
       }, [
         h('table', { className: 'tbl u-cohort' }, [h('thead', {}, [headRow]), body])
-      ])
+      ]),
+      /* Said once under the grid rather than in every row, where the reason
+         would be wider than the weeks it sits beside. */
+      held ? h('div', { className: 'u-sup' }, [
+        h('div', { className: 'u-sup-in' }, [
+          S.icon('lock'),
+          h('span', { text: 'Shares are not reported for groups under ' + floor + ' people' })
+        ])
+      ]) : null
     ]));
     return card;
   }
@@ -942,38 +951,30 @@
   }
 
   function cohortRow(row, cells) {
+    var held = !reportable(row.size);
     var tr = h('tr', {}, [
       h('th', { scope: 'row', text: row.label }),
       h('td', {
         className: 'r num',
         text: num(row.size) === null ? fmt.none : fmt.int(row.size)
-      })
+      }, held ? [h('span', { className: 'sr', text: notReported(suppressionReason(row.size)) })] : [])
     ]);
-
-    /* A group under the floor is withheld as a whole row rather than cell by
-       cell: every cell in it is a rate over the same handful of people. */
-    if (!reportable(row.size)) {
-      tr.appendChild(h('td', {
-        className: 'u-sup', colspan: String(Math.max(cells, 1))
-      }, [
-        /* The flex row is inside the cell rather than on it: a td laid out as
-           a flex container is no longer a table cell, and a colspan on a box
-           that is not a table cell spans nothing. */
-        h('div', { className: 'u-sup-in' }, [
-          S.icon('lock'),
-          h('span', { text: notReported(suppressionReason(row.size)) })
-        ])
-      ]));
-      return tr;
-    }
 
     list(row.cells).slice(0, cells).forEach(function (cell) {
       var basisPoints = num(cell && cell.basisPoints);
-      if (!cell || cell.state === 'not_aged' || basisPoints === null) {
+      var returned = num(cell && cell.returned);
+      if (!cell || cell.state === 'not_aged' || (held ? returned === null : basisPoints === null)) {
         tr.appendChild(h('td', { className: 'r u-na' }, [
           h('span', { 'aria-hidden': 'true', text: '\u00b7' }),
           h('span', { className: 'sr', text: 'Not aged into this week yet' })
         ]));
+        return;
+      }
+      /* A group under the floor keeps the count of people who came back, as
+         Growth draws it, and loses every share and every shade: the floor
+         protects rates, and a count of people is not one. */
+      if (held) {
+        tr.appendChild(h('td', { className: 'r num', text: fmt.int(returned) }));
         return;
       }
       tr.appendChild(h('td', { className: 'r u-cell ' + intensity(basisPoints) }, [

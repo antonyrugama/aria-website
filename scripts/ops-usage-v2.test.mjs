@@ -1095,6 +1095,26 @@ test('an answer under the floor that carries the apps is the page, with every co
   assert.match(allText(row), /5 people\s*Not reported, 41 people in the group, floor is 50/,
     'the withheld feature row did not carry the count of people who used it: ' + allText(row));
 
+  /* So are the people who came back. 22 joined in the week of 24 Aug and 12
+     and 9 of them opened the app in the weeks after, as Growth's "Coming
+     back" draws the same figures; only the shares and their shading go. */
+  const grid = findAll(card(dom, /Who comes back/), (n) => isTag(n, 'tr'));
+  const cellsOf = (label) => findAll(grid.filter((r) => new RegExp('^' + label).test(allText(r).trim()))[0],
+    (n) => isTag(n, 'td'));
+  const first = cellsOf('24 Aug');
+  assert.deepEqual(first.map((c) => allText(c).trim().split(/\s+/)[0]), ['22', '12', '9'],
+    'the returning people of a group under the floor were withheld with its shares: ' + first.map(allText).join(' | '));
+  const second = cellsOf('31 Aug');
+  assert.equal(second.length, 3, 'the row is not size plus one cell per week: ' + second.map(allText).join(' | '));
+  assert.equal(allText(second[0]).trim().split(/\s+/)[0], '15');
+  assert.equal(allText(second[1]).trim(), '8', 'a week the group HAS reached lost its count');
+  assert.match(allText(second[2]), /Not aged into this week yet/,
+    'a week the group has not reached was drawn as a count: ' + allText(second[2]));
+  assert.equal(numerals(allText(second[2])), 0, 'a week nobody has reached printed a figure');
+  const shaded = findAll(card(dom, /Who comes back/),
+    (n) => /(^| )u-(cell|i\d)( |$)/.test(n.className || ''));
+  assert.equal(shaded.length, 0, 'a group under the floor was shaded as a rate');
+
   /* The sentence belongs to the answer under the floor and to nothing else: a
      page over the floor says nothing under its title. */
   const noteOf = (page) => findAll(livePanel(page), (n) => (n.className || '').split(' ').indexOf('band-head') !== -1
@@ -1153,7 +1173,7 @@ test('the approved region table is acknowledged as not answerable yet', async ()
     'the region-table cause is missing or too vague');
 });
 
-test('a signup group under the floor is withheld as a whole row, never cell by cell', async () => {
+test('a signup group under the floor keeps its counts and loses every share', async () => {
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);
   const rows = findAll(cohort, (n) => isTag(n, 'tr'));
@@ -1162,11 +1182,16 @@ test('a signup group under the floor is withheld as a whole row, never cell by c
 
   assert.ok(small, 'the small signup group left the table entirely');
   assert.match(allText(small), /Not reported, 31 people in the group, floor is 50/,
-    'a group of 31 was reported: ' + allText(small));
-  assert.doesNotMatch(allText(small), /80\.7%/,
-    'the cells of a withheld row were drawn anyway');
-  assert.equal(findAll(small, (n) => isTag(n, 'td')).length, 2,
-    'the withheld row still drew one cell per week, so the rest can be read as a trend');
+    'a group of 31 was reported without saying why it has no shares: ' + allText(small));
+  assert.doesNotMatch(allText(small), /80\.7%|%/,
+    'the cells of a group under the floor were drawn as shares');
+  const cells = findAll(small, (n) => isTag(n, 'td'));
+  assert.equal(cells.length, 3,
+    'the group is not size plus one cell per week: ' + cells.map(allText).join(' | '));
+  assert.equal(allText(cells[1]).trim(), '25', 'the 25 who came back were withheld with their share');
+  assert.match(allText(cells[2]), /Not aged into this week yet/);
+  assert.match(allText(cohort), /Shares are not reported for groups under 50 people/,
+    'the card did not say why a group has counts and no shares');
 
   assert.match(allText(big), /71\.0%/, 'a group of 214 was withheld too, so this proves nothing');
 });

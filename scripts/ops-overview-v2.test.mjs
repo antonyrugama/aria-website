@@ -695,6 +695,32 @@ test('the paying moment is earned by a strict record over the 56 days before it,
   await none(boom('Growth is unavailable.'), 'the route failed');
 });
 
+/* The live count is read at request time and the daily one is a stored
+   snapshot, so on a real day they differ by whoever subscribed or lapsed
+   since. The rule and the number are of the daily series alone: the
+   fixture's own live 37 equals its last day, which is why none of the
+   refusals above could tell the two apart. The best of the 56 days before
+   the last is 36. One test per case, so a regression says which it broke. */
+for (const { latest, live, shows, why } of [
+  { latest: 35, live: 37, shows: null, why: 'a live count above the best day earned a record the last day did not' },
+  { latest: 38, live: 35, shows: '38', why: 'a live count below the best day changed a record the last day earned' },
+  { latest: 38, live: 40, shows: '38', why: 'the moment printed the live count instead of the last day' },
+  { latest: 36, live: 41, shows: null, why: 'a tie on the last day was broken by the live count' },
+]) {
+  test(`the paying moment reads the last daily snapshot, not the live count: daily ${latest}, live ${live}`, async () => {
+    assert.equal(Math.max(...PAYING_DAILY.slice(0, 56)), 36, 'the fixture changed, so this case says something else');
+    const dom = await boot({
+      ...NO_BEST_OR_AI,
+      growth: growthFixture((g) => {
+        g.payingSubscribers.daily[56].count = latest;
+        g.payingSubscribers.current.count = live;
+      }),
+    });
+    assert.deepEqual(moments(dom).map((m) => m.value + ' ' + m.label),
+      shows === null ? [] : [shows + ' Most paying in 8 weeks'], why);
+  });
+}
+
 test('the paying moment looks only at the last 57 days, however many the route sends', async () => {
   /* A longer series whose oldest entries are higher than today's count: they
      are outside the eight weeks and must not take the record away. */
