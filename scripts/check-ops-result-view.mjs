@@ -799,6 +799,10 @@ function stub(pathname, body) {
       ]
     } };
   }
+  if (pathname === '/api/ops/moderation/reports') {
+    // Readable and empty: Health's safety row stays out of the way, and no report card is drawn, because the queue's own `ugc-delivery` class has no rule on main either (Stadiora/Aria#10456) and is not this pane's to fix.
+    return { data: { items: [], nextCursor: null } };
+  }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname === '/api/ops/runs') return { data: RUNS };

@@ -150,22 +150,14 @@
 .chk-v { display: flex; align-items: center; gap: 9px; margin: 0; font-size: 15px; color: var(--ink-2); }
 .chk-v .dot { flex: none; }
 
-/* ----------------------------------------------- the community queue */
+/* ------------------------------------------------- the safety reports */
 
-/* The private moderation queue, drawn above the page by assets/pane-ugc.js,
-   uses the same card tokens as everything else on it. */
-.ugc-queue { margin-bottom: 24px; padding: 20px; }
-.ugc-items { display: grid; gap: 16px; margin: 16px 0; }
-.ugc-report { padding: 16px; min-width: 0; }
-.ugc-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-.ugc-preview { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; }
-pre.ugc-preview { font-family: var(--mono); }
-.ugc-preview:focus-visible { outline-offset: -2px; }
-.ugc-queue .field-error { color: var(--rose-ink); }
-.ugc-overdue { color: var(--rose-ink); font-weight: 600; }
-.ugc-action { display: grid; gap: 12px; }
-.ugc-input { min-height: 96px; width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-.ugc-queue select { min-height: 44px; font: inherit; color: var(--ink); background: var(--surface); }
+/* One row in the shape of a problem row (assets/pane-status-v2.css). Amber
+   while every deadline is ahead; red once one has passed or a report has no
+   deadline. The words say the same thing, so the colour is never the only
+   signal. */
+.prob-since.is-late { color: var(--rose-ink); font-weight: 560; }
+.prob-retry { margin-left: auto; }
 
 /* --------------------------------------------------------------- phone */
 
@@ -178,6 +170,10 @@ pre.ugc-preview { font-family: var(--mono); }
   }
   .health .tile { padding: 16px 16px 18px; min-height: 0; }
 
+  /* The row's one action is a finger target, and sits in the grid's last
+     column beside both lines. */
+  .health .prob-view, .prob-retry .btn { min-height: 44px; }
+  .prob-retry { grid-area: view; margin: 0; }
   /* The heading stays for a screen reader and goes from the sighted card. */
   .tile-day .tile-title, .tile-runs .tile-title { margin: 0; }
   .tile-day .tile-title {

@@ -446,17 +446,6 @@
 
     alerts: [
       {
-        id: 'alerts-community-safety', kind: 'action', title: 'Community safety',
-        anchor: { selector: '.ugc-queue' },
-        roles: ['owner', 'operator'],
-        action: {
-          does: 'Review private reports oldest first, act within 24 hours, and check both notification channels. Remove content, remove access or dismiss with an explicit reason. Problems filters do not change this queue.',
-          who: 'Operators and owners. Private evidence uses your operations session.',
-          audited: 'The decision and operations actor are recorded together. Failed audits leave the report open and retryable.',
-          undo: 'Removal and access restriction are not reversed here. Dismissal does not restore content for the reporter. Profiles offer access removal or dismissal only.'
-        }
-      },
-      {
         id: 'alerts-status', kind: 'section', title: 'The status line',
         anchor: { selector: '#health-status' },
         body: 'The line at the top says whether anything critical is open and how many jobs ' +
@@ -475,6 +464,23 @@
           ['Worth a closer look when', 'A critical issue is open, the list of problems is cut ' +
             'short, or some checks are not reporting.']
         ]
+      },
+      {
+        id: 'alerts-safety', kind: 'section', title: 'Safety reports waiting',
+        anchor: { selector: '#health-safety' },
+        roles: ['owner', 'operator'],
+        body: 'When people have reported something in the community and nobody has dealt with ' +
+          'it yet, one row says how many reports are waiting and when the oldest is due. It ' +
+          'turns red once a deadline has passed or a report has no deadline. Review opens the ' +
+          'queue at the top of Problems, where a report is decided. If the queue could not be ' +
+          'read, the row says so and offers Try again.',
+        live: function (ctx) {
+          var row = ctx.read('.prob-title');
+          var when = ctx.read('.prob-since');
+          return row ? 'Right now it reads: ' + row + (when ? ', ' + lowerFirst(when) : '') + '.' : '';
+        },
+        missing: 'No safety report is waiting, so there is no row to point at. The row ' +
+          'appears for owners and operators only.'
       },
       {
         id: 'alerts-problems', kind: 'section', title: 'Problems that need a person',
@@ -551,8 +557,8 @@
           counts: 'How many of the alert checks that are turned on reported a verdict, when ' +
             'the last check ran, whether the job recorder has ever recorded, and whether the ' +
             'billing feed is current.',
-          grain: 'The present moment. A check with no samples, one not reporting and one gone ' +
-            'stale are each counted apart and never as passing. The billing feed is behind ' +
+          grain: 'The present moment. A check that is not reporting and one gone stale are ' +
+            'counted apart and never as passing. The billing feed is behind ' +
             'once it is older than twice its own publishing lag.',
           source: 'The alert rules, the job recorder and the billing feed, each read live. A ' +
             'feed that could not be read says Not read.',
@@ -564,6 +570,17 @@
     ],
 
     problems: [
+      {
+        id: 'problems-community-safety', kind: 'action', title: 'Community safety',
+        anchor: { selector: '.ugc-queue' },
+        roles: ['owner', 'operator'],
+        action: {
+          does: 'Review private reports oldest first, act within 24 hours, and check both notification channels. Remove content, remove access or dismiss with an explicit reason. Problems filters do not change this queue.',
+          who: 'Operators and owners. Private evidence uses your operations session.',
+          audited: 'The decision and operations actor are recorded together. Failed audits leave the report open and retryable.',
+          undo: 'Removal and access restriction are not reversed here. Dismissal does not restore content for the reporter. Profiles offer access removal or dismissal only.'
+        }
+      },
       {
         id: 'problems-status', kind: 'section', title: 'How many problems are open',
         anchor: { selector: '.hero' },

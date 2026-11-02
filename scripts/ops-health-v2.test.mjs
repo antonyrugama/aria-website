@@ -13,8 +13,10 @@
        "healthy"; the billing feed's stamp that could not be read says so;
      - a read that is down takes only its own card, and Try again re-reads only
        that read;
-     - the Community safety queue is still drawn above everything, for the two
-       roles that may act on it and for nobody else.
+     - the Community safety queue is one compact row, for the two roles that may
+       act on it and for nobody else, only while a report is pending; a queue
+       that could not be read is said, never silence; the full queue is not
+       here but on Problems.
 
    The status line, the problem rows and the retry engine are
    assets/pane-status.js's and are covered where Today uses them
@@ -40,6 +42,8 @@ const MODEL_SRC = read('assets/alerts-model.js');
 const STATUS_SRC = read('assets/pane-status.js');
 const PANE_SRC = read('assets/pane-health.js');
 const UGC_SRC = read('assets/pane-ugc.js');
+const HEALTH_PAGE = read('alerts.html');
+const PROBLEMS_PAGE = read('problems.html');
 
 const TOKENS = {
   '--cyan': '#00E5FF', '--violet': '#8B5CF6', '--emerald': '#34D399',
@@ -142,12 +146,23 @@ function costsFixture(over) {
   return edit(() => ({ asOf: hoursAgo(1), publishLagHours: 4 }), over);
 }
 
+/* One pending report. Due at 09:07 unless a test says otherwise, which is
+   seven minutes after the page is read. */
+const report = (id, over) => Object.assign({
+  id, status: 'open', category: 'safety', targetType: 'post', actionDueAt: at('09:07'),
+}, over);
+
+function safetyFixture(items, over) {
+  return edit(() => ({ items: items === undefined ? [report(1)] : items, nextCursor: null }), over);
+}
+
 const ENDPOINTS = {
   problems: '/api/ops/alerts/problems',
   rules: '/api/ops/alerts/rules',
   jobs: '/api/ops/jobs',
   runs: '/api/ops/runs',
   costs: '/api/ops/costs',
+  safety: '/api/ops/moderation/reports',
 };
 
 const NONE = '-';
@@ -175,7 +190,8 @@ function buildPage(dom, body) {
 /* Loads the page the way ops/alerts.html loads it. `options` replaces a read's
    answer by its short name; an Error rejects and a function is asked with the
    query. `role` is the signed-in role, and `ugc` loads the Community safety
-   script too. The answer table is handed back live. */
+   script too, which must still draw nothing on this page. The answer table is
+   handed back live. */
 async function boot(options) {
   const opts = options || {};
   const calls = [];
@@ -185,7 +201,7 @@ async function boot(options) {
     [ENDPOINTS.jobs]: opts.jobs === undefined ? jobsFixture() : opts.jobs,
     [ENDPOINTS.runs]: opts.runs === undefined ? runsFixture() : opts.runs,
     [ENDPOINTS.costs]: opts.costs === undefined ? costsFixture() : opts.costs,
-    '/api/ops/moderation/reports': { items: [], nextCursor: null },
+    [ENDPOINTS.safety]: opts.safety === undefined ? safetyFixture([]) : opts.safety,
   };
   const role = opts.role || 'owner';
 
@@ -218,6 +234,12 @@ async function boot(options) {
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  /* The page state the shell asked for, in order: "live", or "degraded" when a
+     read the page cannot do without is down. Nothing in the DOM tells the two
+     apart without the shell's own state switcher, which this page does not have. */
+  const states = [];
+  const applyState = dom.window.Aria.applyState;
+  dom.window.Aria.applyState = (state) => { states.push(state); return applyState(state); };
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
   vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
@@ -228,7 +250,7 @@ async function boot(options) {
   await settle();
 
   const repair = (key, value) => { answers[ENDPOINTS[key]] = value; };
-  return Object.assign(dom, { calls, answers, settle, repair });
+  return Object.assign(dom, { calls, answers, settle, repair, states });
 }
 
 /* ------------------------------------------------------------ reading it */
@@ -266,14 +288,16 @@ const checkRow = (dom, label) => withClass(host(dom, 'checks'), 'chk-row')
 
 /* ============================== the reads ================================ */
 
-test('the pane asks for the five reads it draws from, with the questions it means to ask', async () => {
+test('the pane asks for the six reads it draws from, with the questions it means to ask', async () => {
   const dom = await boot();
   assert.deepEqual([...new Set(dom.calls.map((c) => c.endpoint))].sort(), Object.values(ENDPOINTS).sort(),
-    'Health should ask for exactly these five reads');
+    'Health should ask for exactly these six reads');
   for (const key of Object.keys(ENDPOINTS)) assert.equal(asked(dom, key).length, 1, key + ' should be asked once on load');
   assert.deepEqual({ ...asked(dom, 'problems')[0].query }, { status: 'open', limit: dom.window.OpsAlertsModel.PAGE });
   assert.deepEqual({ ...asked(dom, 'runs')[0].query }, { range: '24h' });
   assert.deepEqual({ ...asked(dom, 'costs')[0].query }, { range: 'month' });
+  assert.deepEqual({ ...asked(dom, 'safety')[0].query }, { limit: 25, afterId: 0 },
+    'the row must count the same first page the queue on Problems lists');
 });
 
 /* ============================== happening now ============================ */
@@ -441,13 +465,15 @@ test('checks say how many reached a verdict and never call the system healthy', 
   const card = host(dom, 'checks');
   assert.equal(allText(one(card, 'chk-big')), '7 of 9');
   assert.equal(allText(one(card, 'chk-words')), 'checks reporting');
-  assert.deepEqual(wordsOf(card, 'chk-note'), ['2 without samples']);
+  assert.deepEqual(wordsOf(card, 'chk-note'), [],
+    'the card said a second time how many checks are not reporting: ' + wordsOf(card, 'chk-note'));
+  assert.ok(!/without samples|not reporting/i.test(allText(card)), 'jargon or a repeat of the status line: ' + allText(card));
   assert.ok(!/healthy|all good|ok\b/i.test(allText(card)), 'the card vouched for the system: ' + allText(card));
 
   const silent = await boot({
     rules: rulesFixture((r) => { r.rules[0].lastEvaluationStatus = 'error'; r.rules[0].lastEvaluatedAt = null; }),
   });
-  assert.deepEqual(wordsOf(host(silent, 'checks'), 'chk-note'), ['2 without samples', '1 not reporting']);
+  assert.deepEqual(wordsOf(host(silent, 'checks'), 'chk-note'), []);
   assert.equal(allText(one(host(silent, 'checks'), 'chk-big')), '6 of 9');
 });
 
@@ -565,7 +591,7 @@ test('the status line prints the not-reporting note from the same checks the car
     rules: rulesFixture((r) => { r.rules[0].lastEvaluatedAt = at('08:55', '2026-10-28'); }),
   });
   assert.deepEqual(wordsOf(host(stale, 'status'), 'health-note'), ['2 checks not reporting', '1 check stale']);
-  assert.deepEqual(wordsOf(host(stale, 'checks'), 'chk-note'), ['2 without samples', '1 stale']);
+  assert.deepEqual(wordsOf(host(stale, 'checks'), 'chk-note'), ['1 stale']);
 });
 
 test('the title carries the date and when the figures were read, from the read and not the clock', async () => {
@@ -603,20 +629,170 @@ test('every doorway is a link to the page that owns the depth', async () => {
   assert.equal(dom.doc.getElementById('subnav'), null, 'Health drew a sub-nav row; its cards are the way down');
 });
 
-test('the Community safety queue is drawn above the page for owners and operators, and for nobody else', async () => {
+const safetyRows = (dom) => withClass(host(dom, 'safety'), 'prob-row');
+const toneOf = (node) => classesOf(node).find((c) => c === 'is-warn' || c === 'is-crit');
+const inside = (node, root) => { for (let n = node; n; n = n.parentNode) if (n === root) return true; return false; };
+
+test('one compact safety row appears for owners and operators, when reports are pending, and for nobody else', async () => {
+  const pending = safetyFixture([report(1, { actionDueAt: at('10:00') }), report(2), report(3, { actionDueAt: at('09:30') })]);
   for (const role of ['owner', 'operator']) {
-    const dom = await boot({ ugc: true, role });
-    const content = dom.doc.getElementById('content');
-    const queue = withClass(content, 'ugc-queue');
-    assert.equal(queue.length, 1, role + ' did not get the queue');
-    assert.equal(content.firstChild, queue[0], 'the queue is not the first thing in the page');
-    assert.ok(host(dom, 'status'), 'the queue replaced the page');
+    const dom = await boot({ role, safety: pending });
+    const rows = safetyRows(dom);
+    assert.equal(rows.length, 1, role + ' did not get exactly one row');
+    const [row] = rows;
+    assert.equal(allText(one(row, 'prob-title')), '3 safety reports to review');
+    assert.deepEqual(one(row, 'prob-meta').children.map(allText), ['Oldest due 09:07 UTC'],
+      'the deadline is the oldest, not the first listed');
+    assert.equal(toneOf(row), 'is-warn', 'a deadline still ahead was not amber');
+    assert.deepEqual(withClass(row, 'dot').map(toneOf), ['is-warn']);
+    assert.equal(withClass(row, 'prob-view').length, 1, 'the row has more than one action');
+    const review = one(row, 'prob-view');
+    assert.match(allText(review), /^Review/);
+    assert.equal(review.getAttribute('href'), 'problems.html', 'Review does not open the queue on Problems');
+    assert.equal(review.getAttribute('aria-label'), 'Review: 3 safety reports to review');
+
+    const kids = host(dom, 'safety').parentNode.children;
+    assert.ok(kids.indexOf(host(dom, 'safety')) > kids.indexOf(host(dom, 'status').parentNode),
+      'the row is above the status line');
+    assert.ok(kids.indexOf(host(dom, 'safety')) < kids.indexOf(host(dom, 'problems')),
+      'the row is below the problems it should sit above');
   }
   for (const role of ['viewer', 'analyst']) {
-    const dom = await boot({ ugc: true, role });
-    assert.equal(withClass(dom.doc.getElementById('content'), 'ugc-queue').length, 0, role + ' was shown the queue');
+    const dom = await boot({ role, safety: pending });
+    assert.equal(safetyRows(dom).length, 0, role + ' was shown the safety row');
+    assert.equal(allText(host(dom, 'safety')), '', role + ' was shown something where the row goes');
+    assert.equal(asked(dom, 'safety').length, 0, role + ' asked for private reports');
     assert.equal(asked(dom, 'problems').length, 1);
-    assert.equal(dom.calls.filter((c) => c.endpoint === '/api/ops/moderation/reports').length, 0,
-      role + ' asked for private reports');
   }
+});
+
+test('with no report pending there is no safety row, and not an empty one', async () => {
+  const dom = await boot({ safety: safetyFixture([]) });
+  assert.equal(asked(dom, 'safety').length, 1);
+  assert.equal(host(dom, 'safety').children.length, 0, 'something stands where the row goes');
+});
+
+test('the safety row is red once a deadline has passed or a report has none, and says so in words', async () => {
+  const late = await boot({ safety: safetyFixture([report(1, { actionDueAt: at('08:30') })]) });
+  const [row] = safetyRows(late);
+  assert.equal(allText(one(row, 'prob-title')), '1 safety report to review');
+  assert.equal(allText(one(row, 'prob-since')), 'Overdue since 08:30 UTC');
+  assert.ok(classesOf(one(row, 'prob-since')).includes('is-late'), 'the passed deadline is not marked');
+  assert.equal(toneOf(row), 'is-crit');
+  assert.deepEqual(withClass(row, 'dot').map(toneOf), ['is-crit']);
+  assert.equal(allText(one(row, 'sr')), 'Critical:', 'the colour is the only signal');
+
+  /* The queue's own rule: a deadline at the very moment is overdue. */
+  const now = await boot({ safety: safetyFixture([report(1, { actionDueAt: NOW_ISO })]) });
+  assert.equal(toneOf(safetyRows(now)[0]), 'is-crit', 'a deadline that is now was called ahead');
+  const next = await boot({ safety: safetyFixture([report(1, { actionDueAt: new Date(NOW_MS + 1000).toISOString() })]) });
+  assert.equal(toneOf(safetyRows(next)[0]), 'is-warn', 'a deadline one second ahead was called passed');
+
+  /* Another day carries its date, as every stamp on this page does. */
+  const old = await boot({ safety: safetyFixture([report(1, { actionDueAt: at('22:00', '2026-10-31') })]) });
+  assert.equal(allText(one(safetyRows(old)[0], 'prob-since')), 'Overdue since Oct 31, 22:00 UTC');
+
+  const mixed = await boot({ safety: safetyFixture([report(1, { actionDueAt: null }), report(2)]) });
+  const [partial] = safetyRows(mixed);
+  assert.deepEqual(one(partial, 'prob-meta').children.map(allText), ['Oldest due 09:07 UTC', '1 without a deadline']);
+  assert.equal(toneOf(partial), 'is-crit', 'a report with no deadline was not red');
+
+  for (const none of [null, 'not a date', undefined]) {
+    const bare = await boot({ safety: safetyFixture([report(1, { actionDueAt: none })]) });
+    const [row2] = safetyRows(bare);
+    assert.deepEqual(one(row2, 'prob-meta').children.map(allText), ['No deadline set']);
+    assert.equal(toneOf(row2), 'is-crit');
+  }
+});
+
+test('a first page with more behind it says N+, and one report says report', async () => {
+  const many = await boot({
+    safety: safetyFixture(Array.from({ length: 25 }, (_, n) => report(n + 1)), (q) => { q.nextCursor = 25; }),
+  });
+  assert.equal(allText(one(safetyRows(many)[0], 'prob-title')), '25+ safety reports to review',
+    'a count of the first page was printed as the whole queue');
+  const exact = await boot({ safety: safetyFixture(Array.from({ length: 25 }, (_, n) => report(n + 1))) });
+  assert.equal(allText(one(safetyRows(exact)[0], 'prob-title')), '25 safety reports to review');
+  const single = await boot({ safety: safetyFixture([report(1)]) });
+  assert.equal(allText(one(safetyRows(single)[0], 'prob-title')), '1 safety report to review');
+});
+
+test('a safety queue that could not be read says so and offers Try again, and is never silence', async () => {
+  for (const bad of [boom('moderation down'), { nextCursor: null }, { items: [null], nextCursor: null }, 'nope']) {
+    const dom = await boot({ safety: bad });
+    const [row] = safetyRows(dom);
+    assert.ok(row, 'an unreadable queue left nothing where the row goes: ' + JSON.stringify(bad));
+    assert.equal(allText(one(row, 'prob-title')), "Couldn't load safety reports");
+    assert.equal(toneOf(row), 'is-warn');
+    const buttons = findAll(row, (n) => n.tagName === 'BUTTON');
+    assert.deepEqual(buttons.map(allText), ['Try again']);
+    assert.equal(withClass(row, 'prob-view').length, 0, 'a failed row offers a Review it cannot back');
+  }
+
+  const dom = await boot({ safety: boom('moderation down') });
+  assert.equal(allText(one(host(dom, 'status'), 'health-text')), 'No critical issues', 'the safety read took the status line');
+  assert.equal(withClass(host(dom, 'problems'), 'prob-row').length, 1, 'the safety read took the problems');
+  assert.equal(allText(one(host(dom, 'checks'), 'chk-big')), '7 of 9');
+  assert.equal(dom.states.at(-1), 'live', 'the page was degraded by one row: ' + dom.states);
+  const core = await boot({ jobs: boom('jobs down'), safety: boom('moderation down') });
+  assert.equal(core.states.at(-1), 'degraded', 'the state probe cannot see a degraded page');
+
+  const viewer = await boot({ role: 'viewer', safety: boom('moderation down') });
+  assert.equal(safetyRows(viewer).length, 0, 'a role that cannot see the queue was told it failed');
+});
+
+test('Try again on the safety row re-reads only the queue, lands focus in the row, and is said aloud', async () => {
+  const dom = await boot({ safety: boom('moderation down') });
+  const before = dom.calls.length;
+  dom.repair('safety', safetyFixture([report(1), report(2)]));
+  const button = findAll(host(dom, 'safety'), (n) => n.tagName === 'BUTTON')[0];
+  button.focus();
+  button.dispatchEvent({ type: 'click' });
+  await dom.settle(20);
+  assert.deepEqual(dom.calls.slice(before).map((c) => c.endpoint), [ENDPOINTS.safety],
+    'Try again asked for more than the queue');
+  assert.equal(allText(one(safetyRows(dom)[0], 'prob-title')), '2 safety reports to review');
+  const focus = dom.doc.activeElement;
+  assert.notEqual(focus, button, 'focus stayed on a node that is gone');
+  assert.ok(inside(focus, host(dom, 'safety')), 'focus did not land in the safety row');
+  assert.equal(focus.getAttribute('tabindex'), '-1');
+  assert.equal(allText(dom.doc.querySelector('[role="status"]')), 'The safety queue was read again.');
+
+  const still = await boot({ safety: boom('moderation down') });
+  const again = findAll(host(still, 'safety'), (n) => n.tagName === 'BUTTON')[0];
+  again.focus();
+  again.dispatchEvent({ type: 'click' });
+  await still.settle(20);
+  assert.equal(safetyRows(still).length, 1, 'a failed retry left no row');
+  assert.equal(allText(still.doc.querySelector('[role="status"]')), "Couldn't load safety reports again.");
+});
+
+test('a retry that finds nothing waiting leaves focus on the page, not on <body>', async () => {
+  const dom = await boot({ safety: boom('moderation down') });
+  dom.repair('safety', safetyFixture([]));
+  const button = findAll(host(dom, 'safety'), (n) => n.tagName === 'BUTTON')[0];
+  button.focus();
+  button.dispatchEvent({ type: 'click' });
+  await dom.settle(20);
+  assert.equal(host(dom, 'safety').children.length, 0, 'a row was drawn for an empty queue');
+  const focus = dom.doc.activeElement;
+  assert.notEqual(focus, button, 'focus stayed on a node that is gone');
+  assert.ok(inside(focus, dom.doc.getElementById('content')), 'focus fell out of the page');
+  assert.ok(classesOf(focus).includes('sec-title'), 'focus did not land on a heading');
+});
+
+test('Health never draws the full queue: it is on Problems, with the sheet that styles it', async () => {
+  const dom = await boot({ ugc: true, safety: safetyFixture([report(1)]) });
+  const content = dom.doc.getElementById('content');
+  assert.equal(withClass(content, 'ugc-queue').length, 0, 'the full queue was drawn on Health');
+  assert.equal(findAll(content, (n) => n.tagName === 'SELECT').length, 0, 'a language select is on Health');
+  assert.equal(asked(dom, 'safety').length, 1, 'the queue was read twice, once for the row and once for a list');
+
+  const scripts = (html) => [...html.matchAll(/<script src="assets\/([^"]+)"/g)].map((m) => m[1]);
+  const sheets = (html) => [...html.matchAll(/<link rel="stylesheet" href="assets\/([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(!scripts(HEALTH_PAGE).includes('pane-ugc.js'), 'alerts.html loads the queue');
+  assert.ok(scripts(PROBLEMS_PAGE).includes('pane-ugc.js'), 'problems.html does not load the queue');
+  const stylers = sheets(PROBLEMS_PAGE).filter((name) => read('assets/' + name).includes('.ugc-queue'));
+  assert.deepEqual(stylers, ['pane-alerts-v2.css'], 'the page that draws the queue does not load the sheet that styles it');
+  assert.ok(!read('assets/pane-health-v2.css').includes('.ugc-'), 'Health carries rules for a queue it does not draw');
 });

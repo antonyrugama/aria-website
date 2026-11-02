@@ -712,7 +712,7 @@ for (const p of PANES) {
     await load(p.url, v);
     await helpers();
     let moderation = null;
-    if (p.pane === 'alerts') {
+    if (p.pane === 'problems') {
       moderation = await moderationProbe(v);
       await load(p.url, v);
       await helpers();

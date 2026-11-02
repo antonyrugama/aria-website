@@ -31,11 +31,19 @@ between them, so signing in to the mobile app grants exactly zero dashboard acce
 
 ## Community safety queue
 
-Owners and operators see the private moderation queue at the top of **Health** (`alerts.html`,
-the pane id `alerts`), above its status line. It is independent of the Problems filters and lists pending reports oldest first,
+Owners and operators see the private moderation queue at the top of **Problems**
+(`problems.html`, the pane id `problems`). It is independent of the Problems filters and lists pending reports oldest first,
 with a 24-hour action deadline and separate Teams/email delivery states. Missing,
 failed or unconfigured delivery is visible, not treated as success. Queue labels
 can be switched between Spanish, English and Portuguese.
+
+**Health** (`alerts.html`) carries one compact row about this queue, for owners and
+operators only: "3 safety reports to review", with the time the oldest is due and a
+**Review** link to the queue on Problems. It is amber while every deadline is ahead and
+red once one has passed or a report has no deadline. It appears only while a report is
+pending, and a role that cannot see the queue is never sent the read. When the queue
+cannot be read the row says "Couldn't load safety reports" and offers Try again. The
+full queue, with its language switch, is on Problems only.
 
 Remove content, remove access and dismiss each require an explicit confirmation
 and a reason of 3 to 500 characters. Profiles offer remove access or dismiss,
@@ -315,9 +323,9 @@ ops/
                         the three gates, the sub-navigation, the toast
     pane-status-v2.css    the shapes Today and Health share: status line, bare tile, problem rows
     pane-overview-v2.css  Today's own shapes
-    pane-health-v2.css    Health's own shapes, and the Community safety queue's
+    pane-health-v2.css    Health's own shapes, and the safety-report row's
     pane-releases-v2.css  App releases' own shapes
-    pane-alerts-v2.css    Problems' own shapes
+    pane-alerts-v2.css    Problems' own shapes, and the Community safety queue's
     pane-settings-v2.css  Settings' own shapes
     pane-users-v2.css     Look up a user's own shapes
     pane-run-history-v2.js   What happened
@@ -375,7 +383,7 @@ pane-spend-v2.css = spend.html
 pane-spend.js = spend.html
 pane-status-v2.css = alerts.html, index.html
 pane-status.js = alerts.html, index.html
-pane-ugc.js = alerts.html
+pane-ugc.js = problems.html
 pane-users-v2.css = users.html
 pane-users.js = users.html
 session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, problems.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
@@ -1171,7 +1179,7 @@ pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/a
 pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
 pane-evaluations.js = /api/ops/seval/admin/datasets/, /api/ops/seval/admin/overview, /api/ops/seval/admin/scenarios/, /api/ops/seval/operations
-pane-health.js = /api/ops/costs
+pane-health.js = /api/ops/costs, /api/ops/moderation/reports
 pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/costs, /api/ops/summary, /api/ops/usage
 pane-registry.js = (no route literal)
@@ -1556,9 +1564,9 @@ those panes now.
     ```claims id=scroll-wrapper-position
     ops.css .table-wrap = position: relative
     pane-alerts-v2.css .scrollx = position: relative
+    pane-alerts-v2.css .ugc-preview = position: relative
     pane-analytics-v2.css .u-scroll = position: relative
     pane-evaluations-v2.css .tbl-wrap = position: relative
-    pane-health-v2.css .ugc-preview = position: relative
     pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
     pane-run-history-v2.css .rh-content-region = position: relative
@@ -1941,8 +1949,8 @@ departures that carry a decision.
 
 The approved design is the Health pair in the R54 set, `H-desktop` and `H-phone`. `alerts.html` is
 the destination's home and answers one question, "is anything wrong, and is Aria keeping up?",
-from five reads: the problems, the alert rules, the job queue, the last 24 hours of runs and the
-cloud-cost feed's age. The depth moved out: the old Problems page is `problems.html` (the pane id
+from six reads: the problems, the alert rules, the job queue, the last 24 hours of runs, the
+cloud-cost feed's age and, for owners and operators only, the Community safety queue. The depth moved out: the old Problems page is `problems.html` (the pane id
 `problems`, `pane-alerts.js`), unchanged, and Happening now and What happened stay as they were.
 Each card on Health is a doorway to the page that owns the depth. The status line, the retry
 control and the problem rows are not Health's: `pane-status.js` draws them for Today and Health
@@ -1960,7 +1968,9 @@ carry a decision, and wording and dates differ in more places than are listed.
 4. **The status line says when checks are not reporting**, as Today's does, which the mock has no
    place for.
 5. **The Checks card never says the system is healthy.** It says "N of M checks reporting" and
-   counts the ones without samples, not reporting and stale apart. Its rows are Last checked, Job
+   adds a line only for checks gone stale. It does not say a second time how many are not
+   reporting: the count says it, and so does the status line, in the same plain words ("2 checks
+   not reporting"). Its rows are Last checked, Job
    recorder and Billing feed; a row draws a dot only for a bad or a recorded state. On a phone only
    Last checked and a row that is wrong or unread are drawn. The billing feed is behind past twice
    its own `publishLagHours` (8 hours when none is sent), and "Not read" when `/api/ops/costs`
@@ -1973,10 +1983,16 @@ carry a decision, and wording and dates differ in more places than are listed.
 7. **Abandoned is a fourth count only when it is above zero on a phone**, and the cyan dot after
    "Happening now" is not drawn: the title carries the pulse glyph, as the Checks title carries a
    chart glyph. The Checks card on a phone is a small card with a title, not one compact row.
-8. **The Community safety queue sits above the status line on Health.** `pane-ugc.js` listens for
-   the pane id `alerts`, which is Health now, and its tests, its keyboard walk and its browser
-   test are bound to that pane. Owners and operators see it; nobody else is sent the moderation
-   read at all.
+8. **Health has one compact safety row, and the queue stays on Problems.** The full Community
+   safety queue, with its language switch and its evidence, is at the top of `problems.html`
+   (`pane-ugc.js` listens for the pane id `problems`), as it was before this page was rebuilt.
+   Health draws one row in the problem-row shape when reports are pending, for owners and
+   operators only: "3 safety reports to review", the time the oldest is due, and Review, which
+   opens the queue. It is amber while every deadline is ahead and red once one has passed or a
+   report has no deadline. Nothing is drawn with no pending report, and a role that cannot see the
+   queue is never sent the read. A read that failed draws "Couldn't load safety reports" and Try
+   again in the same row; it is never silence. The row is English only, because the language
+   switch belongs to the queue.
 9. **The capabilities the old page had are on Problems:** take on, close, details, the rules
    table, the closed list, the routing card and the filters. None is dropped.
 
@@ -2049,9 +2065,9 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 
 ```claims id=table-focus-rings
 pane-alerts-v2.css .scrollx = outline-offset: -2px
+pane-alerts-v2.css .ugc-preview = outline-offset: -2px
 pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
-pane-health-v2.css .ugc-preview = outline-offset: -2px
 pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .rh-content-region = outline-offset: -2px
@@ -2383,7 +2399,7 @@ Which of these classes any page can still draw is therefore derived rather than 
 .reveal-note = declared in ops.css, pane-users-v2.css; drawn by users.html; painted where drawn
 .nav-count = declared in ops.css; drawn by (no page)
 .btn-danger = declared in ops.css, pane-settings-v2.css, shell-pane-v2.css; drawn by jobs-live.html, run-history.html, settings.html; painted where drawn
-.field-error = declared in ops.css, pane-evaluations-v2.css, pane-health-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by alerts.html, evaluations.html, login.html, review.html, setup.html, users.html; painted where drawn
+.field-error = declared in ops.css, pane-alerts-v2.css, pane-evaluations-v2.css, pane-review-admin.css, pane-users-v2.css; drawn by evaluations.html, login.html, problems.html, review.html, setup.html, users.html; painted where drawn
 ```
 
 Three lines in that block are worth reading twice:

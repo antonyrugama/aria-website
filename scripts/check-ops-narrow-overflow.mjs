@@ -697,6 +697,10 @@ function stub(pathname) {
       ]
     } };
   }
+  if (pathname === '/api/ops/moderation/reports') {
+    // Health's one-row safety summary needs a readable queue; an empty answer would draw its failure row on every Health measurement.
+    return { data: { items: [{ id: 1, status: 'open', category: 'safety', targetType: 'post', actionDueAt: ago(-2 * HOUR) }], nextCursor: null } };
+  }
   if (pathname.startsWith('/api/ops/alerts/problems')) {
     return { data: { problems: [PROBLEM] } };
   }

@@ -250,7 +250,7 @@
   }
   global.OpsUgc = { render: render };
   global.addEventListener('ops:ready', function (event) {
-    if (event.detail.pane !== 'alerts') return;
+    if (event.detail.pane !== 'problems') return;
     var content = global.document.getElementById('content');
     if (!content) throw new Error('Operations content is missing');
     render(content);

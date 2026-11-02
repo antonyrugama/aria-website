@@ -4,8 +4,9 @@
    with a way down, not a console: every card links to the page that owns the
    depth (Happening now, What happened, Problems), and nothing here changes
    anything. Acknowledging, closing, rules and routing live on the Problems
-   page (ops/problems.html); the Community safety queue sits above everything
-   here, drawn by assets/pane-ugc.js.
+   page (ops/problems.html), and so does the Community safety queue, drawn by
+   assets/pane-ugc.js. Health has one compact row about that queue, for the
+   roles that can see it, and nothing when no report is waiting.
 
    WHAT IT READS
 
@@ -15,6 +16,8 @@
      GET /api/ops/runs ?range=24h   the last 24 hours   }
      GET /api/ops/costs ?range=month   only the time the billing feed last
                                     reported, for one row of the Checks card
+     GET /api/ops/moderation/reports   the Community safety queue, for owner
+                                    and operator only, for one compact row
 
    The status line, the problem rows, the retry engine and the live pulse are
    assets/pane-status.js's, so Health and Today cannot disagree about whether
@@ -33,10 +36,15 @@
      4. **Worked over attempted leaves cancellations out.** They are counted
         beside it, not inside it.
      5. **Checks never say healthy.** "7 of 9 checks reporting" is the count of
-        checks that reached a verdict; the rest are named for what they lack.
+        checks that reached a verdict, and the count is left to say how many
+        did not. A verdict that has gone stale is named.
      6. **A read that is down takes only its own card off the screen** and gives
         it a Try again. A freshness stamp that could not be read says so rather
-        than going missing. */
+        than going missing.
+     7. **A safety queue that could not be read is never silence.** The row
+        says so and offers Try again. No row at all means no report is waiting
+        or the role is not one that sees the queue, and a role that cannot see
+        it is never sent the read. */
 (function (global) {
   'use strict';
 
@@ -55,23 +63,42 @@
   var monthDay = St.monthDay;
   var clock = St.clock;
 
-  var ENDPOINT = { costs: '/api/ops/costs' };
+  var ENDPOINT = { costs: '/api/ops/costs', safety: '/api/ops/moderation/reports' };
+
+  /* Who may see the Community safety queue, and the page the queue asks for:
+     the same first page ops/assets/pane-ugc.js asks for, so the count here and
+     the list there are of the same reports. */
+  var SAFETY_ROLES = ['owner', 'operator'];
+  var SAFETY_PAGE = 25;
 
   var READ = {
     problems: St.READS.problems,
     rules: St.READS.rules,
     jobs: St.READS.jobs,
     runs: St.READS.runs,
-    costs: function () { return St.get(ENDPOINT.costs, { range: 'month' }); }
+    costs: function () { return St.get(ENDPOINT.costs, { range: 'month' }); },
+    /* A role that cannot see the queue is not asked: null is "nothing to show",
+       and only a read that was made can fail. */
+    safety: function () {
+      if (!global.OpsSession.hasRole(SAFETY_ROLES)) return Promise.resolve(null);
+      return St.get(ENDPOINT.safety, { limit: SAFETY_PAGE, afterId: 0 }).then(function (queue) {
+        var rows = queue && queue.items;
+        if (!Array.isArray(rows) || rows.some(function (r) { return !r || typeof r !== 'object'; })) {
+          throw new Error('The safety reports came back in a form this page cannot read.');
+        }
+        return queue;
+      });
+    }
   };
 
   /* Reads whose failure leaves the page degraded. The billing feed's stamp is
-     one row of one card, and its failure is said there. */
+     one row of one card, and the safety queue's one row; each says its own
+     failure where it is drawn. */
   var CORE = ['problems', 'rules', 'jobs', 'runs'];
 
   /* What each section is called when its read is said to have come back. */
   var NAMES = {
-    status: 'Health', live: 'Happening now', problems: 'Problems', now: 'Happening now',
+    status: 'Health', live: 'Happening now', safety: 'The safety queue', problems: 'Problems', now: 'Happening now',
     day: 'Last 24h', runs: 'Recent runs', checks: 'Checks'
   };
 
@@ -190,6 +217,7 @@
     var SECTIONS = [
       { id: 'status', reads: ['problems', 'rules'], draw: st.drawHealth },
       { id: 'live', reads: ['jobs'], draw: st.drawLive },
+      { id: 'safety', reads: ['safety'], draw: drawSafety },
       { id: 'problems', reads: ['problems'], draw: function (node) { st.drawProblems(node, { time: true }); } },
       { id: 'now', reads: ['jobs'], draw: drawNow },
       { id: 'day', reads: ['runs'], draw: drawDay },
@@ -211,6 +239,7 @@
         host('status', 'div', 'status-health'),
         host('live', 'div', 'status-live')
       ]));
+      wrap.appendChild(host('safety', 'section', 'problem-rows'));
       wrap.appendChild(host('problems', 'section', 'problem-rows'));
       wrap.appendChild(h('div', { className: 'health-grid' }, [
         host('now', 'article', 'tile tile-now'),
@@ -260,6 +289,69 @@
       var updated = St.updatedAt(stamp);
       if (date) slot.appendChild(h('span', { className: 'sub-date', text: date }));
       if (updated) slot.appendChild(h('span', { className: 'sub-updated', text: updated }));
+    }
+
+    /* --------------------------------------------------- safety reports */
+
+    /* One row, in the shape of a problem row, when reports wait in the
+       Community safety queue; the queue itself is on Problems. Amber while
+       every deadline is ahead. Red once one has passed or a report has no
+       deadline at all, the same two cases the queue paints red, and the words
+       say so too, so the colour is never the only signal. A first page that
+       has more behind it says "N+". */
+    function drawSafety(node) {
+      if (results.safety.error) {
+        var failed = h('span', { className: 'sec-title prob-title', text: "Couldn't load safety reports" });
+        node.appendChild(h('div', { className: 'prob-row is-warn' }, [
+          h('i', { className: 'dot is-warn', 'aria-hidden': 'true' }),
+          failed,
+          h('span', { className: 'prob-retry' }, [st.retryButton(failed, ['safety'], 'safety')])
+        ]));
+        return;
+      }
+      var queue = data('safety');
+      if (!queue) return;
+      var items = list(queue.items);
+      if (!items.length) return;
+
+      var now = nowOf();
+      var dues = [];
+      items.forEach(function (item) {
+        var due = parseDay(item.actionDueAt);
+        if (due) dues.push(due);
+      });
+      dues.sort(function (a, b) { return a.getTime() - b.getTime(); });
+      var undated = items.length - dues.length;
+      var late = dues.length > 0 && dues[0].getTime() <= Date.now();
+      var tone = late || undated > 0 ? 'crit' : 'warn';
+
+      var count = fmt.int(items.length) + (queue.nextCursor != null ? '+' : '');
+      var title = count + ' safety ' + (items.length === 1 ? 'report' : 'reports') + ' to review';
+
+      var meta = h('span', { className: 'prob-meta' });
+      if (dues.length) {
+        meta.appendChild(h('span', {
+          className: 'prob-since' + (late ? ' is-late' : ''),
+          text: (late ? 'Overdue since ' : 'Oldest due ') + stamped(dues[0], now)
+        }));
+      }
+      if (undated > 0) {
+        meta.appendChild(h('span', {
+          className: dues.length ? '' : 'prob-since is-late',
+          text: undated === items.length ? 'No deadline set' : fmt.int(undated) + ' without a deadline'
+        }));
+      }
+
+      node.appendChild(h('div', { className: 'prob-row is-' + tone }, [
+        h('i', { className: 'dot is-' + tone, 'aria-hidden': 'true' }),
+        h('span', { className: 'sr', text: (tone === 'crit' ? 'Critical' : 'Warning') + ': ' }),
+        h('span', { className: 'sec-title prob-title', text: title }),
+        meta,
+        h('a', {
+          className: 'prob-view', href: S.paneHref('problems') || 'problems.html',
+          'aria-label': 'Review: ' + title
+        }, [h('span', { text: 'Review' }), icon('arrow')])
+      ]));
     }
 
     /* ------------------------------------------------------- happening now */
@@ -548,17 +640,16 @@
             summary.appendChild(h('span', { className: 'chk-words', text: armed.enabled === 1 ? 'check reporting' : 'checks reporting' }));
             node.appendChild(summary);
 
-            var note = function (words) {
+            /* "7 of 9 checks reporting" already says how many are not, and the
+               status line names them, so the card does not say it a third
+               time under another name. Only a stale verdict is added here. */
+            if (armed.stale > 0) {
               notes.appendChild(h('p', { className: 'chk-note' }, [
                 h('i', { className: 'dot is-warn', 'aria-hidden': 'true' }),
-                h('span', { text: words })
+                h('span', { text: fmt.int(armed.stale) + ' stale' })
               ]));
-            };
-            if (armed.insufficientData > 0) note(fmt.int(armed.insufficientData) + ' without samples');
-            var other = armed.enabled - armed.checking - armed.insufficientData;
-            if (other > 0) note(fmt.int(other) + ' not reporting');
-            if (armed.stale > 0) note(fmt.int(armed.stale) + ' stale');
-            if (notes.firstChild) node.appendChild(notes);
+              node.appendChild(notes);
+            }
 
             var seen = parseDay(armed.lastEvaluatedAt);
             last = seen ? stamped(seen, now) : fmt.none;

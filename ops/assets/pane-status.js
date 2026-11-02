@@ -296,7 +296,10 @@
       var panel = shownPanel();
       if (!panel) return;
       var host = sectionId ? first(panel, '[id="' + prefix + '-' + sectionId + '"]') : null;
-      var head = first(host || panel, '.sec-title, .state-title');
+      /* A section that came back with nothing to draw (a row that appears only
+         while something is waiting) has no heading left, so focus goes to the
+         first heading on the screen rather than to <body>. */
+      var head = first(host || panel, '.sec-title, .state-title') || first(panel, '.sec-title, .state-title');
       if (!head) return;
       head.setAttribute('tabindex', '-1');
       head.focus();
