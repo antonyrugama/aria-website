@@ -66,7 +66,7 @@ const PANES = [
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
   { pane: 'alerts', url: '/ops/alerts.html', title: 'Alerts' },
   { pane: 'analytics', url: '/ops/analytics.html', title: 'Analytics' },
-  { pane: 'spend', url: '/ops/spend.html', title: 'Cloud costs' },
+  { pane: 'spend', url: '/ops/spend.html', title: 'Money' },
   { pane: 'evals', url: '/ops/evaluations.html', title: 'Evaluations' },
   { pane: 'releases', url: '/ops/releases.html', title: 'Releases' },
   { pane: 'users', url: '/ops/users.html', title: 'Look up a user' },

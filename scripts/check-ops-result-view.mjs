@@ -267,15 +267,19 @@ const DECLARED = readRegistry();
    summary read's generatedAt. The sub is still asserted to the character, off
    that same fixture, so a Today whose sub stopped saying when it was read
    would fail here exactly as a pane with the wrong question does. */
+const datedSub = (iso) => {
+  const t = new Date(iso);
+  const two = (n) => String(n).padStart(2, '0');
+  const day = t.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  });
+  return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+};
+/* Money carries the same line, off the cost answer's own `asOf`: the time the
+   server collected the bill, not the time the page was opened. */
 const LIVE_SUB = {
-  overview: () => {
-    const t = new Date(SUMMARY.generatedAt);
-    const two = (n) => String(n).padStart(2, '0');
-    const day = t.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-    });
-    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  }
+  overview: () => datedSub(SUMMARY.generatedAt),
+  spend: () => datedSub(COSTS.asOf)
 };
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
@@ -596,10 +600,10 @@ const USAGE = {
    `views` keyed by category / resourceGroup / service, each `{ label, hint,
    rows }`, is the shape the route sends. `category` and `resourceGroup` have
    to be here, and the note on `resourceGroup` below says why. `service` is
-   here because the route sends it, and the pane draws it as the per-service
-   table that judgement 1 reads. No assertion needs it: deleting it leaves
-   this check green, with `spend: 1` still. The markers this check pins for
-   the pane are row labels, which the pane prints verbatim. */
+   here because the route sends it, and the pane offers it as the third cut
+   under its switch. No assertion needs it: deleting it leaves this check
+   green, with `spend: 1` still. The markers this check pins for the pane are
+   row labels, which the pane prints verbatim. */
 const COST_ROWS = [
   { key: 'openai', label: 'Azure OpenAI', micros: 240_000_000, color: 's1' },
   { key: 'postgres', label: 'Postgres', micros: 92_000_000, color: 's2' },
@@ -617,7 +621,7 @@ const COSTS = {
   views: {
     category: { label: 'Category', hint: '3 categories', rows: COST_ROWS },
     /* `resourceGroup` rather than `service` alone, because the pane on the
-       page reads `['category', 'resourceGroup']` (ops/assets/pane-spend.js:532)
+       page reads `VIEW_ORDER` (ops/assets/pane-spend.js, `views()`)
        and draws its Group-the-bill-by switch only when two of the views it
        reads have rows. A fixture sending `service` gave the v2 pane ONE view,
        no switch, and therefore none of the `aria-pressed` pair EXPECTED_PAIRS
@@ -1049,12 +1053,11 @@ const KNOWN_UNPAINTED_STATE = [];
    against the number this table demands. */
 const EXPECTED_PAIRS = {
   overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
-  /* One pair: the Group-the-bill-by switch's two buttons, `category` against
-     `resourceGroup`. Not `service` — the pane drops that key from its switch
-     on purpose (ops/assets/pane-spend.js:524-532) and draws the per-service
-     figures as a table instead, so `service` feeds a table and no ARIA state.
-     Deleting `resourceGroup` from the fixture takes this to 0 and fails the
-     run; deleting `service` leaves it at 1. */
+  /* One pair: the Group-the-bill-by switch's buttons, one `aria-pressed`
+     group over the cuts the answer carries (ops/assets/pane-spend.js,
+     `viewSwitch()`). The switch is drawn only when two or more cuts have rows,
+     so deleting `resourceGroup` and `service` from the fixture takes this to
+     0 and fails the run; deleting `service` alone leaves it at 1. */
   spend: 1,
   evals: 0,
   /* Two pairs, one per platform the fixture sends: the rollout rail's current
@@ -1105,7 +1108,7 @@ for (const page of PAGES) {
    has been wrong at it three times. Enumerated rather than generated: a hint
    that guesses is worse than none. */
 const FLOOR_HINTS = {
-  spend: 'The pair comes from the Group-the-bill-by switch, which viewCard draws only ' +
+  spend: 'The pair comes from the Group-the-bill-by switch, which whereCard draws only ' +
     'when two or more of the groupings in VIEW_ORDER (declared in ops/assets/pane-spend.js) ' +
     'arrive with rows. PREFLIGHT in this file tested the COSTS fixture against VIEW_ORDER ' +
     'AS DECLARED before Chrome started and it passed, since a failure there exits before ' +
@@ -2490,7 +2493,7 @@ for (const page of PAGES) {
          controls drawn and clickable. Its replacement, "that is the attribute
          missing, not the control", is the same error with the sign flipped,
          and is false when the control genuinely goes: returning null from
-         viewSwitch (ops/assets/pane-spend.js:566) takes the Group-the-bill-by
+         viewSwitch (ops/assets/pane-spend.js) takes the Group-the-bill-by
          switch off the page and empties the census the same way. An empty
          census distinguishes neither, so this sentence names both. */
       saw = `Its result view declared no state attribute of any kind${inTheme}. What this ` +
