@@ -33,12 +33,12 @@ counts as modification. The licence must travel with the fonts, which is what
 
 ## Why variable, not static instances
 
-The sheets these faces serve ask for fourteen distinct weights: 400, 440, 450, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 700.
-Geist ships static cuts only in hundreds, so **ten of the fourteen fall between
-instances**. Against static faces the browser snaps each of those ten to its
+The sheets these faces serve ask for thirteen distinct weights: 400, 450, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 700.
+Geist ships static cuts only in hundreds, so **nine of the thirteen fall between
+instances**. Against static faces the browser snaps each of those nine to its
 nearest cut, which quietly flattens the design's weight ramp everywhere it is
-used. One variable axis renders all fourteen exactly, and
-`scripts/ops-webfont.test.mjs` measures the fourteen advance widths to prove the
+used. One variable axis renders all thirteen exactly, and
+`scripts/ops-webfont.test.mjs` measures the thirteen advance widths to prove the
 axis is interpolating rather than snapping.
 
 ## Subsetting

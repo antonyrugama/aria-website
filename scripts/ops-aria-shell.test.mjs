@@ -299,7 +299,7 @@ const DESTINATIONS = [
   ['growth', 'Growth', 'analytics.html'],
   ['health', 'Health', 'alerts.html'],
   ['money', 'Money', 'spend.html'],
-  ['ai', 'Aria AI', 'evaluations.html'],
+  ['ai', 'Aria AI', 'delivery.html'],
 ];
 
 function railDom() {

@@ -236,9 +236,11 @@ const datedSub = (iso) => {
   return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
 };
 /* Money carries the same line, off the cost answer's own collection time, so
-   the longest header the pane draws is the one measured at 320px. */
+   the longest header the pane draws is the one measured at 320px. Delivery
+   carries the same dated head as Today, off the same summary read. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
+  delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(COSTS.asOf),
   /* Growth carries the date and which seven days it is about. */
   analytics: () => {
@@ -263,7 +265,8 @@ const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
   file: DECLARED[key].file,
   url: '/ops/' + DECLARED[key].file,
-  label: DECLARED[key].label,
+  /* The title the top bar draws: the registry's heading where a pane has one. */
+  label: DECLARED[key].heading || DECLARED[key].label,
   question: DECLARED[key].question
 }));
 
@@ -690,6 +693,18 @@ const RUNS = {
   truncated: false
 };
 
+/* The same two runs as the last 24 hours, for Delivery, which asks the route
+   for that window and draws its chart and table only from a complete list. */
+const RUNS_DAY = {
+  ...RUNS,
+  window: { range: '24h', startAt: ago(DAY), endExclusiveAt: ago(0) },
+  summary: {
+    runs: 2, completed: 1, failed: 1, canceled: 0, failureReasons: 1, unfinished: 0,
+    duration: { p50Ms: 8400, measured: 2, total: 2 },
+    queued: { p50Ms: 900, measured: 2, total: 2 }
+  }
+};
+
 const REVIEW_ITEM = {
   reviewItemId: 'review-item.browser-training',
   outcomeDigest: 'a'.repeat(64),
@@ -732,8 +747,12 @@ const PROOF = {
   /* COSTS.availability.detail, which both this pane and the v2 remodel print
      verbatim into whichever card they draw for `not_published`. */
   spend: ['there is no figure to read here until the export lands'],
+  /* Only the by-job table prints a job type, and only from a complete list of
+     the day. A failure card, or the words Delivery draws instead of a table,
+     does not. */
+  delivery: [RUNS.runs[1].type.label],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
-  review: [REVIEW_ITEM.reviewItemId, REVIEW_ITEM.evidence.evidenceRefs[0]],
+  review: [REVIEW_ITEM.rubric.statement],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
   settings: [ADMINS[0].email, AUDIT[0].reason, INTEGRATIONS.integrations[0].label]
@@ -783,7 +802,9 @@ function stub(pathname, query) {
     return { data: { problems: [PROBLEM] } };
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
-  if (pathname === '/api/ops/runs') return { data: RUNS };
+  if (pathname === '/api/ops/runs') {
+    return { data: query && query.get('range') === '24h' ? RUNS_DAY : RUNS };
+  }
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/usage') && measuring === 'analytics') {

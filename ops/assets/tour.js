@@ -809,17 +809,60 @@
       }
     ],
 
+    delivery: [
+      {
+        id: 'delivery-worked', kind: 'section', title: 'Worked, in the last day',
+        anchor: { selector: '#dv-worked' },
+        body: 'How many of the jobs Aria finished in the last 24 hours worked. A job that was ' +
+          'cancelled is left out of both numbers, and a day with no finished jobs says so ' +
+          'instead of showing zero.',
+        facts: [
+          ['Where it comes from', 'The run history the server keeps, read live.'],
+          ['Looks healthy when', 'Nearly every finished job worked.'],
+          ['Worth a closer look when', 'The red dot is there and the failures cluster on one job.']
+        ]
+      },
+      {
+        id: 'delivery-chart', kind: 'section', title: 'Jobs finished',
+        anchor: { selector: '#dv-chart' },
+        body: 'Jobs that finished in each two-hour stretch of the last 24 hours, UTC. The chart ' +
+          'is drawn only when the list of jobs adds up to the total, so a list that was cut ' +
+          'short says so instead of drawing a smaller picture.'
+      },
+      {
+        id: 'delivery-activity', kind: 'section', title: 'Activity and cost',
+        anchor: { selector: '#dv-activity' },
+        body: 'The AI runs of the last seven days, and what Cloud AI has cost this month so ' +
+          'far, as a share of the cloud bill. The change against last week appears only when ' +
+          'both weeks are fully reported. The cost is the billed amount, which runs a day ' +
+          'or two behind.'
+      },
+      {
+        id: 'delivery-byjob', kind: 'section', title: 'By job',
+        anchor: { selector: '#dv-byjob' },
+        body: 'The same day, one row per kind of job: how many worked and how many failed. ' +
+          'Open run history lists the individual runs.'
+      },
+      {
+        id: 'delivery-review', kind: 'section', title: 'Human review',
+        anchor: { selector: '#dv-review' },
+        roles: ['owner', 'operator', 'viewer'],
+        body: 'Answers waiting for a person to rate them, newest rules first. Review opens ' +
+          'the list on the Human review tab.'
+      }
+    ],
+
     evals: [
       {
-        id: 'evals-browse', kind: 'section', title: 'Browse SEVAL scenarios and coverage',
-        anchor: { selector: 'section', title: 'Browse SEVAL scenarios and coverage' },
+        id: 'evals-browse', kind: 'section', title: 'Scenario catalogue',
+        anchor: { selector: 'section', title: 'Scenario catalogue' },
         body: 'A read-only view of the SEVAL scenario catalogue, its datasets and its coverage. ' +
           'The filters narrow what the server returns. No prompt or production content is ' +
           'shown, and each coverage count carries its own denominator, so a gap stays visible.'
       },
       {
         id: 'evals-runs', kind: 'section', title: 'Inspect a controlled SEVAL run',
-        anchor: { selector: 'section', title: 'Launch and inspect controlled SEVAL runs' },
+        anchor: { selector: 'section', title: 'Scenario runs' },
         body: 'Inspect run reads one run by its id, which a launch fills in for you. It shows ' +
           'the status, revision, expected and actual cost, provider, attempts and failures, ' +
           'and the outputs and tool trace the server returns, each marked unavailable when ' +
@@ -828,7 +871,7 @@
       },
       {
         id: 'evals-run-launch', kind: 'action', title: 'Launch, cancel or retry a controlled run',
-        anchor: { selector: 'section', title: 'Launch and inspect controlled SEVAL runs' },
+        anchor: { selector: 'section', title: 'Scenario runs' },
         roles: ['owner', 'operator'],
         action: {
           does: 'Launch controlled pair starts a baseline run and then a candidate run, from ' +
@@ -888,34 +931,25 @@
           audited: 'The server records the admission and returns the receipt.',
           undo: 'This page has no control to reverse an admission.'
         }
-      },
-      {
-        id: 'evals-drawn', kind: 'section', title: 'The scoring harness is not built yet',
-        anchor: { selector: '.preview' },
-        missing: 'The drawing of the scoring pane is not on screen, so there is nothing to ' +
-          'point at.',
-        body: 'Everything below the banner is the agreed layout for a scoring tool that does ' +
-          'not exist yet. Every figure in it was made up to draw the layout, and each band is ' +
-          'stamped to say so. Nothing there is a measurement.'
       }
     ],
 
     review: [
       {
-        id: 'review-queue', kind: 'section', title: 'The blinded review queue',
-        anchor: { selector: '.band-head', title: 'Blinded review queue' },
-        body: 'Outputs waiting for a human label, one card each, with the rubric, the evidence ' +
-          'references and what was redacted. Which candidate, baseline or model family ' +
-          "produced an output is left out, and other reviewers' labels stay hidden until you " +
-          'record your own. When a source could not be read, the queue says it is ' +
-          'incomplete rather than empty.'
+        id: 'review-queue', kind: 'section', title: 'What is waiting for review',
+        anchor: { selector: '.review-list' },
+        body: 'Answers waiting for a person to rate them, one card each, with the rubric and ' +
+          'the evidence references. Which candidate, baseline or model family produced an ' +
+          "answer is left out, and other reviewers' labels stay hidden until you record " +
+          'your own. When a source could not be read, the list says it is incomplete rather ' +
+          'than empty.'
       },
       {
-        id: 'review-label', kind: 'action', title: 'Label a blinded output',
+        id: 'review-label', kind: 'action', title: 'Label an answer',
         anchor: { selector: '.review-list' },
         roles: ['owner', 'operator'],
         action: {
-          does: 'Review blinded output opens one output and its criterion. You record pass, ' +
+          does: 'Review opens one answer and its criterion. You record pass, ' +
             'fail or unknown, how sure you are, and why. The label is bound to that exact ' +
             'output and criterion.',
           who: 'Operators and owners who hold a current reviewer qualification for the ' +

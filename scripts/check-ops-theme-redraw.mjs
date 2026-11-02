@@ -235,9 +235,9 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today carries the date and when its figures were read under the title, not
-   its registry question, and Growth carries the date and which seven days it
-   is about. The sub is still asserted to the character, off the stub's own
+/* Today and Delivery carry the date and when their figures were read under the
+   title, not their registry question, and Growth carries the date and which
+   seven days it is about. The sub is still asserted to the character, off the stub's own
    summary stamp and its own seven day window. */
 const datedSub = (iso) => {
   const t = new Date(iso);
@@ -251,6 +251,7 @@ const datedSub = (iso) => {
    server collected the bill. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
+  delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(stub('/api/ops/costs').data.asOf),
   analytics: () => {
     const day = new Date(SUMMARY.generatedAt).toLocaleDateString('en-US', {
@@ -275,7 +276,8 @@ const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   url: '/ops/' + DECLARED[key].file,
   file: DECLARED[key].file,
   kind: 'pane',
-  label: DECLARED[key].label,
+  /* The title the top bar draws: the registry's heading where a pane has one. */
+  label: DECLARED[key].heading || DECLARED[key].label,
   question: DECLARED[key].question,
   proof: PROOF[key],
   /* No pane carries an aria.js chart host today; they draw their own SVG and

@@ -47,6 +47,10 @@
                 fires ops:filters. Where the control is drawn is the pane's
                 business; whether a deep link or a hand-off from another pane
                 keeps its App selection is not.
+     heading    the title drawn in the top bar, where it is not the label. The
+                three Aria AI pages share one title and are told apart by the
+                row of tabs under it, which wears the labels
+     headIcon   an icon drawn beside that title
 
      A pane that has been built declares only the filters its own reads can act
      on. A control that changes nothing is worse than no control: picking
@@ -179,19 +183,27 @@
          inventing bounds. */
       wave: 'W3', scope: false, range: false, env: false
     },
-    evals: {
-      file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
-      destination: 'ai',
-      question: 'Can I validate dataset declarations or quarantine evidence?',
-      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
-      filterNote: 'Browse has pane-local filters; the mutation tools use supplied declarations or evidence, not app, date or environment filters'
+    delivery: {
+      file: 'delivery.html', icon: 'spark', label: 'Delivery', group: 'How we are doing',
+      destination: 'ai', datedHead: true, heading: 'Aria AI', headIcon: 'spark',
+      question: 'Is Aria getting its work done, and what does it cost?',
+      /* Everything here is the last day, the last week and this month of
+         what Aria ran, across every app, in production. None of the three
+         controls reaches the reads that answer it, so there is no control and
+         no note about one. */
+      wave: 'W3', scope: false, range: false, env: false
     },
     review: {
-      file: 'review.html', icon: 'person', label: 'SEVAL review', group: 'How we are doing',
-      destination: 'ai',
-      question: 'Which blinded SEVAL outputs need human labels or adjudication?',
-      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
-      filterNote: 'Review filters are pane-local because labels are bound to exact outcome and criterion digests, not app-wide windows'
+      file: 'review.html', icon: 'person', label: 'Human review', group: 'How we are doing',
+      destination: 'ai', heading: 'Aria AI', headIcon: 'spark',
+      question: 'Which answers need a person to rate them or settle a disagreement?',
+      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer']
+    },
+    evals: {
+      file: 'evaluations.html', icon: 'eval', label: 'More', group: 'How we are doing',
+      destination: 'ai', heading: 'Aria AI', headIcon: 'spark',
+      question: 'Where do I run scenarios, and check datasets and evidence?',
+      wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer']
     },
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',
@@ -245,7 +257,7 @@
     { id: 'growth', label: 'Growth',  home: 'analytics' },
     { id: 'health', label: 'Health',  home: 'alerts' },
     { id: 'money',  label: 'Money',   home: 'spend' },
-    { id: 'ai',     label: 'Aria AI', home: 'evals' }
+    { id: 'ai',     label: 'Aria AI', home: 'delivery' }
   ];
 
   /* The panes under one destination, home first. A destination with a single

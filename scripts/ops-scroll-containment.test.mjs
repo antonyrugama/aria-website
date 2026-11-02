@@ -99,11 +99,11 @@
 
    - Wrappers the shared API stub never renders. Of the sideways scrolling
      wrappers declared across the v2 sheets, this sweep reaches `.scrollx`
-     (Problems), `.tbl-scroll` (Releases) and the `.tbl-wrap` of Evaluations,
-     Run history and Settings. People's `.tbl-wrap` needs data or an
-     interaction this sweep does not drive, so it is absent from the rendered
-     tree and this file judges it not at all, repaired or otherwise; the same
-     is true of `.u-scroll` (Usage). Money has no scroll box. The floors
+     (Problems), `.tbl-scroll` (Releases) and the `.tbl-wrap` of Run history
+     and Settings. People's `.tbl-wrap` needs data or an interaction this
+     sweep does not drive, so it is absent from the rendered tree and this
+     file judges it not at all, repaired or otherwise; the same is true of
+     `.u-scroll` (Usage). Money has no scroll box. The floors
      in claim 4 bind the count that IS swept; they cannot bind a box that never
      existed.
 
@@ -232,12 +232,13 @@ const ABSOLUTE_DESCENDANT_FLOOR = 2;
    it judges a different population: distinct wrapper SITES, after the
    out-of-scope hatch has run. Without it, widening that hatch or excusing
    every site would leave the claim nothing to judge, and a claim with nothing
-   to judge passes. 9 distinct sites are observed: the floor was 10 until the
-   Money pane stopped drawing a table that scrolls sideways (the service rows
-   are a list now), which took one site out of the sweep legitimately. It
-   sits at the observed count, so one more site leaving is a decision this
-   floor asks somebody to make rather than one it absorbs. */
-const WRAPPER_FLOOR = 9;
+   to judge passes. 8 distinct sites are observed: the floor was 10 until two
+   panes stopped drawing a table that scrolls sideways, each of which took one
+   site out of the sweep legitimately (the Money pane's service rows are a list
+   now, and the Aria AI rebuild removed the scoring drawing's table). It sits
+   at the observed count, so one more site leaving is a decision this floor
+   asks somebody to make rather than one it absorbs. */
+const WRAPPER_FLOOR = 8;
 
 /* Claim 7's floor, on its own population again: state applications that showed
    at least one element. 160 applications are made (10 panes x 2 themes x 2
