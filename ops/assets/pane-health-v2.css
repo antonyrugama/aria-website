@@ -46,6 +46,7 @@
 .tile-more:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .day-words { margin-top: 10px; font-size: 15px; color: var(--ink-2); }
+.day-words + .day-words { margin-top: 2px; }
 
 /* ------------------------------------------------------- happening now */
 

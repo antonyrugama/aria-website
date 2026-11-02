@@ -564,7 +564,12 @@
       var done = num(runs.summary && runs.summary.completed);
       var failed = num(runs.summary && runs.summary.failed);
       if (done === null || failed === null) return { words: 'Last 24h not reported' };
-      if (done + failed === 0) return { words: 'No runs finished' };
+      /* Nothing worked and nothing failed, so there is no rate to draw. The
+         cancellations are still terminal runs, so the count rides along for a
+         pane that has room to say it; Today has none and ignores it. */
+      if (done + failed === 0) {
+        return { words: 'No runs finished', canceled: num(runs.summary.canceled) };
+      }
       return {
         worked: done,
         attempted: done + failed,

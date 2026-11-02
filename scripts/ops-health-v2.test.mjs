@@ -42,6 +42,7 @@ const MODEL_SRC = read('assets/alerts-model.js');
 const STATUS_SRC = read('assets/pane-status.js');
 const PANE_SRC = read('assets/pane-health.js');
 const UGC_SRC = read('assets/pane-ugc.js');
+const ALERTS_SRC = read('assets/pane-alerts.js');
 const HEALTH_PAGE = read('alerts.html');
 const PROBLEMS_PAGE = read('problems.html');
 
@@ -171,14 +172,14 @@ const boom = (message) => Object.assign(new Error(message || 'The server did not
 
 /* -------------------------------------------------------------- the page */
 
-function buildPage(dom, body) {
+function buildPage(dom, body, pane) {
   const el = (parent, tag, attrs = {}) => {
     const node = dom.element(tag);
     for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
     parent.appendChild(node);
     return node;
   };
-  body.setAttribute('data-pane', 'alerts');
+  body.setAttribute('data-pane', pane);
   body.className = 'is-booting';
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
@@ -190,10 +191,13 @@ function buildPage(dom, body) {
 /* Loads the page the way ops/alerts.html loads it. `options` replaces a read's
    answer by its short name; an Error rejects and a function is asked with the
    query. `role` is the signed-in role, and `ugc` loads the Community safety
-   script too, which must still draw nothing on this page. The answer table is
-   handed back live. */
+   script too, which must still draw nothing on this page. `search` is the
+   querystring the page is opened at. `page: 'problems'` loads ops/problems.html
+   instead, for the test that follows a legacy link to where it goes. The answer
+   table is handed back live. */
 async function boot(options) {
   const opts = options || {};
+  const onProblems = opts.page === 'problems';
   const calls = [];
   const answers = {
     [ENDPOINTS.problems]: opts.problems === undefined ? problemsFixture() : opts.problems,
@@ -205,12 +209,15 @@ async function boot(options) {
   };
   const role = opts.role || 'owner';
 
-  const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/alerts.html' });
+  const dom = makeDom({
+    tokens: TOKENS,
+    href: 'https://ops.example.invalid/ops/' + (onProblems ? 'problems.html' : 'alerts.html') + (opts.search || ''),
+  });
   dom.window.Date = FrozenDate;
   const body = dom.element('body');
   dom.root.appendChild(body);
   dom.doc.body = body;
-  buildPage(dom, body);
+  buildPage(dom, body, onProblems ? 'problems' : 'alerts');
 
   dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
   dom.window.OpsSession = {
@@ -242,8 +249,12 @@ async function boot(options) {
   dom.window.Aria.applyState = (state) => { states.push(state); return applyState(state); };
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
-  vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
-  vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-health.js' });
+  if (onProblems) {
+    vm.runInContext(ALERTS_SRC, dom.window, { filename: 'pane-alerts.js' });
+  } else {
+    vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
+    vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-health.js' });
+  }
   if (opts.ugc) vm.runInContext(UGC_SRC, dom.window, { filename: 'pane-ugc.js' });
 
   const settle = async (n = 12) => { for (let i = 0; i < n; i += 1) await new Promise((r) => setImmediate(r)); };
@@ -383,6 +394,22 @@ test('worked over attempted leaves cancellations out and counts them beside it',
   const day = host(dom, 'day');
   assert.equal(allText(one(day, 'day-big')), '20 / 22', 'a cancellation was counted as an attempt');
   assert.match(allText(one(day, 'day-foot')), /^5 cancelled/);
+
+  /* A day of cancellations alone has no rate, and the count is still the day.
+     The words stand in for the bar, never a 0 / 0 over it. */
+  const only = async (summary) => {
+    const quiet = await boot({ runs: runsFixture((r) => { Object.assign(r.summary, summary); }) });
+    const card = host(quiet, 'day');
+    assert.equal(withClass(card, 'day-big').length, 0, 'a 0 / 0 was drawn for a day nothing finished');
+    assert.equal(withClass(card, 'ai-bar').length, 0, 'a bar was drawn for a day nothing finished');
+    return wordsOf(card, 'day-words');
+  };
+  assert.deepEqual(await only({ completed: 0, failed: 0, canceled: 5 }), ['No runs finished', '5 cancelled'],
+    'a day of cancellations alone hid the cancellations');
+  assert.deepEqual(await only({ completed: 0, failed: 0, canceled: 0 }), ['No runs finished'],
+    'a zero count was said as though it were news');
+  assert.deepEqual(await only({ completed: 0, failed: 0, canceled: undefined }), ['No runs finished'],
+    'a count nobody sent was drawn');
 });
 
 test('typical time needs a measured base, and says how large it is', async () => {
@@ -503,8 +530,17 @@ test('the billing feed failing does not degrade the page or take another card wi
   const dom = await boot({ costs: boom('down') });
   assert.equal(withClass(host(dom, 'checks'), 'fail-line').length, 0, 'the stamp failed as a whole-card failure');
   assert.equal(allText(one(host(dom, 'checks'), 'chk-big')), '7 of 9');
-  assert.equal(dom.doc.getElementById('content').querySelectorAll('[data-shown="degraded"]').length
-    + withClass(dom.doc.getElementById('content'), 'is-degraded').length, 0, 'the page was degraded by a stamp');
+  /* The shell's own switch is the only reading: live and degraded share one
+     container, so nothing in the DOM tells them apart. */
+  assert.ok(dom.states.length > 0, 'the page never asked the shell for a state');
+  assert.equal(dom.states.at(-1), 'live', 'the page was degraded by a stamp: ' + dom.states);
+  assert.ok(!dom.states.includes('degraded'), 'the page passed through degraded on a stamp: ' + dom.states);
+
+  /* The control: a read the page cannot do without does degrade it, with the
+     same stamp down too, so the assertion above is looking at something that
+     can change. */
+  const core = await boot({ costs: boom('down'), jobs: boom('jobs down') });
+  assert.equal(core.states.at(-1), 'degraded', 'the state probe cannot see a degraded page');
 });
 
 test('the job recorder says when nothing was ever recorded, and the last stamp otherwise', async () => {
@@ -627,6 +663,80 @@ test('every doorway is a link to the page that owns the depth', async () => {
   }
   for (const href of hrefs) assert.match(href, /^[a-z0-9-]+\.html/, 'a doorway that is not a relative page: ' + href);
   assert.equal(dom.doc.getElementById('subnav'), null, 'Health drew a sub-nav row; its cards are the way down');
+});
+
+/* ========================= links from before Health ====================== */
+
+/* alerts.html was Problems until Health took the file, and the one thing a link
+   to it could say was a window: ?range=open, 7d or 30d. Those links live in
+   bookmarks, chat and old alert messages. What is asserted is what Problems did
+   at the same address before this change, read off the page the browser ends up
+   on: the window selected, the range control drawn, and the queue holding what
+   that window holds (closed problems included once the window is a number of
+   days). The queue only: the pane also draws a recently-closed band on a
+   fourteen-day window of its own, which a window cannot move. */
+const DAY_MS = 86400000;
+const legacyProblem = (id, title, daysAgo, over) => Object.assign({
+  id, reference: 'AO-' + id, ruleKey: 'queue_backlog_age', ruleTitle: 'Queue backlog',
+  ruleThreshold: 'over 10 minutes, held for 5 minutes',
+  severity: 'critical', category: 'infrastructure', categoryLabel: 'Infrastructure',
+  status: 'open', title, summary: 'The oldest queued job is over the line.',
+  scopeKey: 'video_analysis', scopeLabel: 'Sprint video',
+  observedValue: 3600, thresholdValue: 600, durationSeconds: 300, detail: null,
+  workPane: 'jobs-live', workPaneLabel: 'Happening now',
+  firstBreachedAt: new Date(NOW_MS - daysAgo * DAY_MS).toISOString(),
+  firedAt: new Date(NOW_MS - daysAgo * DAY_MS).toISOString(),
+  lastObservedAt: new Date(NOW_MS - 60000).toISOString(), conditionClearedAt: null,
+  acknowledgedAt: null, acknowledgedByEmail: null,
+  closedAt: null, closedByEmail: null, closeReason: null,
+}, over);
+
+const WINDOWED = (query) => (query && query.status === 'closed'
+  ? { problems: [legacyProblem('c1', 'Closed last week', 10, {
+    status: 'closed', closedAt: new Date(NOW_MS - 9 * DAY_MS).toISOString(), closeReason: 'fixed',
+  })] }
+  : { problems: [legacyProblem('o1', 'Open now', 2), legacyProblem('o2', 'Open since last month', 40)] });
+
+/* Opens a legacy link and then does what the browser does with the answer. */
+async function openLegacy(search, follow = true) {
+  const start = await boot({ search });
+  const to = new URL(start.window.location.href, 'https://ops.example.invalid/ops/alerts.html');
+  if (!follow || !to.pathname.endsWith('/problems.html')) return { start, to, landed: null };
+  const landed = await boot({ page: 'problems', search: to.search, problems: WINDOWED });
+  return { start, to, landed };
+}
+
+const queueTitles = (dom) => withClass(dom.doc.getElementById('content'), 'p-item')
+  .map((card) => allText(one(card, 'p-title')));
+
+test('a Problems link from before Health keeps the window it was written for', async () => {
+  const expected = {
+    '?range=30d': ['30d', ['Open now', 'Closed last week']],
+    '?range=7d': ['7d', ['Open now']],
+    '?range=open': ['open', ['Open now', 'Open since last month']],
+  };
+  for (const [search, [range, titles]] of Object.entries(expected)) {
+    const { start, to, landed } = await openLegacy(search);
+    assert.equal(to.pathname.split('/').pop() + to.search, 'problems.html' + search,
+      search + ' was not carried to Problems with its window: ' + start.window.location.href);
+    assert.equal(start.calls.length, 0, search + ' read Health on the way to Problems');
+
+    assert.equal(landed.window.OpsPaneShell.filters().range, range, search + ' lost its window');
+    const control = landed.doc.getElementById('fRange');
+    assert.ok(control, search + ' landed on a page with no range control');
+    assert.deepEqual(findAll(control, (n) => n.tagName === 'OPTION' && n.selected).map((n) => n.getAttribute('value')), [range],
+      search + ' drew the control on another window');
+    assert.deepEqual(queueTitles(landed).sort(), titles.slice().sort(),
+      search + ' did not read the problems its window holds');
+  }
+});
+
+test('a link to Health that names no window, or only one Problems never had, stays on Health', async () => {
+  for (const search of ['', '?scope=mobile', '?env=staging', '?severity=critical']) {
+    const { start, to } = await openLegacy(search, false);
+    assert.equal(to.pathname.split('/').pop(), 'alerts.html', search + ' was handed on to Problems: ' + to.href);
+    assert.equal(asked(start, 'problems').length, 1, search + ' did not draw Health');
+  }
 });
 
 const safetyRows = (dom) => withClass(host(dom, 'safety'), 'prob-row');

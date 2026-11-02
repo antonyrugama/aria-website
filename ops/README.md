@@ -1953,6 +1953,11 @@ the destination's home and answers one question, "is anything wrong, and is Aria
 from six reads: the problems, the alert rules, the job queue, the last 24 hours of runs, the
 cloud-cost feed's age and, for owners and operators only, the Community safety queue. The depth moved out: the old Problems page is `problems.html` (the pane id
 `problems`, `pane-alerts.js`), unchanged, and Happening now and What happened stay as they were.
+A link from before the move, `alerts.html?range=open`, `7d` or `30d` (the window was the only thing
+Problems took from its address), is handed on to `problems.html` with that window before the shell
+asks for a session or Health reads anything (`legacy` in `pane-registry.js`, followed by
+`shell-pane-v2.js`); a bare `alerts.html`, or one that names only what Problems never read
+(`scope`, `env`, `severity`, `category`), is Health.
 Each card on Health is a doorway to the page that owns the depth. The status line, the retry
 control and the problem rows are not Health's: `pane-status.js` draws them for Today and Health
 both, so the two cannot say different things about the same read. The list is the departures that
@@ -1979,7 +1984,9 @@ carry a decision, and wording and dates differ in more places than are listed.
 6. **A count the queue did not send is a dash, never a zero**, and a stuck or abandoned count
    reads "N+" when the queue answered with only its working set. A queued job says "Queued" and
    draws no bar and no 0%. A typical time is printed only over a measured base and names the base.
-   Worked over attempted leaves cancellations out and counts them beside it. A day that was not
+   Worked over attempted leaves cancellations out and counts them beside it. A day where nothing
+   worked and nothing failed says "No runs finished" and still counts its cancellations, with no bar.
+   A day that was not
    fully recorded prints words and no numeral.
 7. **Abandoned is a fourth count only when it is above zero on a phone**, and the cyan dot after
    "Happening now" is not drawn: the title carries the pulse glyph, as the Checks title carries a
@@ -2854,7 +2861,7 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 584
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 171
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 183
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Health data has no reveal control at all, and no row. Not a disabled" = line 21

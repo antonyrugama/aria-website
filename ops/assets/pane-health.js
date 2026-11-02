@@ -504,6 +504,12 @@
       var day = st.dayOfRuns() || { words: 'Last 24h not reported' };
       if (day.words) {
         node.appendChild(h('p', { className: 'day-words', text: day.words }));
+        /* A day of nothing but cancellations has no rate, but the cancellations
+           are the day. A zero or an unsent count says nothing more than the
+           words above. */
+        if (day.canceled > 0) {
+          node.appendChild(h('p', { className: 'day-words', text: fmt.int(day.canceled) + ' cancelled' }));
+        }
         return;
       }
 

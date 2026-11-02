@@ -1005,6 +1005,24 @@
     return badges;
   }
 
+  /* Where a link made for the pane this file used to be should go, or null.
+     Only the parameters the registry names are carried, and only when the link
+     has one: a bare link to the file is the pane that owns it now. The value
+     is carried as written, because the pane it lands on already turns a value
+     it does not offer into its own default. */
+  function legacyTarget(pane) {
+    var legacy = pane.legacy;
+    var to = legacy && PANES[legacy.to];
+    if (!to) return null;
+    var q = new URLSearchParams(global.location.search);
+    var carried = new URLSearchParams();
+    legacy.carry.forEach(function (name) {
+      if (q.has(name)) carried.set(name, q.get(name));
+    });
+    var qs = carried.toString();
+    return qs ? to.file + '?' + qs : null;
+  }
+
   /* Boots a pane page. The app markup stays behind the gate until the API has
      confirmed a session, so there is no state in which a partly built shell is
      on screen: it is the boot placeholder, the failure card, or the real
@@ -1013,6 +1031,14 @@
     var pageId = document.body.getAttribute('data-pane');
     var pane = PANES[pageId];
     if (!pane) throw new Error('Unknown pane: ' + pageId);
+
+    /* Before the session is asked for, so the page this link was not made for
+       neither draws nor reads on its way to the one it was. */
+    var handedOn = legacyTarget(pane);
+    if (handedOn) {
+      global.location.replace(handedOn);
+      return;
+    }
 
     document.title = pane.label + ' | Aria Operations';
     activePane = pane;
