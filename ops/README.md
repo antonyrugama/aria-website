@@ -189,7 +189,7 @@ font-src = 'self'
 connect-src = 'self' https://api.runwitharia.com
 base-uri = 'none'
 form-action = 'none'
-pages carrying this exact policy = 14
+pages carrying this exact policy = 15
 ```
 
 What follows from wanting it this strict:
@@ -201,9 +201,9 @@ What follows from wanting it this strict:
   from the markup, is counted rather than remembered:
 
   ```claims id=csp-pages
-  pages in ops/ = 14
-  pages declaring the policy in a <meta> = 14
-  pages loading assets/theme.js = 14
+  pages in ops/ = 15
+  pages declaring the policy in a <meta> = 15
+  pages loading assets/theme.js = 15
   pages with an inline <script> = 0
   pages with a style attribute in markup = 0
   ```
@@ -271,7 +271,9 @@ ops/
   alerts.html           Problems
   analytics.html        People and usage
   spend.html            Money
-  evaluations.html      Aria quality: dataset declarations, quarantine, approval and admission
+  evaluations.html      Aria AI, More: scenarios, dataset declarations, quarantine, approval and admission
+  review.html           Aria AI, Human review: rate an answer or settle a disagreement
+  delivery.html         Aria AI, Delivery: what the AI worked, and what is waiting for review
   releases.html         App releases
   users.html            Look up a user
   settings.html         Settings (owner only)
@@ -297,7 +299,7 @@ ops/
                         states, charts — no page loads it; likewise
     pane-analytics.js   People and usage
     pane-spend.js       Money
-    pane-evaluations.js dataset validation, private quarantine import, approval handoffs and admission
+    pane-evaluations.js scenarios, dataset validation, private quarantine import, approval handoffs and admission
     pane-releases.js    App releases
     pane-users.js       Look up a user
     settings.js         Settings
@@ -320,7 +322,9 @@ ops/
     pane-jobs-live-v2.js     Happening now
     pane-jobs-live-v2.css    Happening now's own shapes
     job-actions-v2.js        Shared cancel and retry confirmations
-    pane-evaluations-v2.css  Aria quality's own shapes
+    pane-evaluations-v2.css  Aria AI More's own shapes
+    pane-delivery.js         Aria AI Delivery
+    pane-delivery-v2.css     Aria AI Delivery's own shapes
     pane-analytics-v2.css  People and usage's own shapes
     pane-spend-v2.css     Money's own shapes
     tour.js               the guided tour: "About this page" and "Take the
@@ -337,9 +341,9 @@ something, or a file that is deleted, is a red test rather than a stale sentence
 
 ```claims id=assets-by-page
 alerts-model.js = alerts.html, index.html
-api.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, users.html
-aria.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
-aria.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+api.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, users.html
+aria.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
+aria.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, shell-v2.html, spend.html, users.html
 icons.js = login.html, setup.html
 job-actions-v2.js = jobs-live.html, run-history.html
 login.js = login.html
@@ -350,13 +354,15 @@ pane-alerts.js = alerts.html
 pane-analytics-v2.css = analytics.html
 pane-analytics.js = analytics.html
 pane-data.js = (no page)
+pane-delivery-v2.css = delivery.html
+pane-delivery.js = delivery.html
 pane-evaluations-v2.css = evaluations.html
 pane-evaluations.js = evaluations.html
 pane-jobs-live-v2.css = jobs-live.html
 pane-jobs-live-v2.js = jobs-live.html
 pane-overview-v2.css = index.html
 pane-overview.js = index.html
-pane-registry.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, users.html
+pane-registry.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, spend.html, users.html
 pane-releases-v2.css = releases.html
 pane-releases.js = releases.html
 pane-review-admin.css = review.html
@@ -369,16 +375,16 @@ pane-spend.js = spend.html
 pane-ugc.js = alerts.html
 pane-users-v2.css = users.html
 pane-users.js = users.html
-session.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+session.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
 settings.js = settings.html
 setup.js = setup.html
-shell-pane-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
-shell-pane-v2.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+shell-pane-v2.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
 shell-v2.js = shell-v2.html
 shell.js = (no page)
-theme.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
-tour-v2.css = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
-tour.js = alerts.html, analytics.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+theme.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, login.html, releases.html, review.html, run-history.html, settings.html, setup.html, shell-v2.html, spend.html, users.html
+tour-v2.css = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
+tour.js = alerts.html, analytics.html, delivery.html, evaluations.html, index.html, jobs-live.html, releases.html, review.html, run-history.html, settings.html, spend.html, users.html
 ```
 
 A file no page loads is not automatically dead: some are kept alive by the tests, which load
@@ -501,8 +507,9 @@ history = run-history.html, shell-pane-v2.js, pane-run-history-v2.css
 alerts = alerts.html, shell-pane-v2.js, pane-alerts-v2.css
 analytics = analytics.html, shell-pane-v2.js, pane-analytics-v2.css
 spend = spend.html, shell-pane-v2.js, pane-spend-v2.css
-evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
+delivery = delivery.html, shell-pane-v2.js, pane-delivery-v2.css
 review = review.html, shell-pane-v2.js, pane-review-admin.css
+evals = evaluations.html, shell-pane-v2.js, pane-evaluations-v2.css
 releases = releases.html, shell-pane-v2.js, pane-releases-v2.css
 users = users.html, shell-pane-v2.js, pane-users-v2.css
 settings = settings.html, shell-pane-v2.js, pane-settings-v2.css
@@ -712,7 +719,7 @@ and land on an honest state rather than a zero wherever an answer carries no fig
 
 **Settings** is built, and changes configuration rather than only reporting it — it is not the
 only pane that writes, which this file used to claim; see the derived block in the Settings
-section below. The section on it below is worth reading before the page is used. **Aria quality** lets
+section below. The section on it below is worth reading before the page is used. **Aria AI, More** lets
 viewers, operators and owners validate synthetic dataset declarations. Paste an input object
 containing `datasets` and `fixtureDigests`; the page supplies the operation envelope. The server
 returns manifest digests or field paths and reason codes. Editing the input clears the old
@@ -748,8 +755,6 @@ seconds and milliseconds are omitted. A repeated fall-back hour cannot encode wh
 was intended; native JavaScript parsing selects the earlier occurrence, so this is not an exact
 instant round-trip for the later occurrence. Manual edits still use the displayed local time,
 and the future-date and 90-day retention bounds are unchanged.
-The scoring portion remains an explicitly labelled drawing with invented figures. The section
-below describes that preview separately from the working declaration, quarantine and approval tools.
 
 **App releases** and **Look up a user** are built. Everything either of them shows comes from the
 operations API; neither holds any data of its own, and where the API answers with nothing the
@@ -1156,6 +1161,7 @@ every `/api/…` string literal that file spells:
 pane-alerts.js = /api/ops/alerts/problems, /api/ops/alerts/problems/, /api/ops/alerts/rules, /api/ops/alerts/rules/
 pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
+pane-delivery.js = /api/ops/costs, /api/ops/runs, /api/ops/seval/admin/reviews/queue, /api/ops/summary
 pane-evaluations.js = /api/ops/seval/admin/datasets/, /api/ops/seval/admin/overview, /api/ops/seval/admin/scenarios/, /api/ops/seval/operations
 pane-jobs-live-v2.js = /api/ops/jobs
 pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/costs, /api/ops/jobs, /api/ops/runs, /api/ops/summary, /api/ops/usage
@@ -1306,64 +1312,49 @@ refused sign in.
 - There is **no filter bar**. The registry gives Settings no scope, range or environment, and the
   shell draws a bar only for the filters a pane's own reads can honour.
 
-## The Aria quality pane
+## The Aria AI panes
 
-`evaluations.html` runs on the v2 shell and loads `aria.css`, `shell-pane-v2.css` and
-`pane-evaluations-v2.css`. It is the one pane where **most of what is on screen is a drawing**,
-and everything about how it is built follows from that.
+Aria AI is three pages on the v2 shell, one h1 and a row of tabs: **Delivery**
+(`delivery.html`), **Human review** (`review.html`) and **More** (`evaluations.html`). Each loads
+`aria.css`, `shell-pane-v2.css` and its own sheet. The registry gives all three the same
+`heading` and `headIcon`, so the top bar reads "Aria AI" with a violet sparkle on each tab, and
+Delivery puts the date and its `Updated` time in the slot the other panes use for the date.
 
-**All six SEVAL forms submit to the backend, and the scoring half does not exist.**
-Dataset declaration validation calls the shared SEVAL operation using supplied inputs.
-Evidence quarantine, the three approval forms and the admission form also submit to the shared
-operation route; the backend decides whether each request is available and allowed. The pane
-tells operators before submit that quarantine answers only when storage and authority settings
-are configured, that ADR 0040 keeps approval actions closed until an external qualification
-issuer exists, and that admission is an owner-only receipt-producing state transition. If the
-backend refuses, submitting changes nothing and the pane shows the refusal. Below those
-forms is a design for a scoring harness that has no code, no endpoint and no stored score. The
-numbers in it were invented to draw the layout.
+**Delivery** answers "is the AI working?" from three reads: `/api/ops/summary` (jobs worked and
+failed), `/api/ops/runs` (what finished, hour by hour), `/api/ops/costs` (the AI line of the
+bill) and, for owners, operators and viewers, `/api/ops/seval/admin/reviews/queue`. Nothing is
+drawn from a figure the API did not give:
 
-**How a reader tells one from the other**, three ways over, never once in colour alone:
+- **Worked** is `completed` out of `completed + failed`. A cancelled run is neither.
+- The **chart** and the **By job** table are drawn only from a complete list: `truncated` is
+  false, the list holds as many runs as the summary counted, the window is exactly 24 hours and
+  every run has a finish time and a type. Otherwise the box says which of those is missing.
+- The **change since last week** shows only when the week before was fully reported. Otherwise
+  it says how many of the 7 days were.
+- **Cost** is this month's AI line, or last month's when this month is not yet published, and
+  says "so far" while the month is incomplete.
+- **Human review** lists three open items at most, with "See all" for the rest, and prints a
+  plus on the count when the queue was capped or only partly read.
+- Each read fails on its own with its own retry, so one failure does not blank the page.
 
-1. **A stamp in every band's status slot**, carrying a word and a glyph: `Works now` on every
-   working form band, and `Invented figures` on all three drawn bands. Same chip, same slot, so they read against
-   each other, and a screenshot of any one band still carries its own stamp.
-2. **A banner above the drawn half**, headed *The scoring harness is not built yet*, which states
-   in one sentence that every figure below it was made up.
-3. **The surface.** The drawn half sits on a flat, dashed, hatched panel with none of the lit top
-   edge that makes a working card read as a raised object — the same treatment Settings uses for
-   a card with no API behind it, so the two panes teach one vocabulary rather than two.
+**Human review** is a list of answers waiting for a person. Each row is the question being
+judged, its area and whether anyone has rated it or reviewers disagree. Review opens one answer
+with its sources, what to judge it on and the ratings already given; a person rates it, or
+settles a disagreement after seeing the other ratings. Hashes and evidence references are still
+sent with the request but no longer shown.
 
-`scripts/ops-pane-evaluations.test.mjs` holds that partition in both directions: every band
-inside the drawn panel is stamped `Invented figures` and none is stamped `Works now`, every band
-outside it is the reverse, **neither set is empty**, and **neither a two-decimal figure nor any
-string in the file's hand-written invented inventory appears outside the panel in the two render
-states it sweeps**. Moving one band across the boundary turns seven tests in that file red.
-Nothing real on this pane is written as a two-decimal figure, which is what makes that sweep a
-usable rule rather than a coincidence: submitted tools print digests, metadata or backend refusals, and the disclosure copy prints no figures.
+**More** holds the tools an operator uses less often, under plain names: the scenario
+catalogue and its runs, checking a dataset declaration, putting evidence into quarantine, the
+qualified approval handoff and admitting synthetic evidence. Where each moved from: *Dataset
+tools* is the dataset declaration check, *Scenario catalogue* and the run list are the
+catalogue and runs, quarantine, approval and admission are unchanged. Role gates are unchanged:
+reading a prompt is owner-only, quarantine needs an operator, admission needs an owner, and the
+backend still decides each request.
 
-The sweep reads one string taken from `<body>` with the panel's subtree removed, so it covers the
-shell's live region — `announce()` is how a screen-reader operator hears every success here, and
-the stamps are visual chips — and it finds a phrase split across sibling elements, which bolding a
-number inside a sentence produces and which a per-element sweep walked past. It also reads text
-carried on attributes, listed once as `SPOKEN_ATTRS` in that file and nowhere else, because an
-enumeration repeated in prose goes stale the round after the list is widened — **and separately
-the live `value` a control is holding**, which is a property rather than an attribute: this pane
-assigns `expiry.value` and `mediaType.value` in JS, where `getAttribute('value')` returns nothing
-and the box on screen is full. Two shapes qualify: text painted on screen, like a field's value or
-a placeholder shown until the operator types, and text a screen reader substitutes for the
-element's own, like an `aria-label` — a figure in the second is worse than one in the live region,
-because it suppresses the real words underneath it as well. The two states are the booted page and
-the page after the dataset and quarantine forms have been submitted and answered. This sweep
-does not cover post-submission approval or admission states or error branches.
-
-Three gaps, each measured rather than guessed, with a row of the PR's battery behind it. **The
-inventory is hand-written and nothing proves it is complete**: a bare count, or a round number in
-a new sentence, is invisible to it. **The error branches are a third render state nothing reads**:
-a score in a validation failure message leaves the suite green, while the same string on a
-boot-state hint turns three tests red. **A figure split mid-token** across two elements joins with
-a space here and without one in a browser. Adding invented data to this pane means adding it to
-the inventory by hand, and the test file says so where a reader will meet it.
+The page used to end with a drawing of a scoring harness filled with made-up figures, stamped
+"Invented figures". It, the stamps and the banner are gone with the figures. Nothing replaced
+them, and `scripts/ops-pane-evaluations.test.mjs` asserts that no preview, stamp, meter or
+two-decimal score has come back.
 
 **What the working forms do.** Validation takes an input object containing `datasets` and
 `fixtureDigests`; the page supplies the operation envelope. The server returns manifest digests
@@ -1383,8 +1374,8 @@ recorded decision: under ADR 0040, approval actions stay closed until an externa
 issuer exists. The page cannot grant qualification; it submits and renders the backend response.
 
 Owners also see the admission form. It submits only synthetic admission metadata and approval
-identity, never raw bytes or a caller-supplied target digest. The success state says receipt only
-and no access granted; denial and stale-binding errors keep the backend's reason visible.
+identity, never raw bytes or a caller-supplied target digest. The success receipt is headed
+`Admitted, no access granted`; denial and stale-binding errors keep the backend's reason visible.
 
 The retention field shows the browser's local timezone and submits UTC. Its default starts
 30 elapsed days ahead and uses the offset at that future instant, including DST changes,
@@ -1396,32 +1387,16 @@ and the future-date and 90-day retention bounds are unchanged.
 
 **Where the pane departs from `docs/mocks/ops-dashboard-v2/evaluations.html`:**
 
-- **The operation bands come first, then the banner, then the drawing.** The mock opens with the
-  banner, because the mock is a drawing of a pane where nothing is built. Here the SEVAL operation forms submit to the backend, so a page that opens by saying it is not built
-  would be false. The banner sits directly above the
-  half it describes and its claim is scoped to that half.
-- **The drawn half is not faded.** The mock sets `opacity: .55` over it, which multiplies every
-  ink in the panel and takes text the v2 palette places at 4.5:1 down below 3:1. The dashed
-  hairline, the flat fill and the hatch carry the same "this is not a thing yet" reading without
-  moving a single colour.
-- **The drawn half is not `aria-hidden`.** The mock hides it from assistive technology, which
-  hides the warning too. Every drawn band carries a real, announced stamp instead: the mock's own
-  stated reason for per-band stamps was that a screenshot of one card still carries the warning,
-  and a screen reader user has the same problem.
-- **The drawn half holds no control.** The mock keeps `Open run` buttons in it under
-  `pointer-events: none`, which leaves them in the tab order inside a hidden subtree. A control
-  that changes nothing is worse than no control; they are gone. The test asserts the panel holds
-  no control at all and exactly one focus stop — the table that scrolls sideways on a phone,
-  which is named and reachable because a scroll region a keyboard cannot get to fails WCAG
-  2.1.1 — while every working band contains at least one control.
-- **No sparkline over the version list.** Both draw the same seven figures; that is one fact
-  captioned twice.
-- **No `including the 0.82 on Overview`.** Overview prints no quality figure, so the sentence
-  describes something that is not there.
-- **No `.why` annotation blocks.** They are the mock's design commentary, gated behind its own
-  notes toggle, and are not part of the pane.
-- **No filter bar controls.** The registry gives this pane no scope, range or environment and
-  carries a note saying why; the shell prints the note where the controls would have been.
+- **The mock's scoring harness is not built.** It was a drawing: a banner, stamped bands, a
+  score table, meters and a version list, all with made-up figures. There is no scoring code,
+  endpoint or stored score behind it, so the page ends with the real tools and nothing else.
+- **The pane is the third tab of Aria AI**, named More, and the page title is the shared
+  "Aria AI". The tools keep their forms and gates; only their titles are plainer.
+- **The page draws no filter bar.** The registry gives this pane no scope, range or
+  environment, and with no note to print the shell draws nothing where the bar would be.
+- **An admission receipt carries no chip.** Its heading says what happened,
+  `Admitted, no access granted`, and the quarantine receipt's heading says the same in its own
+  words. A status chip beside a receipt repeated the heading.
 
 ## Departures from the approved mocks
 
@@ -1542,7 +1517,6 @@ those panes now.
     pane-alerts-v2.css .scrollx = position: relative
     pane-alerts-v2.css .ugc-preview = position: relative
     pane-analytics-v2.css .u-scroll = position: relative
-    pane-evaluations-v2.css .tbl-wrap = position: relative
     pane-jobs-live-v2.css .u-scroll = position: relative
     pane-releases-v2.css .tbl-scroll = position: relative
     pane-run-history-v2.css .rh-content-region = position: relative
@@ -1562,7 +1536,7 @@ those panes now.
 
     ```claims id=sr-span-classes
     absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
-    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-overview.js, pane-releases.js, pane-spend.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-delivery.js, pane-overview.js, pane-releases.js, pane-spend.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
     ```
 
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-releases.js`
@@ -1988,7 +1962,6 @@ its own `:focus-visible` rule sets. A box that loses its rule, or gains one, is 
 pane-alerts-v2.css .scrollx = outline-offset: -2px
 pane-alerts-v2.css .ugc-preview = outline-offset: -2px
 pane-analytics-v2.css .u-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
-pane-evaluations-v2.css .tbl-wrap = outline-offset: -2px
 pane-jobs-live-v2.css .u-scroll = outline-offset: -2px
 pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .rh-content-region = outline-offset: -2px

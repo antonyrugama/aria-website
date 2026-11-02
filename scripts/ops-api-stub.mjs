@@ -918,13 +918,79 @@ const REVIEW_ITEM = {
   labelCounts: { submitted: 0, disputes: 0, adjudications: 0 }
 };
 
-/* The same runs, read over the last day rather than the last week. */
+/* The last day, listed in full: 25 finished runs, none cancelled, one failed.
+   Aria AI draws its chart and its per-job table from the list itself, and only
+   when the list adds up to the summary, so a summary over a two-run list would
+   leave both undrawn. The finish times sit in twelve two-hour bins of the
+   window (0 1 1 2 1 3 2 2 3 4 3 3), which is the chart the pane shows. */
+const DAY_BINS = [0, 1, 1, 2, 1, 3, 2, 2, 3, 4, 3, 3];
+const DAY_MIX = [
+  { value: 'training_program', label: 'Training program', runs: 12 },
+  { value: 'nutrition_plan', label: 'Nutrition plan', runs: 7 },
+  { value: 'meal_photo', label: 'Meal photo', runs: 6 }
+];
+const DAY_KINDS = [];
+for (let round = 0; DAY_KINDS.length < 25; round++) {
+  for (const kind of DAY_MIX) if (round < kind.runs) DAY_KINDS.push(kind);
+}
+const DAY_FAILED_AT = DAY_KINDS.map((kind) => kind.value).lastIndexOf('meal_photo');
+const DAY_RUNS = (() => {
+  const runs = [];
+  DAY_BINS.forEach((count, bin) => {
+    for (let k = 0; k < count; k++) {
+      const n = runs.length;
+      const kind = DAY_KINDS[n];
+      const failed = n === DAY_FAILED_AT;
+      runs.push({
+        jobId: `00000000-0000-4000-8000-${String(n + 1).padStart(12, '0')}`,
+        type: { value: kind.value, label: kind.label, labelled: true },
+        outcome: failed ? 'failed' : 'completed',
+        outcomeLabel: failed ? 'Failed' : 'Worked',
+        failureCode: failed ? 'model_timeout' : null,
+        retryable: failed ? true : null,
+        modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 18_000,
+        finishedAt: new Date(NOW - DAY + bin * 2 * HOUR + 10 * MINUTE + k * 20 * MINUTE).toISOString(),
+        actions: { canCancel: false, cancelReason: 'Only queued or running jobs can be cancelled.',
+          canRetry: failed, retryReason: failed ? null : 'Only failed jobs can be retried.' }
+      });
+    }
+  });
+  return runs;
+})();
 const RUNS_DAY = Object.assign({}, RUNS, {
   window: { range: '24h', startAt: ago(DAY), endExclusiveAt: ago(0) },
-  summary: Object.assign({}, RUNS.summary, {
-    runs: 25, completed: 24, failed: 1, canceled: 0, unfinished: 0
-  })
+  summary: {
+    runs: 25, completed: 24, failed: 1, canceled: 0, failureReasons: 1, unfinished: 0,
+    duration: { p50Ms: 18_000, measured: 25, total: 25 },
+    queued: { p50Ms: 700, measured: 25, total: 25 }
+  },
+  facets: {
+    types: DAY_MIX.map((kind) => ({ value: kind.value, label: kind.label, labelled: true, runs: kind.runs })),
+    outcomes: [
+      { value: 'completed', label: 'Worked', runs: 24 },
+      { value: 'failed', label: 'Failed', runs: 1 }
+    ]
+  },
+  failures: [
+    { failureCode: 'model_timeout', runs: 1, retryable: true,
+      firstSeenAt: DAY_RUNS[DAY_FAILED_AT].finishedAt, lastSeenAt: DAY_RUNS[DAY_FAILED_AT].finishedAt,
+      byType: [{ type: { value: 'meal_photo', label: 'Meal photo', labelled: true }, runs: 1 }] }
+  ],
+  runs: DAY_RUNS,
+  truncated: false
 });
+
+/* What is waiting for a person to rate it: three open items, the first being
+   the one the review pane's own markers are taken from. */
+const REVIEW_QUEUE = [
+  REVIEW_ITEM,
+  { ...REVIEW_ITEM, reviewItemId: 'review-item.browser-nutrition',
+    rubric: { ...REVIEW_ITEM.rubric, statement: 'Judge whether the meal swap keeps the protein target.',
+      authority: { domain: 'nutrition' } } },
+  { ...REVIEW_ITEM, reviewItemId: 'review-item.browser-photo',
+    rubric: { ...REVIEW_ITEM.rubric, statement: 'Judge whether the portion estimate matches the photo.',
+      authority: { domain: 'nutrition' } } }
+];
 
 const RUN_REVEAL = {
   jobId: '22222222-2222-4222-8222-222222222222',
@@ -999,6 +1065,11 @@ const PROOF = {
   /* The platform's distinct count and its change on the week before, both of
      which the failure card replaces with words. */
   overview: ['44', '+12 vs last week'],
+  /* What worked in the last day over what finished, and the week's change in
+     AI runs. Both come off the runs and the summary above and both are replaced
+     by words when the pane cannot read them, which is what its failure and
+     empty states print. */
+  delivery: ['24 / 25', '+25 vs last week'],
   /* The id of the first job in the working set, which only the job table
      prints, and the worker-load sentence, which the route sends as prose and
      the pane prints verbatim. Both are absent until a reading is drawn. */
@@ -1021,7 +1092,7 @@ const PROOF = {
      largest row and the smallest of the stub's five. */
   spend: ['AI & models', 'Compute'],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
-  review: [REVIEW_ITEM.reviewItemId, REVIEW_ITEM.evidence.evidenceRefs[0]],
+  review: [REVIEW_ITEM.rubric.statement],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
   users: ['Nothing looked up yet'],
   settings: [
@@ -1166,7 +1237,7 @@ function stub(pathname, search, options = {}) {
     } };
   }
   if (pathname.startsWith('/api/ops/seval/admin/reviews/queue')) {
-    return { data: { items: [REVIEW_ITEM], partial: false, omissions: [] } };
+    return { data: { items: REVIEW_QUEUE, partial: false, omissions: [] } };
   }
   if (pathname.startsWith('/api/ops/admins')) return { data: ADMINS };
   if (pathname === '/api/ops/settings/sessions') return { data: SESSION_SETTINGS };
@@ -1190,5 +1261,5 @@ function stub(pathname, search, options = {}) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, REVIEW_QUEUE, USAGE, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

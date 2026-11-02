@@ -409,9 +409,16 @@ const EDGE_TRIM = 2;
 /* Literal floors, stated here rather than counted from the run. A floor
    derived from the thing under test cannot fail: a board that rendered no
    meters at all would satisfy "every meter rendered is correct" in silence.
-   Measured today: 96 meters, of which 56 carry a tone. */
-const METER_FLOOR = 40;
-const TONED_FLOOR = 24;
+   Measured today: 20 meters from the panes, none of them toned, plus the 8
+   the synthetic arm builds.
+
+   These were 40 and 24 when Aria AI's scoring drawing still painted 76 of the
+   board's 96 meters, every toned one among them. That drawing was invented
+   figures and is gone (R54), so the toned population is now the synthetic
+   arm's, and TONED_FLOOR counts it. The floors sit under what is measured, not
+   on it. */
+const METER_FLOOR = 16;
+const TONED_FLOOR = 8;
 const VALUE_FLOOR = 8;
 
 /* #10848's fix darkens the light-theme fill to clear 3:1 against the TRACK,
@@ -446,7 +453,7 @@ const CARD_AGREE = 1.03;
    non-uniform empties light's population while dark's 50 readings keep the
    count healthy and the claim silently judges one theme. T19 in the battery
    is that payload. Counted today: see the run summary. */
-const CARD_FLOOR = 8;
+const CARD_FLOOR = 2;
 
 /* The severity hues are closer together after #10848 than before it --
    measured, light theme, closest pair `none` vs `ok` at 59.2 -> 39.9 RGB
@@ -457,13 +464,13 @@ const CARD_FLOOR = 8;
    rather than on it. */
 const TONE_SEPARATION = 30;
 
-/* Which severities a REAL pane must be caught drawing, per theme, declared
-   rather than counted. The totals above cannot do this job: `RANK.ok` is 0, so
-   a board of nothing but `ok` meters clears them with no notch on screen, and a
-   payload that deletes every `bad` reading leaves them green while the notch
-   claims judge nothing. `vio` is absent on purpose -- no pane draws one today,
-   which is why the synthetic arm exists and why it is the only thing that
-   caught `vio` rendering identically to `bad`. */
+/* Which severities must be caught drawing, per theme, declared rather than
+   counted. The totals above cannot do this job: `RANK.ok` is 0, so a board of
+   nothing but `ok` meters clears them with no notch on screen, and a payload
+   that deletes every `bad` reading leaves them green while the notch claims
+   judge nothing. No pane draws a toned meter today, so the synthetic arm is
+   what supplies them; it builds all four, `vio` included, which is the only
+   thing that caught `vio` rendering identically to `bad`. */
 const REQUIRED_REAL = ['warn', 'bad'];
 
 const THEMES = ['dark', 'light'];
@@ -906,7 +913,7 @@ for (const theme of THEMES) {
   await forcedColors(false);
 }
 
-const toned = readings.filter((r) => r.tone);
+const toned = [...readings, ...synthetic].filter((r) => r.tone);
 
 /* ------------------------------------------------------------------- tests */
 
@@ -953,8 +960,8 @@ test('the sweep judged a real board of meters, not an empty one', () => {
   for (const theme of THEMES) {
     for (const tone of REQUIRED_REAL) {
       assert.ok(toned.some((r) => r.theme === theme && r.tone === tone),
-        `no real .meter.${tone} was judged in the ${theme} theme, so every claim ` +
-        `about ${RANK[tone]}-notch severity rests on the synthetic arm alone`);
+        `no .meter.${tone} was judged in the ${theme} theme, so every claim ` +
+        `about ${RANK[tone]}-notch severity has nothing to judge`);
     }
   }
 });

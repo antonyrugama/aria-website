@@ -235,9 +235,9 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today carries the date and when its figures were read under the title, not
-   its registry question. The sub is still asserted to the character, off the
-   stub's own summary stamp. */
+/* Today and Delivery carry the date and when their figures were read under the
+   title, not their registry question. The sub is still asserted to the
+   character, off the stub's own summary stamp. */
 const datedSub = (iso) => {
   const t = new Date(iso);
   const two = (n) => String(n).padStart(2, '0');
@@ -250,6 +250,7 @@ const datedSub = (iso) => {
    server collected the bill. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
+  delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(stub('/api/ops/costs').data.asOf),
   /* Look up a user carries the UTC date of the day and nothing else, on the
      page's own clock, so it is computed here the same way. */
@@ -262,7 +263,8 @@ const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   url: '/ops/' + DECLARED[key].file,
   file: DECLARED[key].file,
   kind: 'pane',
-  label: DECLARED[key].label,
+  /* The title the top bar draws: the registry's heading where a pane has one. */
+  label: DECLARED[key].heading || DECLARED[key].label,
   question: DECLARED[key].question,
   proof: PROOF[key],
   /* No pane carries an aria.js chart host today; they draw their own SVG and
@@ -357,7 +359,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    res.end(JSON.stringify(stub(url.pathname, url.search)));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));

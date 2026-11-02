@@ -1,0 +1,249 @@
+/* =========================================================================
+   Aria Operations — Aria AI, Delivery (v2)
+   Loaded after assets/aria.css and assets/shell-pane-v2.css, on
+   ops/delivery.html and nowhere else.
+
+   Flat panels on the near-black page. Violet is Aria AI's and is the accent
+   here: the bars, the bar of work done, the week's change and the Review
+   links. Red is one small dot, never a surface.
+
+   No new colour value and no new custom property: every rule paints in a token
+   aria.css declares, so both themes repaint from the sheet and nothing is
+   resolved in script. Nothing is set below 14px.
+   ========================================================================= */
+
+.delivery { gap: 16px; }
+
+/* A grid child may shrink below its content; a section that drew nothing
+   leaves no gap behind it. */
+.delivery .dv-host { min-width: 0; }
+.delivery .dv-host:empty { display: none; }
+
+.delivery .num {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
+.delivery h2, .delivery p, .delivery ul { margin: 0; }
+.delivery ul { padding: 0; list-style: none; }
+.delivery a { text-decoration: none; }
+
+/* ------------------------------------------------------------- the head */
+
+#pageSub { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.sub-date { color: var(--ink-2); font-size: 15px; }
+.sub-updated { color: var(--ink-3); font-size: 14px; }
+
+/* --------------------------------------------------------------- layout */
+
+.dv-row { display: grid; gap: 16px; align-items: stretch; }
+.dv-row-top { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr); }
+.dv-row-bottom { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+.dv-row > .card { min-width: 0; }
+
+.dv-hero, .dv-activity, .dv-byjob, .dv-review { padding: 24px 26px; }
+
+.dv-title {
+  font-size: 17px; font-weight: 560; letter-spacing: -.01em; color: var(--ink);
+}
+.dv-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; }
+.dv-byjob .dv-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+.dv-sub { font-size: 16px; color: var(--ink-2); }
+.dv-words { margin-top: 14px; font-size: 18px; line-height: 1.35; color: var(--ink-2); }
+.dv-big {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
+  font-weight: 640; line-height: 1; letter-spacing: -.04em; color: var(--ink);
+}
+
+/* ----------------------------------------------------------- the hero */
+
+.dv-hero { display: block; }
+.dv-hero-main {
+  display: grid;
+  grid-template-columns: minmax(300px, 4fr) minmax(0, 5fr);
+  align-items: stretch;
+}
+.dv-worked { padding-right: 28px; min-width: 0; }
+.dv-worked .dv-big { margin-top: 14px; font-size: 84px; line-height: .95; letter-spacing: -.05em; white-space: nowrap; }
+.dv-worked .dv-sub { margin-top: 10px; }
+
+.dv-bar {
+  position: relative; height: 10px; margin: 28px 24px 0 0;
+  border-radius: 5px; background: var(--surface-3);
+}
+.dv-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 5px; background: var(--violet); }
+.dv-miss {
+  display: block; flex: none;
+  width: 9px; height: 9px;
+  border-radius: 50%; background: var(--rose);
+}
+.dv-bar .dv-miss { position: absolute; left: 100%; top: 50%; margin: -4.5px 0 0 10px; }
+.dv-miss.is-inline { display: inline-block; margin-left: 10px; vertical-align: middle; }
+
+/* When the last day cannot be read the hero is one box, not a box and a gap. */
+.dv-chart-box {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+  column-gap: 16px; align-content: start;
+  min-width: 0; padding-left: 28px;
+  border-left: 1px solid var(--line);
+}
+.dv-chart-box > .dv-chart, .dv-chart-box > .dv-words { grid-column: 1 / -1; }
+.dv-window { font-size: 14px; color: var(--ink-3); white-space: nowrap; }
+
+.dv-stats {
+  display: grid; grid-template-columns: minmax(300px, 4fr) minmax(0, 5fr);
+  margin-top: 22px; padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.dv-stat { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dv-stat + .dv-stat { padding-left: 28px; border-left: 1px solid var(--line); }
+.dv-stat-num { font-size: 44px; font-weight: 640; line-height: 1; letter-spacing: -.03em; color: var(--ink); }
+.dv-stat-label { font-size: 16px; color: var(--ink-2); }
+
+/* ------------------------------------------------------ jobs finished */
+
+.dv-chart { position: relative; margin-top: 12px; padding-top: 24px; }
+.dv-plot { position: relative; height: 172px; margin-left: 34px; }
+.dv-grid { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); }
+.dv-grid.is-base { background: var(--line-2); }
+.dv-y {
+  position: absolute; right: 100%; margin-right: 10px;
+  transform: translateY(-50%);
+  font-size: 14px; line-height: 1; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.dv-bars {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 8px;
+  padding: 0 4px;
+}
+.dv-col {
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  min-width: 0; height: 100%;
+}
+.dv-val {
+  flex: none; padding-bottom: 4px;
+  font-size: 14px; line-height: 20px; white-space: nowrap; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.dv-col-bar { display: block; flex: none; width: 100%; border-radius: 4px 4px 0 0; background: var(--violet); }
+.dv-axis { position: relative; height: 26px; margin: 8px 0 0 34px; }
+.dv-x {
+  position: absolute; top: 0;
+  font-size: 14px; color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+.dv-x.is-start { left: 0; }
+.dv-x.is-mid { left: 50%; transform: translateX(-50%); }
+.dv-x.is-end { right: 0; }
+
+/* ---------------------------------------------------- activity and cost */
+
+.dv-activity .dv-big { margin-top: 18px; font-size: 68px; }
+.dv-activity .dv-sub { margin-top: 10px; }
+.dv-delta { margin-top: 8px; font-size: 17px; color: var(--ink-2); }
+.dv-delta.is-up { color: var(--violet-ink); }
+.dv-half.is-cost { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--violet); }
+.dv-half.is-cost .dv-big { margin-top: 0; font-size: 56px; }
+.dv-included { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+
+/* --------------------------------------------------------------- by job */
+
+.dv-table { width: 100%; margin-top: 14px; border-collapse: collapse; }
+.dv-table th, .dv-table td {
+  padding: 14px 0; text-align: left; vertical-align: middle;
+  font-size: 16px; font-weight: 400; color: var(--ink);
+}
+.dv-table thead th { padding: 10px 0; font-size: 14px; color: var(--ink-3); border-bottom: 1px solid var(--line-2); }
+.dv-table tbody tr + tr th, .dv-table tbody tr + tr td { border-top: 1px solid var(--line); }
+.dv-table .dv-n { width: 26%; }
+.dv-table tbody td.dv-n { white-space: nowrap; }
+
+.dv-link {
+  display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+  margin-top: 14px; min-height: 44px;
+  font-size: 16px; font-weight: 560; color: var(--cyan-ink);
+}
+.dv-link .ico { width: 16px; height: 16px; }
+.dv-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.dv-link.is-row { margin-top: 0; color: var(--violet-ink); white-space: nowrap; }
+
+/* -------------------------------------------------------- human review */
+
+.dv-review .dv-head { align-items: center; }
+.dv-spark { display: inline-grid; place-items: center; margin-right: 10px; color: var(--violet-ink); vertical-align: middle; }
+.dv-spark .ico { width: 22px; height: 22px; }
+.dv-count { margin-left: auto; font-size: 14px; color: var(--ink-2); }
+
+.dv-reviews { margin-top: 12px; }
+.dv-item {
+  display: flex; align-items: center; gap: 16px;
+  min-height: 62px; padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.dv-review-words { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dv-review-name {
+  font-size: 16px; line-height: 1.3; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.dv-review-meta { font-size: 14px; color: var(--ink-3); }
+
+/* ------------------------------------------------------------ failure */
+
+.delivery .fail-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px; }
+.delivery .fail-title { font-size: 15px; font-weight: 520; color: var(--ink); }
+.delivery .fail-why { font-size: 14px; color: var(--ink-3); }
+
+/* -------------------------------------------------------------- phone */
+
+@media (max-width: 980px) {
+  .delivery { gap: 12px; }
+
+  /* The date and its time stack at the right of the title. */
+  .page-sub { margin-left: auto; text-align: right; }
+  #pageSub { display: block; }
+  .sub-date, .sub-updated { display: block; }
+  .sub-date { font-weight: 520; color: var(--ink); }
+  .sub-updated { margin-top: 2px; }
+
+  .dv-row-top, .dv-row-bottom { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .dv-hero, .dv-activity, .dv-byjob, .dv-review { padding: 18px 18px 20px; }
+
+  .dv-hero-main { grid-template-columns: minmax(0, 1fr); }
+  .dv-worked { padding-right: 0; }
+  .dv-worked .dv-big { font-size: 64px; margin-top: 10px; }
+  .dv-bar { margin: 20px 22px 0 0; }
+
+  .dv-chart-box { padding-left: 0; border-left: 0; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .dv-chart-box:empty { margin-top: 0; padding-top: 0; }
+  .dv-plot { height: 150px; margin-left: 0; }
+  .dv-axis { margin-left: 0; }
+  .dv-y { display: none; }
+  .dv-bars { column-gap: 4px; padding: 0; }
+
+  .dv-stats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 18px; padding-top: 18px; }
+  .dv-stat + .dv-stat { padding-left: 18px; }
+  .dv-stat-num { font-size: 34px; }
+
+  .dv-activity { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; align-content: start; }
+  .dv-activity > .dv-title { grid-column: 1 / -1; }
+  .dv-activity .dv-big { margin-top: 12px; font-size: 44px; }
+  .dv-half.is-cost { margin-top: 0; padding-top: 0; border-top: 0; padding-left: 18px; border-left: 1px solid var(--violet); }
+  .dv-half.is-cost .dv-big { font-size: 36px; }
+  .dv-half:only-child { grid-column: 1 / -1; }
+  .dv-included { margin-top: 12px; }
+
+  .dv-review-name { font-size: 17px; }
+  .dv-item { min-height: 64px; gap: 12px; }
+}
+
+@media (max-width: 380px) {
+  .dv-worked .dv-big { font-size: 56px; }
+  .dv-activity { grid-template-columns: minmax(0, 1fr); }
+  .dv-half.is-cost { margin-top: 16px; padding-top: 16px; padding-left: 0; border-left: 0; border-top: 1px solid var(--violet); }
+  .dv-stat-num { font-size: 30px; }
+  .dv-hero, .dv-activity, .dv-byjob, .dv-review { padding: 16px 14px 18px; }
+  .dv-bars { column-gap: 2px; }
+  .dv-table .dv-n { width: 24%; }
+}
