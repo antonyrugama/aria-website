@@ -224,20 +224,24 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today and Health carry the date and when their figures were read under the
-   title, not their registry question. The sub is still asserted to the
-   character, off this file's own stamp: Today's summary, Health's job queue. */
-function datedSub(stamp) {
-  const t = new Date(stamp);
+/* Today, Health and Money carry the date and when their figures were read
+   under the title, not their registry question. The sub is still asserted to
+   the character, off this file's own stamps: Today's summary, Health's job
+   queue, Money's cost answer. */
+const datedSub = (iso) => {
+  const t = new Date(iso);
   const two = (n) => String(n).padStart(2, '0');
   const day = t.toLocaleDateString('en-US', {
     weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
   });
   return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-}
+};
+/* Money's line comes off the cost answer's own collection time, so the longest
+   header the pane draws is the one measured at 320px. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
-  alerts: () => datedSub(JOBS.generatedAt)
+  alerts: () => datedSub(JOBS.generatedAt),
+  spend: () => datedSub(COSTS.asOf)
 };
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
@@ -500,6 +504,7 @@ const INTEGRATIONS = {
    on one head and not the next. A state both generations name is the payload
    this check should have been sending all along. */
 const COSTS = {
+  asOf: ago(DAY),
   availability: {
     state: 'not_published',
     detail: 'Billing for this period has not published yet, so there is no ' +

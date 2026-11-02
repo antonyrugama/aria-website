@@ -14,7 +14,7 @@
    scripts/ops-scroll-containment.test.mjs asserts the consequence in Chrome,
    but only for the panes and states the shared stub renders. This file judges
    every rule in every sheet under ops/assets, rendered or not, so a scroller
-   on a pane the stub never draws (Cloud costs' `.sp-scroll` was one) is held
+   on a pane the stub never draws (People's `.tbl-wrap` is one) is held
    to the same rule.
 
    WHAT IT DECIDES

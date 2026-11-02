@@ -52,13 +52,12 @@
        (pane-alerts.js:314), so the reading passes for a reason that has
        nothing to do with the window. Its three windows are pinned by value in
        ALSO_PINNED for that reason, so a fourth is red at the lock rather than
-       proved here. Spend is on that table too, but not for this reason: a
-       window added to spend IS proved here, by the sections banner-numbered
-       3 and 6 (NOT by section 2, whose assertion is an OR across the non-start
-       values: appending a window only lengthens the set that OR quantifies
-       over, so it cannot go red on one -- section 2's own docblock says the
-       same about itself). That is why the two entries have their reasons
-       written out separately.
+       proved here.
+     - `spend` (Money). It declares no filter in the shell's bar any more: its
+       month picker is the pane's own control, so the registry says `range:
+       false` and nothing here can bind it. What the picker offers, and that
+       each of its options reaches the read under its own name, is proved in
+       scripts/ops-spend-v2.test.mjs, where the control is.
      - whether the API acts on a filter the pane sends it. A client can
        promise that the operator's selection reached the request; what the
        route does with it is the route's own test.
@@ -118,24 +117,18 @@ const HONOURED = {
   problems: { range: 'answer' },
   analytics: { scope: 'read', range: 'read', env: 'read' },
   users: { scope: 'read' },
-  spend: { range: 'read' },
 };
 
-/* Nothing is excused any more, and this table is empty. The entry that lived
-   here was `spend`, excused on the grounds that it was the last pane on the v1
-   shell and could not be booted; that conversion merged in
-   antonyrugama/aria-website#65, the PAGES table below boots the pane on a
-   two-field answer, and its windows are pinned in ALSO_PINNED like any
-   other booted pane's. The table is kept, empty, because a pane that
-   genuinely cannot be booted must still declare what it is excused for, by
-   name and by value, rather than going quiet. The loop below therefore
-   iterates nothing. */
+/* Nothing is excused any more, and this table is empty. It is kept, empty,
+   because a pane that genuinely cannot be booted must still declare what it
+   is excused for, by name and by value, rather than going quiet. The loop
+   below therefore iterates nothing. */
 const NOT_BOOTED = {};
 
 /* Panes this file DOES boot whose window lists are additionally pinned by
-   value. The pin is the same; the reason is not, and the two are written out
-   separately because a reason reused across panes without being re-derived is
-   how the entry below came to be filed under the wrong one.
+   value. The reason is written out per pane, because a reason reused across
+   panes without being re-derived is how an entry comes to be filed under the
+   wrong one.
 
    problems: SECTION 5 cannot see a value added to its list. Section 5 reads
    back a record lying outside every window a pane offers, which catches a
@@ -153,20 +146,9 @@ const NOT_BOOTED = {};
    the window itself. So what the pin buys is the narrow case section 6 cannot
    see: a window that keeps the answer and narrows nothing. The categorical
    version of this sentence ("nothing watches a value added here") is false
-   for problems, and was a round-4 finding.
-
-   spend: an added value IS watched, and the pin is not what watches it.
-   Sections 2, 3 and 6 sweep valuesFor(registry(), ...) live, so a fifth window
-   is read back, carried into the call and held to its state the moment it
-   is declared. (Section 5 never reaches spend at all: its sweep skips every
-   filter this file records as 'read', and spend's is.) The pin is here for
-   the weaker reason that a window added to a pane this file boots should
-   still have to be WRITTEN DOWN by whoever adds it, so the declaration is a
-   deliberate act rather than a diff nobody read. Deleting spend from this
-   table would lose that and lose no behavioural coverage. */
+   for problems, and was a round-4 finding. */
 const ALSO_PINNED = {
   problems: { range: ['open', '7d', '30d'] },
-  spend: { range: ['month', 'last-month', '3m', '12m'] },
 };
 
 /* ============================== fixtures =============================== */
@@ -371,22 +353,6 @@ const PAGES = {
     file: 'analytics.html',
     scripts: ['assets/pane-analytics.js'],
     answer: (endpoint) => (endpoint === '/api/ops/usage' ? usage() : undefined),
-  },
-  spend: {
-    file: 'spend.html',
-    scripts: ['assets/pane-spend.js'],
-    /* Two fields, because two is what the rules here need. The pane's own
-       suite next door needs a large payload for the reconciliation, chart and
-       staleness claims; none of those is a rule in this file, and a recipe
-       carrying them would be a second derivation of that fixture without
-       proving anything this file asks. `/api/ops/summary` is deliberately
-       left to reject: the pane's target() catches it and draws no budget
-       card, which is the absent case and not a failure. The pane still
-       reaches live on all four windows, which is what sections 2, 3 and 6
-       read back. */
-    answer: (endpoint, o) => (endpoint === '/api/ops/costs'
-      ? { range: (o && o.query && o.query.range) || null, availability: { state: 'ready' } }
-      : undefined),
   },
   users: {
     file: 'users.html',
@@ -692,7 +658,7 @@ test('every filter the registry declares is claimed by this file, and every clai
         + ' and this file pins ' + ALSO_PINNED[id][filter].join(', ')
         + '. A window added to a pane this file boots has to be written down '
         + 'here as well; the reason it is pinned is written above the table, '
-        + 'per pane, because the two panes on it are pinned for different ones.'
+        + 'per pane.'
       );
     }
   }
@@ -872,10 +838,9 @@ test('a filter applied to the answer narrows what is on the page', async () => {
 
 /* The value-level defect, which the coverage lock cannot see on a pane this
    file boots: it compares filter NAMES there, so a window added to a list a
-   pane already declares walks past it. (`spend` and `problems` are the two
-   exceptions, both on ALSO_PINNED, which pins their window lists by value;
-   the reasons they are pinned differ and are written out per pane above that
-   table.)
+   pane already declares walks past it. (`problems` is the exception, on
+   ALSO_PINNED, which pins its window list by value; the reason is written out
+   above that table.)
    What happened offered 'custom' for a while, and the pane answered it with a
    refusal card; delete the refusal and leave the value, and the pane finds no
    entry for it in its own window table, falls through to no window at all, and
@@ -900,7 +865,7 @@ test('a filter applied to the answer narrows what is on the page', async () => {
    `if (!days) return problem.status !== 'closed';` — so a window added to its
    list walks past this test as well as past the lock's name comparison. Its
    windows are pinned by value in ALSO_PINNED instead, which is why the
-   exception above is spend AND problems. */
+   exception above is problems. */
 const MARKED = { scopeKey: 'coach_invites', scopeLabel: 'Coach invites' };
 const MARKER = /Coach invites/;
 

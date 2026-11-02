@@ -172,17 +172,19 @@
       wave: 'W3', scope: true, range: ['7d', '14d', '30d', '90d'], rangeDefault: '30d', env: true
     },
     spend: {
-      file: 'spend.html', icon: 'spend', label: 'Cloud costs', group: 'How we are doing',
-      destination: 'money',
-      question: 'What are we paying for, and is anything unusual?',
-      /* Custom is deliberately not offered. This bar carries a range name and
-         nothing else, so a custom window arrives at the cost API with no start
-         and no end, and that route refuses it (ops_cost_range_unsupported)
-         rather than inventing bounds. Left in the list it would be a selectable
-         option whose only outcome is a failure card with a retry that cannot
-         succeed. It comes back when this bar grows date controls to fill it. */
-      wave: 'W3', scope: false, scopeNote: 'Scope filter not applicable',
-      range: ['month', 'last-month', '3m', '12m'], env: false
+      file: 'spend.html', icon: 'spend', label: 'Money', group: 'How we are doing',
+      destination: 'money', datedHead: true,
+      question: 'What are we paying for, and how does it compare with last month?',
+      /* No control from the shell's bar applies, and none is drawn. Cloud spend
+         is billed per piece of infrastructure, so there is no app scope to
+         offer; the bill is one production figure, so there is no environment;
+         and the window is a month, which the shell's range names cannot say.
+         The pane draws its own month picker in the shared bar instead, and
+         offers exactly the four windows the cost route answers (this month,
+         last month, 3 months, 12 months). Custom is not among them because
+         that route refuses it (ops_cost_range_unsupported) rather than
+         inventing bounds. */
+      wave: 'W3', scope: false, range: false, env: false
     },
     evals: {
       file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
