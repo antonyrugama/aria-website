@@ -307,6 +307,12 @@ test('the head reads the date and the seven days, and prints no "Updated"', asyn
   assert.doesNotMatch(allText(slot), /Updated/);
 });
 
+test('the seven days come off the week that was read when the summary carries no dates', async () => {
+  const dom = await boot({ summary: summaryFixture((s) => { s.people.window = { days: 7 }; }) });
+  assert.deepEqual(wordsOf(dom.doc.getElementById('pageSub'), 'sub-updated'), ['Oct 25\u201331 \u00b7 UTC'],
+    'the head named no days though the week read carries them');
+});
+
 /* ============================ the people ================================ */
 
 test('the headline is the platform count and the change is people, not the apps added up', async () => {

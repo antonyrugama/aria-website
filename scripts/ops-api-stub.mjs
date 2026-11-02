@@ -775,7 +775,6 @@ const USAGE_BASE = {
   consent: { enforcedAt: 'ingest',
     detail: 'Only accounts that turned usage analytics on are counted.' },
   availability: { state: 'ready', detail: '' },
-  features: FEATURES,
   notReporting: []
 };
 
@@ -790,8 +789,11 @@ const USAGE = Object.assign({}, USAGE_BASE, {
 });
 
 /* The seven day answer: the daily lines, the people and sessions in the week,
-   and the features opened. Served when the range asked for is 7d. */
+   and the features opened. Served when the range asked for is 7d. The thirty
+   day answer carries no features, as it never did: Usage detail's own feature
+   meters are not what any sweep fed by this stub is measuring. */
 const USAGE_WEEK = Object.assign({}, USAGE_BASE, {
+  features: FEATURES,
   window: usageWindow('7d', 7),
   apps: [APP_MOBILE(true), APP_COACHES(true)],
   cohorts: []

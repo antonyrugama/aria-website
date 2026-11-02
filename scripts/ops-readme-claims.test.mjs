@@ -1840,7 +1840,7 @@ const REQUIRED_ROWS = {
     'scripts/check-ops-contrast.mjs "NOT COVERED, on purpose \u2014 this is the list of exclusions decided, not an"',
     'ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);"',
     'scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too"',
-    'ops/assets/pane-analytics.js "`features.coverageNote` carries two facts"',
+    'ops/assets/pane-usage.js "`features.coverageNote` carries two facts"',
     'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
     'ops/assets/pane-releases.js "The chip carries the share and nothing else"',
     'ops/assets/pane-releases-v2.css "The chip holds the share and nothing else"',

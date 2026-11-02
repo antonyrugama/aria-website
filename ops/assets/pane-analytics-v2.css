@@ -14,7 +14,10 @@
 
 .growth { gap: 18px; }
 
-/* A section that drew nothing leaves no gap behind it. */
+/* A section is a grid or flex item of the page, so without this a wide table or
+   a long unbroken name sets the section's minimum width and takes the page
+   sideways. A section that drew nothing leaves no gap behind it. */
+.growth .sec { min-width: 0; }
 .growth .sec:empty { display: none; }
 
 .growth .num {

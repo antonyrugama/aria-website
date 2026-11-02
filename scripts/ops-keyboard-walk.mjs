@@ -58,14 +58,15 @@ const OUT = (() => {
   return i === -1 ? path.join(ROOT, 'ops', 'keyboard-audit.md') : path.resolve(process.argv[i + 1]);
 })();
 
-/* The ten panes, named as the registry names them. shell-v2.html is the rail
+/* The eleven panes, named as the registry names them. shell-v2.html is the rail
    demo and login/setup are not panes, so none of the three is walked here. */
 const PANES = [
   { pane: 'overview', url: '/ops/index.html', title: 'Today' },
   { pane: 'jobs', url: '/ops/jobs-live.html', title: 'Jobs live' },
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
   { pane: 'alerts', url: '/ops/alerts.html', title: 'Alerts' },
-  { pane: 'analytics', url: '/ops/analytics.html', title: 'Analytics' },
+  { pane: 'analytics', url: '/ops/analytics.html', title: 'Growth' },
+  { pane: 'usage', url: '/ops/usage.html', title: 'Usage detail' },
   { pane: 'spend', url: '/ops/spend.html', title: 'Cloud costs' },
   { pane: 'evals', url: '/ops/evaluations.html', title: 'Evaluations' },
   { pane: 'releases', url: '/ops/releases.html', title: 'Releases' },
@@ -985,10 +986,10 @@ for (const p of PANES) {
    base walk never opens anything: it presses Tab and Enter is reserved for
    the skip link, since pressing it on a rail item NAVIGATES.
 
-   Across the ten panes exactly one dialog is reachable from the keyboard --
+   Across the eleven panes exactly one dialog is reachable from the keyboard --
    the Settings revoke confirmation, three instances of it, built by
    op.confirmAction in ops/assets/operate.js. There is also a drawer in the
-   same file, but nothing in the ten panes opens one. Enumerating the openers
+   same file, but nothing in the eleven panes opens one. Enumerating the openers
    rather than hunting for them is deliberate: a prober that clicks buttons
    looking for a dialog navigates away the moment it guesses wrong, and a
    walk that navigated away reports the next page's stops as this page's.

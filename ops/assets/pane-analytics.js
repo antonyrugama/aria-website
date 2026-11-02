@@ -299,9 +299,12 @@
       while (slot.firstChild) slot.removeChild(slot.firstChild);
       var summary = data('summary');
       var date = S.dates.headDate(summary && summary.generatedAt);
-      var win = (summary && summary.people && summary.people.window) ||
-        (data('week') && data('week').window) || {};
-      var range = S.dates.dayRange(win.start, win.endExclusive);
+      var wins = [summary && summary.people && summary.people.window,
+        data('week') && data('week').window];
+      var range = null;
+      wins.forEach(function (win) {
+        range = range || (win ? S.dates.dayRange(win.start, win.endExclusive) : null);
+      });
       if (date) slot.appendChild(h('span', { className: 'sub-date', text: date }));
       if (range) slot.appendChild(h('span', { className: 'sub-updated', text: range + ' \u00b7 UTC' }));
     }

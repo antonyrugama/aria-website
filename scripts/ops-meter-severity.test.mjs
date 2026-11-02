@@ -467,7 +467,7 @@ const TONE_SEPARATION = 30;
 const REQUIRED_REAL = ['warn', 'bad'];
 
 const THEMES = ['dark', 'light'];
-const PANES = ['alerts', 'analytics', 'evaluations', 'jobs-live', 'releases',
+const PANES = ['alerts', 'usage', 'evaluations', 'jobs-live', 'releases',
   'run-history', 'settings', 'spend', 'users'];
 const STATES = ['live', 'loading', 'empty', 'degraded'];
 const VIEWPORT = { width: 1440, height: 1000 };
