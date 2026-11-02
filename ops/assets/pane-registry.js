@@ -40,6 +40,9 @@
                 against what aria.js drew, and the pair cannot drift.
      datedHead  the pane writes its own line under the title (a date and when
                 it last read) instead of the one-line question the others show
+     plainHead  the title stands alone: no line under it at all. The question
+                stays here for the places that print it, such as the card a
+                pane that is not built yet draws and the tour
      subnav     false on a destination's home that links to its other pages from
                 its own cards, so no row of siblings is drawn above them. The
                 destination's other pages still draw the row, home first
@@ -172,7 +175,7 @@
     },
     problems: {
       file: 'problems.html', icon: 'alerts', label: 'Problems', group: 'Right now',
-      destination: 'health',
+      destination: 'health', plainHead: true,
       question: 'What needs a person right now, and who is on it?',
       /* The window is real: it is applied to the problems that were read, and
          the count line under the list says so. The environment is not, because
@@ -221,7 +224,7 @@
     },
     review: {
       file: 'review.html', icon: 'person', label: 'Human review', group: 'How we are doing',
-      destination: 'ai', heading: 'Aria AI', headIcon: 'spark',
+      destination: 'ai', heading: 'Aria AI', headIcon: 'spark', plainHead: true,
       question: 'Which answers need a person to rate them or settle a disagreement?',
       wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer']
     },

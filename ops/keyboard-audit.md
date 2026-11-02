@@ -14,11 +14,11 @@ colour. This is traversal.
 | | |
 |---|---|
 | Panes walked | 14, at desktop 1440×900 and 375px 375×812 — **28 walks** |
-| Tab stops recorded | 621 |
-| Interactive controls found | 569 |
+| Tab stops recorded | 623 |
+| Interactive controls found | 571 |
 | Controls never reached by Tab | **0** |
 | Focus traps | **0** |
-| Walks whose Shift+Tab exactly retraces Tab | 28/28, **565 stops retraced** over 583 Shift+Tab presses |
+| Walks whose Shift+Tab exactly retraces Tab | 28/28, **567 stops retraced** over 585 Shift+Tab presses |
 | Walks that made no Shift+Tab press at all (scored neither way) | **0** |
 | Walks where the retrace's forward leg landed where the first walk said it would | 28/28 |
 | Stops that jump backwards in reading order | **0** |
@@ -38,11 +38,11 @@ _None._
 
 ## What is clean, and how that is known
 
-- **No focus traps.** 28 walks, 621 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
-- **Nothing unreachable.** 569 enabled, visible, interactive controls; 0 were not reached by Tab.
+- **No focus traps.** 28 walks, 623 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
+- **Nothing unreachable.** 571 enabled, visible, interactive controls; 0 were not reached by Tab.
 - **24 stops landed on something this tool does not call interactive**, and 5 of 28 walks ended by wrapping back to their first stop (23 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
 - **Tab order is reading order** on all 28 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
-- **Shift+Tab is the exact inverse of Tab** on 28 of 28 walks, over the WHOLE walk rather than a prefix of it: 565 stops retraced against 621 forward stops, which took 583 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
+- **Shift+Tab is the exact inverse of Tab** on 28 of 28 walks, over the WHOLE walk rather than a prefix of it: 567 stops retraced against 623 forward stops, which took 585 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
 - **The skip link works.** It is the first stop on 28/28 walks and Enter lands focus on `main#content` on 28/28.
 - **Focus survives a re-render** on 28/28 walks: the theme toggle rebuilds the pane and focus stays on the button that did it.
 - **No duplicate ids** (0), and **no `aria-label` that drops its visible text** (0). That is the attribute, not the computed accessible name — see NOT COVERED.

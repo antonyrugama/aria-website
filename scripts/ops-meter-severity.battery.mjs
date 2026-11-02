@@ -197,6 +197,17 @@ const BATTERY = [
     why: 'T3 as it was written for Stadiora/Aria#10825: the historical groove colour, `color-mix(var(--c) 30%, var(--bg))`, which measured 2.67:1 against a light-theme `bad` fill and was a real SC 1.4.11 failure at the time. Published as a GREEN on purpose rather than deleted, because the reason it stopped killing is a finding. The payload text is unchanged; what moved is the fill. The mix is 70% `--bg`, so it barely darkened when #10848 repointed `--c` at the ink grade, while the fill darkened fully -- measured directly by applying this payload and running the guard with METER_SUMMARY=1: worst notch contrast 3.94:1 across 36 grooves, up from 2.67:1. A fix for the value channel incidentally repaired a defect in the severity channel. NOTE the margin: 3.94:1 clears 3:1 by less than a point, so this row is also an early-warning line -- if a future change lightens the fill, this is where it shows up first. Without this row that would read as a row quietly dropped when it became inconvenient.',
     apply: (s) => replaceOnce(s, '  border: 0 solid var(--bg);',
       '  border: 0 solid color-mix(in srgb, var(--c, var(--cyan)) 30%, var(--bg));')
+  },
+  {
+    id: 'T20', file: CSS, expect: 'KILL',
+    why: 'The row for the series ink rule R54 added to `aria.css`: removes `.meter.tone-violet` and leaves the other five, so a Usage feature row falls back to the bright `.tone-violet` token. Light theme only reads it, and only the Coaches bars carry it, so a kill here shows claim 7 reaches the panes\' own bars -- before the panes\' meters were reached, nothing in this guard could see this defect.',
+    apply: (s) => replaceOnce(s, '.meter.tone-violet  { --c: var(--violet-ink); }\n', '')
+  },
+  {
+    id: 'T21', file: CSS, expect: 'KILL',
+    why: 'Points `.meter.tone-violet` at the same ink as `.meter.tone-cyan`, so Usage\'s two apps draw one colour. Every other claim stays satisfied, because both are still `-ink` grades legible against their track and card; only the series claim sees two apps merged.',
+    apply: (s) => replaceOnce(s, '.meter.tone-violet  { --c: var(--violet-ink); }',
+      '.meter.tone-violet  { --c: var(--cyan-ink); }')
   }
 ];
 

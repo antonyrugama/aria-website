@@ -1632,7 +1632,7 @@
       aria.boot({
         id: pane.destination,
         title: pane.heading || pane.label,
-        sub: pane.datedHead ? '' : pane.question,
+        sub: pane.datedHead || pane.plainHead ? '' : pane.question,
         subSlot: !!pane.datedHead,
         badges: lockedBadges(),
         account: accountConfig(),

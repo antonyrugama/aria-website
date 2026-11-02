@@ -229,10 +229,12 @@
   font-size: 15px;
 }
 
-/* Below the reporting floor. Spans the whole row, because suppressing one cell
-   at a time would let the rest be read as a trend. */
+/* Below the reporting floor. A feature row withholds its share in one cell
+   that also keeps the count; a signup grid says it once under the table. */
 .u-sup { font-size: 12px; color: var(--ink-3); }
+.card-body > .u-sup { margin-top: 10px; }
 .u-sup-in { display: flex; align-items: center; gap: 8px; }
+.u-sup .u-count { font-size: 13px; font-weight: 560; color: var(--ink); white-space: nowrap; }
 .u-sup svg { width: 14px; height: 14px; flex: none; color: var(--ink-3); }
 
 /* ---------------------------------------------------------- what they do */

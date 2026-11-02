@@ -280,7 +280,9 @@ const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   kind: 'pane',
   /* The title the top bar draws: the registry's heading where a pane has one. */
   label: DECLARED[key].heading || DECLARED[key].label,
-  question: DECLARED[key].question,
+  /* A pane with `plainHead` draws no line under its title, so the line it is
+     held to is no line at all, not its registry question. */
+  question: DECLARED[key].plainHead ? '' : DECLARED[key].question,
   proof: PROOF[key],
   /* No pane carries an aria.js chart host today; they draw their own SVG and
      colour it with CSS classes, which repaints on the attribute change without

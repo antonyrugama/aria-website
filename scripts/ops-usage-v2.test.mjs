@@ -1063,6 +1063,77 @@ test('a ratio delivered as a decimal still goes through the floor', async () => 
   assert.doesNotMatch(ratio, /8\.0/, 'the withheld ratio was printed regardless');
 });
 
+test('an answer under the floor that carries the apps is the page, with every count and no share', async () => {
+  /* Aria today: 41 people, so the route says `insufficient` for the window and
+     still sends every count. The floor is about rates over people. A count of
+     people is not one, so the page draws them, withholds each share by the
+     floor's own rule, and says why once at the head, in the route's words. */
+  const answer = usageFixture(null, { scope: 'coaches', parts: YOUNG_PARTS });
+  assert.equal(answer.availability.state, 'insufficient', 'the fixture is not under the floor, so this proves nothing');
+  assert.equal(answer.apps.length, 1, 'the fixture sent no apps, so this is the card that has nothing to count');
+
+  const dom = await boot({ usage: answer, search: '?scope=coaches' });
+  assert.equal(emptyText(dom), '', 'an answer that carried counts was drawn as nothing to report');
+  assert.equal(panel(dom, 'live').className.indexOf('degraded'), -1);
+
+  const text = liveText(dom);
+  assert.ok(text.includes(answer.availability.detail),
+    'the page did not say, in the route\'s words, why there are no shares: ' + text.slice(0, 240));
+  assert.match(text, /Active people 41/, 'the count of people was withheld with the shares');
+  assert.match(text, /Sessions 96/, 'the count of sessions was withheld with the shares');
+
+  const head = text.slice(0, text.indexOf('Is that growing'));
+  assert.doesNotMatch(head, /%/, 'a share was printed over 41 people: ' + head);
+  for (const heading of [/Most used features/, /Who comes back/]) {
+    const drawn = allText(card(dom, heading));
+    assert.doesNotMatch(drawn, /%/, 'a share was printed over a group under the floor in ' + heading + ': ' + drawn);
+  }
+
+  /* The people who used a feature are counted even where the share is not. */
+  const row = findAll(card(dom, /Most used features/), (n) => isTag(n, 'tr'))
+    .filter((r) => /Athlete roster/.test(allText(r)))[0];
+  assert.match(allText(row), /5 people\s*Not reported, 41 people in the group, floor is 50/,
+    'the withheld feature row did not carry the count of people who used it: ' + allText(row));
+
+  /* So are the people who came back. 22 joined in the week of 24 Aug and 12
+     and 9 of them opened the app in the weeks after, as Growth's "Coming
+     back" draws the same figures; only the shares and their shading go. */
+  const grid = findAll(card(dom, /Who comes back/), (n) => isTag(n, 'tr'));
+  const cellsOf = (label) => findAll(grid.filter((r) => new RegExp('^' + label).test(allText(r).trim()))[0],
+    (n) => isTag(n, 'td'));
+  const first = cellsOf('24 Aug');
+  assert.deepEqual(first.map((c) => allText(c).trim().split(/\s+/)[0]), ['22', '12', '9'],
+    'the returning people of a group under the floor were withheld with its shares: ' + first.map(allText).join(' | '));
+  const second = cellsOf('31 Aug');
+  assert.equal(second.length, 3, 'the row is not size plus one cell per week: ' + second.map(allText).join(' | '));
+  assert.equal(allText(second[0]).trim().split(/\s+/)[0], '15');
+  assert.equal(allText(second[1]).trim(), '8', 'a week the group HAS reached lost its count');
+  assert.match(allText(second[2]), /Not aged into this week yet/,
+    'a week the group has not reached was drawn as a count: ' + allText(second[2]));
+  assert.equal(numerals(allText(second[2])), 0, 'a week nobody has reached printed a figure');
+  const shaded = findAll(card(dom, /Who comes back/),
+    (n) => /(^| )u-(cell|i\d)( |$)/.test(n.className || ''));
+  assert.equal(shaded.length, 0, 'a group under the floor was shaded as a rate');
+
+  /* The sentence belongs to the answer under the floor and to nothing else: a
+     page over the floor says nothing under its title. */
+  const noteOf = (page) => findAll(livePanel(page), (n) => (n.className || '').split(' ').indexOf('band-head') !== -1
+    && /^Who is using Aria/.test(allText(n)))
+    .flatMap((head) => findAll(head, (n) => (n.className || '').split(' ').indexOf('band-note') !== -1).map(allText));
+  assert.deepEqual(noteOf(dom), [answer.availability.detail], 'the head of the page did not carry the sentence');
+  const over = await boot({ usage: usageFixture() });
+  assert.equal(usageFixture().availability.state, 'ready', 'the fixture is not over the floor, so this proves nothing');
+  assert.deepEqual(noteOf(over), [], 'a page over the floor wrote a floor sentence under its title');
+});
+
+test('an answer under the floor with no apps in it is still the card that says there is too little', async () => {
+  const dom = await boot({
+    usage: { availability: { state: 'insufficient', detail: 'Fewer than 50 people in this window.' }, apps: [] },
+  });
+  assert.match(emptyText(dom), /Not enough usage to report yet/);
+  assert.equal(liveText(dom), '', 'a page was drawn from an answer with nothing in it');
+});
+
 test('a feature row over too small a group shows no share', async () => {
   /* The floor on a feature row, on the only answer that can carry one: the
      route sends one denominator per app (`opsUsageView.ts:689`), that app's
@@ -1102,7 +1173,7 @@ test('the approved region table is acknowledged as not answerable yet', async ()
     'the region-table cause is missing or too vague');
 });
 
-test('a signup group under the floor is withheld as a whole row, never cell by cell', async () => {
+test('a signup group under the floor keeps its counts and loses every share', async () => {
   const dom = await boot({});
   const cohort = card(dom, /Who comes back/);
   const rows = findAll(cohort, (n) => isTag(n, 'tr'));
@@ -1111,11 +1182,16 @@ test('a signup group under the floor is withheld as a whole row, never cell by c
 
   assert.ok(small, 'the small signup group left the table entirely');
   assert.match(allText(small), /Not reported, 31 people in the group, floor is 50/,
-    'a group of 31 was reported: ' + allText(small));
-  assert.doesNotMatch(allText(small), /80\.7%/,
-    'the cells of a withheld row were drawn anyway');
-  assert.equal(findAll(small, (n) => isTag(n, 'td')).length, 2,
-    'the withheld row still drew one cell per week, so the rest can be read as a trend');
+    'a group of 31 was reported without saying why it has no shares: ' + allText(small));
+  assert.doesNotMatch(allText(small), /80\.7%|%/,
+    'the cells of a group under the floor were drawn as shares');
+  const cells = findAll(small, (n) => isTag(n, 'td'));
+  assert.equal(cells.length, 3,
+    'the group is not size plus one cell per week: ' + cells.map(allText).join(' | '));
+  assert.equal(allText(cells[1]).trim(), '25', 'the 25 who came back were withheld with their share');
+  assert.match(allText(cells[2]), /Not aged into this week yet/);
+  assert.match(allText(cohort), /Shares are not reported for groups under 50 people/,
+    'the card did not say why a group has counts and no shares');
 
   assert.match(allText(big), /71\.0%/, 'a group of 214 was withheld too, so this proves nothing');
 });
@@ -2510,7 +2586,7 @@ test('the page loads the v2 system and not the v1 one', () => {
  *
  * HOW IT IS DECIDED NOW
  *
- * The pane is driven through its seven answer shapes in the fake DOM, exactly
+ * The pane is driven through its eight answer shapes in the fake DOM, exactly
  * as before, and the tree it draws is serialised — tag, namespace, every
  * attribute, every text node, in order. Real Chrome then loads
  * `/ops/usage.html` over HTTP, and each serialised tree is rebuilt inside
@@ -2532,10 +2608,10 @@ test('the page loads the v2 system and not the v1 one', () => {
  * WHY THE TREE IS REBUILT RATHER THAN THE PANE DRIVEN IN THE BROWSER
  *
  * `scripts/ops-api-stub.mjs` answers `/api/ops/usage` with an empty envelope,
- * on purpose — `check-ops-result-view.mjs` pins that answer. Six of the seven
+ * on purpose — `check-ops-result-view.mjs` pins that answer. Seven of the eight
  * states here need payloads that stub does not serve, and the fixtures that
  * build them are this file's. Rebuilding the drawn tree keeps one set of
- * fixtures and reaches all seven states; driving the pane in the browser would
+ * fixtures and reaches all eight states; driving the pane in the browser would
  * need a second set, and two fixture sets drift.
  *
  * The rebuild is faithful in the way that matters to the cascade: structure,
@@ -2594,17 +2670,22 @@ const UNPAINTED_ON_PURPOSE = new Map([
     + 'element (Stadiora/Aria#12913). The block needs no paint of its own.'],
 ]);
 
-/* The seven answer shapes. Four of them draw figures — every app, one app,
-   the partial window, and groups under the reporting floor, which draws its
-   groups and withholds their rates. Three do not: not ready, too little data,
-   and a read that failed. `u-when` and `u-size` live on the cohort heading,
-   which only the four drawing states reach. */
+/* The eight answer shapes. Five of them draw figures — every app, one app,
+   the partial window, groups under the reporting floor, which draws its
+   groups and withholds their rates, and a whole answer under the floor, which
+   draws every count and withholds every rate. Three do not: not ready, too
+   little data, and a read that failed. `u-when` and `u-size` live on the
+   cohort heading, which only the drawing states reach. */
 function sweepStates() {
   return [
     ['every app', {}],
     ['one app', { search: '?scope=mobile' }],
     ['a window the pipeline has only part of', { usage: partial90() }],
     ['groups under the floor', { usage: usageFixture(null, { parts: YOUNG_PARTS }) }],
+    ['under the floor, with the counts', {
+      search: '?scope=coaches',
+      usage: usageFixture(null, { scope: 'coaches', parts: YOUNG_PARTS }),
+    }],
     ['an answer that is not ready', {
       usage: { availability: { state: 'not_reporting', detail: 'No app has reported since 3 Sep.' } },
     }],
@@ -2811,7 +2892,7 @@ const PAINT_PROGRAM = String.raw`(() => {
   return 'ready';
 })()`;
 
-/* One browser, one page load, reused across the seven states. Torn down by
+/* One browser, one page load, reused across the eight states. Torn down by
    the test that opened it.
 
    Every handle is registered for release AS it is taken, and a throw anywhere
@@ -3056,7 +3137,7 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
       'assets/tour-v2.css'],
     'the page stopped loading the sheets this check reads: ' + JSON.stringify(hrefs));
 
-  /* Seven states, in the fake DOM, exactly as the rest of this file drives the
+  /* Eight states, in the fake DOM, exactly as the rest of this file drives the
      pane. The tree each one draws is serialised for the browser. */
   const states = sweepStates();
   const trees = [];
@@ -3194,7 +3275,7 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
 
     /* Counted from the run. A loop that ran zero times asserts nothing. */
     assert.ok(judged > 250,
-      'only ' + judged + ' class placements were judged across seven states');
+      'only ' + judged + ' class placements were judged across eight states');
     assert.ok(toggles > 250, 'only ' + toggles + ' classes were actually removed and ' +
       'the page laid out again, so most of this sweep asserted nothing');
 
@@ -3329,8 +3410,8 @@ test('the reporting floor sits under the thinnest answer this pane can draw', as
 });
 
 /* Every class the pane's own source can write is either drawn by one of the
-   seven answers above, or named here with the branch that would draw it.
-   Stadiora/Aria#10678 item 2: the sweep judges what seven answer shapes DRAW,
+   eight answers above, or named here with the branch that would draw it.
+   Stadiora/Aria#10678 item 2: the sweep judges what eight answer shapes DRAW,
    which is not every branch the source has, and the difference was stated as
    zero.
 
@@ -3352,10 +3433,7 @@ const NEVER_REACHED = new Map([
   /* aria.css is cited by selector, not by line: it is the shared sheet, edited
      by everyone, and the line this said (505) had already drifted six lines
      into a .kpi-val rule. A pointer into a file this pane does not own rots on
-     someone else's commit. The two below name files this pane does own. */
-  ['kpi-foot', 'pane-usage.js:716 draws a KPI footnote only for a tile that ' +
-    'carries one, and no tile in any of the seven answers does. The .kpi-foot ' +
-    'rule in aria.css defines it.'],
+     someone else's commit. The one below names a file this pane does own. */
   ['ln-pt', 'pane-usage.js:399 marks a single isolated reading -- one day with ' +
     'figures between two days without -- and no fixture here produces one. ' +
     'pane-usage-v2.css:48 defines it.'],
@@ -3425,14 +3503,14 @@ test('the classes this pane can write are the ones the sweep judged, plus a name
   const missing = [...literals].filter((cls) => !drawn.has(cls)).sort();
   assert.deepEqual(missing, [...NEVER_REACHED.keys()].sort(),
     'the set of classes no answer shape reaches has changed. The sweep above judges ' +
-    'what seven answers DRAW, so anything here is a class it never saw: ' +
+    'what eight answers DRAW, so anything here is a class it never saw: ' +
     JSON.stringify(missing.map((cls) => [cls, NEVER_REACHED.get(cls) || 'no reason recorded'])));
 
-  /* Both of them are defined by a sheet the page loads, so neither is a second
+  /* It is defined by a sheet the page loads, so it is not a second
      live instance of #10456 hiding behind a branch the fixtures do not reach.
      A selector-list read is all this needs: it asserts a rule EXISTS for the
      class, not that the rule paints -- the sweep above is what judges paint,
-     and it cannot reach these two. */
+     and it cannot reach this one. */
   const named = new Set();
   for (const href of SHEETS) {
     for (const rule of cssRules(read(href))) {
@@ -3450,7 +3528,7 @@ test('the classes this pane can write are the ones the sweep judged, plus a name
   console.log('  usage literals: ' + drawn.size + ' classes drawn and judged, ' +
     sites.length + ' class-writing sites in the pane source, ' + literals.size +
     ' readable classes, ' + (literals.size - missing.length) + ' of ' + literals.size +
-    ' reached by the seven answers, ' + COMPUTED_SITES.size + ' computed site(s) named');
+    ' reached by the eight answers, ' + COMPUTED_SITES.size + ' computed site(s) named');
 });
 
 

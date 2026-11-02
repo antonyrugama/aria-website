@@ -20,7 +20,14 @@
      2. **Empty never means zero.** `availability.state` gates the whole pane,
         and a window with no stored days shows its stored-day figures as not
         reported rather than as 0 - a zero there says the apps ran and nobody
-        did anything.
+        did anything. `insufficient` is the exception that proves the rule: the
+        floor is about rates over people and about nothing else, so an
+        `insufficient` answer that carries the apps is drawn like any other,
+        with every count on screen and every share withheld by rule 1, and the
+        route's own sentence at the head of the page saying why. Only an
+        `insufficient` answer with no apps in it is the card that says there
+        is too little to report, as Growth already draws its own counts under
+        the floor.
      3. **Mobile and Coaches Web are never summed.** The chart is one line per
         app over a shared x scale and the split card is independent columns;
         no row anywhere adds them. Somebody who used both is one person.
@@ -910,6 +917,7 @@
        own. Same treatment as the Settings pane's wide tables
        (ops/assets/settings.js), named so the region says which app's grid it
        is rather than announcing an unlabelled region. */
+    var held = list(cohort.rows).some(function (row) { return !reportable(row.size); });
     card.appendChild(h('div', { className: 'card-body' }, [
       h('div', {
         className: 'u-scroll',
@@ -919,7 +927,15 @@
           (typeof cohort.label === 'string' && cohort.label ? ', ' + cohort.label : '')
       }, [
         h('table', { className: 'tbl u-cohort' }, [h('thead', {}, [headRow]), body])
-      ])
+      ]),
+      /* Said once under the grid rather than in every row, where the reason
+         would be wider than the weeks it sits beside. */
+      held ? h('div', { className: 'u-sup' }, [
+        h('div', { className: 'u-sup-in' }, [
+          S.icon('lock'),
+          h('span', { text: 'Shares are not reported for groups under ' + floor + ' people' })
+        ])
+      ]) : null
     ]));
     return card;
   }
@@ -935,38 +951,30 @@
   }
 
   function cohortRow(row, cells) {
+    var held = !reportable(row.size);
     var tr = h('tr', {}, [
       h('th', { scope: 'row', text: row.label }),
       h('td', {
         className: 'r num',
         text: num(row.size) === null ? fmt.none : fmt.int(row.size)
-      })
+      }, held ? [h('span', { className: 'sr', text: notReported(suppressionReason(row.size)) })] : [])
     ]);
-
-    /* A group under the floor is withheld as a whole row rather than cell by
-       cell: every cell in it is a rate over the same handful of people. */
-    if (!reportable(row.size)) {
-      tr.appendChild(h('td', {
-        className: 'u-sup', colspan: String(Math.max(cells, 1))
-      }, [
-        /* The flex row is inside the cell rather than on it: a td laid out as
-           a flex container is no longer a table cell, and a colspan on a box
-           that is not a table cell spans nothing. */
-        h('div', { className: 'u-sup-in' }, [
-          S.icon('lock'),
-          h('span', { text: notReported(suppressionReason(row.size)) })
-        ])
-      ]));
-      return tr;
-    }
 
     list(row.cells).slice(0, cells).forEach(function (cell) {
       var basisPoints = num(cell && cell.basisPoints);
-      if (!cell || cell.state === 'not_aged' || basisPoints === null) {
+      var returned = num(cell && cell.returned);
+      if (!cell || cell.state === 'not_aged' || (held ? returned === null : basisPoints === null)) {
         tr.appendChild(h('td', { className: 'r u-na' }, [
           h('span', { 'aria-hidden': 'true', text: '\u00b7' }),
           h('span', { className: 'sr', text: 'Not aged into this week yet' })
         ]));
+        return;
+      }
+      /* A group under the floor keeps the count of people who came back, as
+         Growth draws it, and loses every share and every shade: the floor
+         protects rates, and a count of people is not one. */
+      if (held) {
+        tr.appendChild(h('td', { className: 'r num', text: fmt.int(returned) }));
         return;
       }
       tr.appendChild(h('td', { className: 'r u-cell ' + intensity(basisPoints) }, [
@@ -1011,11 +1019,14 @@
       ]);
 
       if (!reportable(row.denominator) || basisPoints === null) {
+        /* The share is withheld, the people who did it are not: a count of
+           them is not a rate. */
+        var users = num(row.users);
+        var held = [S.icon('lock')];
+        if (users !== null) held.push(h('span', { className: 'num u-count', text: people(users) }));
+        held.push(h('span', { text: notReported(suppressionReason(row.denominator)) }));
         tr.appendChild(h('td', { className: 'u-sup', colspan: '2' }, [
-          h('div', { className: 'u-sup-in' }, [
-            S.icon('lock'),
-            h('span', { text: notReported(suppressionReason(row.denominator)) })
-          ])
+          h('div', { className: 'u-sup-in' }, held)
         ]));
       } else {
         tr.appendChild(h('td', { className: 'r num', text: fmt.percent(basisPoints) }));
@@ -1136,13 +1147,24 @@
     return section;
   }
 
+  /* The route's own sentence for an answer under the floor, which says how
+     many people there were and what the floor is. Said once, at the head of
+     the page whose shares it explains. */
+  function floorSentence(data) {
+    var availability = data.availability || {};
+    if (availability.state !== 'insufficient') return null;
+    return typeof availability.detail === 'string' && availability.detail
+      ? maskContactDetails(availability.detail)
+      : 'Too few people to report shares of them';
+  }
+
   function render(data) {
     var sent = num(data.reportingFloor);
     floor = sent !== null && sent > 0 ? sent : REPORTING_FLOOR;
 
     var wrap = h('div', { className: 'stack' });
 
-    var headline = S.band('Who is using Aria', null, answerNotes(data));
+    var headline = S.band('Who is using Aria', floorSentence(data), answerNotes(data));
     var grid = tiles(data);
     if (grid) headline.appendChild(grid);
     wrap.appendChild(headline);
@@ -1200,7 +1222,8 @@
 
   /* Not ready is not empty, and the two states the route distinguishes are
      answered differently: too little data is a window the operator can widen,
-     nothing reporting at all is not. */
+     nothing reporting at all is not. Too little data is only this card when
+     the answer carries no apps; with them it is the page, under rule 2. */
   function notReady(data, region) {
     var availability = data.availability || {};
     var detail = typeof availability.detail === 'string' && availability.detail
@@ -1253,7 +1276,8 @@
         var data = (answer && answer.data) || {};
         var availability = data.availability || {};
 
-        if (availability.state && availability.state !== 'ready') {
+        if (availability.state && availability.state !== 'ready'
+          && !(availability.state === 'insufficient' && list(data.apps).length)) {
           notReady(data, region);
           return;
         }

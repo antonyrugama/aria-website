@@ -78,16 +78,17 @@
  *
  * NOT COVERED
  *
- * - Any meter a pane draws, against the card that pane puts it on. None is
- *   reached: Aria AI's scoring drawing is gone (R54), Money's rebuild (#203)
- *   draws no meter, and `pane-usage.js` draws one per feature row only
- *   when the usage route carries `features.rows`, which the stub does not.
- *   Every reading here is the synthetic arm's, taken off a real `.card`
- *   built for the purpose. Giving the stub feature rows reaches the Usage
- *   pane's bars and they fail claim 7, 2.44:1 to 2.50:1 fill against track,
- *   because `.tone-cyan` and `.tone-violet` set `--c` to the bright token and
- *   not the `-ink` one the severity tones use; that is the Usage pane's to
- *   fix and `REAL_METERS` is what turns it into a decision when it is reached.
+ * - Severity on any pane's own meter. Only Usage draws one, a SERIES bar per
+ *   feature row coloured by its app (`.meter.tone-cyan`, `.tone-violet`), and
+ *   it carries no severity, so what the sweep judges there is the bar -- value
+ *   against track, fill against the card it sits on, forced-colors -- plus
+ *   that the two apps' hues stay apart. The panes' bars read the stub's `ready`
+ *   usage population, because Usage draws no feature row on a window too thin
+ *   to report. Reaching them first failed claim 7, 2.44:1 to 2.50:1 fill
+ *   against track in light theme, because `.tone-cyan` and `.tone-violet` set
+ *   `--c` to the bright token and not the `-ink` one the severity tones use;
+ *   `.meter.tone-*` in `aria.css` now takes the `-ink` grade, and removing it
+ *   fails claim 7 again.
  * - No greyscale arm. It would not be independent evidence: relative
  *   luminance already discards hue, so a greyscale pass measures the same
  *   numbers a second time. The hue-free claim IS claim 5.
@@ -380,6 +381,15 @@ function hex([r, g, b]) {
 const RANK = { ok: 0, warn: 1, bad: 2, vio: 3 };
 const TONES = Object.keys(RANK);
 
+/* The other vocabulary a `.meter` takes: `.meter.tone-<hue>`, a SERIES colour.
+   Usage draws one meter per feature row, coloured by the app the row belongs
+   to, and that hue says which app, not how bad anything is -- so it owes no
+   notch, is not a severity tone, and is not held to the severity claims about
+   hue. It is held to everything a bar is held to (value, card, track) and to
+   one claim of its own: two series on the same board must not read as one
+   colour, because colour is the only thing that tells the apps apart. */
+const SERIES = ['tone-amber', 'tone-blue', 'tone-cyan', 'tone-emerald', 'tone-rose', 'tone-violet'];
+
 /* Between 1.10:1, the widest end-to-end variation an ungrooved gradient fill
    showed, and 4.54:1, the weakest groove any theme produced. Both measured. */
 const GROOVE_DETECT = 1.8;
@@ -419,28 +429,28 @@ const EDGE_TRIM = 2;
 /* Literal floors, stated here rather than counted from the run. A floor
    derived from the thing under test cannot fail: a board that rendered no
    meters at all would satisfy "every meter rendered is correct" in silence.
-   Measured today: 8 meters, all of them the synthetic arm's (4 tones in each
-   theme). No pane draws a `.meter` in this sweep (see `REAL_METERS`).
+   Measured today: 28 meters, 14 in each theme -- the synthetic arm's 4 tones
+   plus the 10 that Usage draws (5 feature rows, in its `live` and `degraded`
+   states). Only Usage draws a meter, so only those 10 are the panes' and they
+   are all untoned series bars; every toned meter is the synthetic arm's.
 
    These were 40, 24 and 8 when Aria AI's scoring drawing painted 76 of the
    board's 96 meters and Money's rows the rest. Both are gone (R54: the first
-   was invented figures, the second was rebuilt in #203), so every count here
-   is now the synthetic arm's and the floors say so. They sit on what the arm
-   builds because that is all there is; `REAL_METERS` is what stops that from
-   passing for coverage of the panes. */
-const METER_FLOOR = 8;
+   was invented figures, the second was rebuilt in #203). The floors sit on
+   what the board measures today, so a pane that stops drawing its bars drops
+   under them; `REAL_METERS` is what says how many of those are the panes'. */
+const METER_FLOOR = 28;
 const TONED_FLOOR = 8;
-const VALUE_FLOOR = 4;
+const VALUE_FLOOR = 14;
 
 /* How many meters the panes draw in this sweep, declared, and the files that
-   draw one. Zero is not a pass of anything: it is the admission that nothing
-   here has judged a pane's meter against its own card since the last two
-   drawers left the board. `pane-usage.js` draws one per feature row, but
-   only when the usage route carries `features.rows`, which the stub does not,
-   so the sweep never reaches it. `pane-data.js` `meterRow` has no caller. Both
-   are named so that a drawer nobody listed, or a stub that starts reaching
-   one, fails the inventory test instead of changing what the board means. */
-const REAL_METERS = 0;
+   draw one. `pane-usage.js` draws one per feature row, which the stub reaches
+   in its `ready` population (the sweep asks for it): 5 rows in each of the
+   `live` and `degraded` states, in each theme. `pane-data.js` `meterRow` has
+   no caller. Both are named so that a drawer nobody listed, or a stub that
+   stops reaching one, fails the inventory test instead of changing what the
+   board means. */
+const REAL_METERS = 20;
 const METER_DRAWERS = ['pane-data.js', 'pane-usage.js'];
 
 /* #10848's fix darkens the light-theme fill to clear 3:1 against the TRACK,
@@ -474,9 +484,9 @@ const CARD_AGREE = 1.03;
    satisfied by either theme alone, so a change that makes light-theme cards
    non-uniform empties light's population while dark's readings keep the
    count healthy and the claim silently judges one theme. T19 in the battery
-   is that payload. Counted today: 4 per theme, all of them the synthetic
-   arm's, read off its real `.card`; no pane draws a meter to add to them. */
-const CARD_FLOOR = 4;
+   is that payload. Counted today: 14 per theme, the synthetic arm's 4 plus
+   the 10 that Usage's feature rows draw, each read off its real `.card`. */
+const CARD_FLOOR = 14;
 
 /* The severity hues are closer together after #10848 than before it --
    measured, light theme, closest pair `none` vs `ok` at 59.2 -> 39.9 RGB
@@ -486,6 +496,11 @@ const CARD_FLOOR = 4;
    tones are one colour; it is literal, and sits under the measured minimum
    rather than on it. */
 const TONE_SEPARATION = 30;
+
+/* How many series pairs the board must offer per theme. Usage draws two apps'
+   feature rows, so one pair is the honest floor; zero would mean the series
+   claim had nothing to compare. */
+const SERIES_PAIRS_FLOOR = 1;
 
 /* Which severities must be caught drawing, per theme, declared rather than
    counted. The totals above cannot do this job: `RANK.ok` is 0, so a board of
@@ -509,7 +524,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    res.end(JSON.stringify(stub(url.pathname, url.search, { usage: 'ready' })));
     return;
   }
   const file = path.join(ROOT, url.pathname.replace(/^\/+/, ''));
@@ -611,10 +626,12 @@ const READ_METERS = `Array.prototype.map.call(document.querySelectorAll('.meter'
   var t = m.getBoundingClientRect(), f = i.getBoundingClientRect();
   var left = Math.max(t.left, f.left), right = Math.min(t.right, f.right);
   var tones = ['ok', 'warn', 'bad', 'vio'].filter(function (c) { return m.classList.contains(c); });
+  var series = Array.prototype.filter.call(m.classList, function (c) { return /^tone-/.test(c); })[0] || null;
   var cs = getComputedStyle(m);
   return {
     idx: n,
     tones: tones,
+    series: series,
     synthetic: m.classList.contains('severity-probe'),
     /* Read as COMPUTED values so inheritance is included. \`--c\` is set by the
        \`.tone-*\` vocabulary too (aria.css:962-967, and \`.tone-muted\` /
@@ -904,7 +921,7 @@ async function measurePane(pane, state, theme, { synthetic = false } = {}) {
     const fillPx = rowOf(img, EDGE_TRIM, Math.round(m.visibleFill) - EDGE_TRIM);
     const fillL = fillPx.length >= 6 ? median(fillPx.map(relativeLuminance)) : null;
     out.push({
-      pane, state, theme, tone, tones: m.tones, synthetic: m.synthetic,
+      pane, state, theme, tone, tones: m.tones, series: m.series, synthetic: m.synthetic,
       trackWidth: m.trackWidth, fillWidth: m.fillWidth, visibleFill: m.visibleFill,
       fillL,
       fillRGB: fillPx.length >= 6 ? [0, 1, 2].map((k) => median(fillPx.map((p) => p[k]))) : null,
@@ -961,10 +978,16 @@ test('the tone vocabulary this sweep declares is the tone vocabulary the sheets 
       if (!found.has(m[1])) found.set(m[1], f);
     }
   }
-  assert.deepEqual([...found.keys()].sort(), [...TONES].sort(),
-    `the sheets style meter tones ${[...found].map(([t, f]) => `${t} (${f})`).sort().join(', ')} ` +
-    `but this sweep ranks ${[...TONES].sort().join(', ')}; a tone with no rank is a tone ` +
-    'nothing here measures');
+  const severity = [...found.keys()].filter((t) => !t.startsWith('tone-')).sort();
+  const series = [...found.keys()].filter((t) => t.startsWith('tone-')).sort();
+  const where = (list) => list.map((t) => `${t} (${found.get(t)})`).join(', ');
+  assert.deepEqual(severity, [...TONES].sort(),
+    `the sheets style meter tones ${where(severity)} but this sweep ranks ` +
+    `${[...TONES].sort().join(', ')}; a tone with no rank is a tone nothing here measures`);
+  assert.deepEqual(series, [...SERIES].sort(),
+    `the sheets style meter series ${where(series)} but this sweep declares ` +
+    `${[...SERIES].sort().join(', ')}; a series nothing here declares is one the series claim ` +
+    'cannot tell from another');
 });
 
 test('the sweep judged a real board of meters, not an empty one', () => {
@@ -1172,22 +1195,30 @@ test('the bar is visible against the card it sits on, not just against its own t
    paler point of it than a wide bar's, and "the first reading" would have
    silently depended on pane iteration order. Two meters of different widths
    sitting in the same table is exactly where two tones come closest, so the
-   minimum over all cross pairs is both the safe direction and the real one. */
-function tonePairs(theme) {
-  const byTone = new Map();
+   minimum over all cross pairs is both the safe direction and the real one.
+
+   Severity tones and series colours are separate vocabularies and are judged
+   apart. A series meter has no tone class and the same `--c` as a severity
+   hue by design (`.meter.tone-violet` and `.meter.vio` both read
+   `--violet-ink`), so pooling them under `none` measured a legitimate series
+   against `vio` at 3.0 RGB and reported two things that never report the same
+   thing as one. */
+function pairsBy(theme, keyOf) {
+  const byKey = new Map();
   for (const r of [...readings, ...synthetic]) {
     if (r.theme !== theme || !r.fillRGB) continue;
-    const key = r.tone || 'none';
-    if (!byTone.has(key)) byTone.set(key, []);
-    byTone.get(key).push(r.fillRGB);
+    const key = keyOf(r);
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(r.fillRGB);
   }
-  const tones = [...byTone.keys()].sort();
+  const tones = [...byKey.keys()].sort();
   const pairs = [];
   for (let a = 0; a < tones.length; a++) {
     for (let b = a + 1; b < tones.length; b++) {
       let d = Infinity;
-      for (const p of byTone.get(tones[a])) {
-        for (const q of byTone.get(tones[b])) {
+      for (const p of byKey.get(tones[a])) {
+        for (const q of byKey.get(tones[b])) {
           d = Math.min(d, Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]));
         }
       }
@@ -1196,6 +1227,8 @@ function tonePairs(theme) {
   }
   return pairs;
 }
+const tonePairs = (theme) => pairsBy(theme, (r) => (r.series ? null : r.tone || 'none'));
+const seriesPairs = (theme) => pairsBy(theme, (r) => r.series);
 
 test('no two severity tones collapse into the same fill colour', () => {
   for (const theme of THEMES) {
@@ -1207,6 +1240,26 @@ test('no two severity tones collapse into the same fill colour', () => {
       `${theme} .meter.${p.a} and .meter.${p.b} fills are ${p.d.toFixed(1)} apart in RGB`), [],
     `hue is a reinforcing channel after #10825, not the severity channel, but two tones ` +
     `that read as one colour still misreport at a glance`);
+  }
+});
+
+/* The same floor for the series a pane draws, because for a series colour is
+   the whole identifier: the feature rows of two apps in one card are told
+   apart by hue alone, and two hues that read as one are two apps merged. A
+   pane that draws a single series has no pair to judge, so the claim needs at
+   least two drawn per theme (Usage draws Mobile and Coaches) and fails
+   rather than pass over a board it could not compare. */
+test('no two series colours on the board collapse into the same fill colour', () => {
+  for (const theme of THEMES) {
+    const pairs = seriesPairs(theme);
+    assert.ok(pairs.length >= SERIES_PAIRS_FLOOR,
+      `${theme}: only ${pairs.length} series pairs were measurable, below the declared floor ` +
+      `of ${SERIES_PAIRS_FLOOR}; with one series on the board there is nothing to tell apart ` +
+      'and the claim would pass in silence');
+    const merged = pairs.filter((p) => p.d < TONE_SEPARATION);
+    assert.deepEqual(merged.map((p) =>
+      `${theme} .meter.${p.a} and .meter.${p.b} fills are ${p.d.toFixed(1)} apart in RGB`), [],
+    'a series told apart by colour alone must not read as one colour');
   }
 });
 
