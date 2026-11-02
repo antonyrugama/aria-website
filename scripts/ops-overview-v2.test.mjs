@@ -286,6 +286,14 @@ async function boot(options) {
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  /* The states the shell put the pane in. The live box and the degraded box
+     look the same, so this is the only way to tell them apart. */
+  const states = [];
+  const applyState = dom.window.Aria.applyState;
+  dom.window.Aria.applyState = function (state) {
+    states.push(String(state));
+    return applyState.call(dom.window.Aria, state);
+  };
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
   vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
@@ -293,7 +301,7 @@ async function boot(options) {
 
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
 
-  return Object.assign(dom, { calls, answers });
+  return Object.assign(dom, { calls, answers, states });
 }
 
 /* ------------------------------------------------------------- reading it */
@@ -705,6 +713,8 @@ test('a failed growth read hides one moment and says nothing else about itself',
   assert.ok(!/growth|paying/i.test(allText(dom.doc.getElementById('content'))),
     'the page says something about a read the reader never asked for');
   assert.equal(allText(one(section(dom, 'people'), 'big')), '1,102', 'the rest of the page was drawn');
+  assert.equal(dom.states[dom.states.length - 1], 'live',
+    'a growth read that failed marked the whole page degraded');
 });
 
 test('the strip draws only the moments that were earned, under one label, in order', async () => {
