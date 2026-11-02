@@ -14,6 +14,11 @@
      - the cost is the month so far, falls back to the month before when the
        export has not published a day, and says "so far" while the month is
        open;
+     - the cost block names the days the bill covers from the bill's own
+       `actualThrough`, and says so, in the Money pane's words, when the
+       bill's collector has failed or is off or its figures are old, because a
+       `ready` bill can be the amounts of the last good poll and the page's
+       "Updated" stamp is the summary's;
      - the review count is what is waiting, a floor when the queue was cut,
        and a queue nobody could read is a failed read and never "nothing";
      - each read fails and retries by itself, and an older answer that arrives
@@ -107,11 +112,18 @@ function summaryFixture(over) {
   }), over);
 }
 
+/* The cost read is the one answer here with an age of its own, so it is the
+   one that reads the clock: `asOf` is when the collector last succeeded. */
+const hoursAgo = (n) => new Date(Date.now() - n * HOUR).toISOString();
+
 function costsFixture(over) {
   return edit(() => ({
     availability: { state: 'ready' },
     currency: 'USD',
-    period: { start: '2026-10-01T00:00:00.000Z', billedDays: 31, daysInPeriod: 31 },
+    asOf: hoursAgo(5),
+    publishLagHours: 8,
+    staleness: { state: 'ok' },
+    period: { start: '2026-10-01T00:00:00.000Z', billedDays: 31, daysInPeriod: 31, actualThrough: '2026-10-31' },
     total: { micros: 3_100_000_000 },
     views: { category: { rows: [
       { key: 'compute', micros: 2_000_000_000 },
@@ -414,9 +426,10 @@ test('an AI count the summary cannot give is words and never a zero', async () =
 test('cost is the month so far, falls back to last month, and never invents a figure', async () => {
   const cost = (dom) => withClass(section(dom, 'activity'), 'is-cost')[0];
 
-  const open = await boot({ costs: costsFixture((c) => { c.period.billedDays = 12; }) });
+  const open = await boot({ costs: costsFixture((c) => { c.period.billedDays = 12; delete c.period.actualThrough; }) });
   assert.deepEqual(wordsOf(cost(open), 'num'), ['$807.70']);
-  assert.deepEqual(wordsOf(cost(open), 'dv-sub'), ['Cloud AI \u00b7 October so far']);
+  assert.deepEqual(wordsOf(cost(open), 'dv-sub'), ['Cloud AI \u00b7 October so far'],
+    'a bill that does not say how far it reaches falls back to its count of billed days');
   assert.deepEqual(wordsOf(cost(open), 'dv-included'), ['Included in $3,100 cloud total']);
 
   const whole = await boot();
@@ -440,6 +453,124 @@ test('cost is the month so far, falls back to last month, and never invents a fi
   const none = await boot({ costs: { availability: { state: 'not_published' } } });
   assert.deepEqual(wordsOf(cost(none), 'dv-words'), ['Not published']);
   assert.ok(!hasDigit(allText(cost(none))), 'a figure was drawn for a bill that has not published');
+});
+
+/* The page's "Updated" stamp is the summary's. The bill is a different read
+   from a different collector, and a `ready` bill can hold the amounts of the
+   last good poll, so the block says what days it covers and when its own
+   collector is failing, off or behind, in the words the Money pane uses. */
+test('the cost block names the days the bill covers, from the bill and not from the clock', async () => {
+  const cost = (dom) => withClass(section(dom, 'activity'), 'is-cost')[0];
+  const sub = (dom) => wordsOf(cost(dom), 'dv-sub');
+  const through = (day, over) => costsFixture((c) => {
+    c.period.actualThrough = day;
+    c.period.billedDays = Number(day.slice(-2));
+    if (over) over(c);
+  });
+
+  assert.deepEqual(sub(await boot({ costs: through('2026-10-07') })), ['Cloud AI \u00b7 Oct 1\u20137'],
+    'the covered window was not named');
+  assert.deepEqual(sub(await boot({ costs: through('2026-10-01') })), ['Cloud AI \u00b7 Oct 1'],
+    'one billed day is a day and not a range');
+  assert.deepEqual(sub(await boot({ costs: through('2026-10-30') })), ['Cloud AI \u00b7 Oct 1\u201330'],
+    'a month one day short of its end was called the month');
+  assert.deepEqual(sub(await boot({ costs: through('2026-10-31') })), ['Cloud AI \u00b7 October']);
+  assert.deepEqual(sub(await boot({ costs: through('2026-10-07T00:00:00.000Z') })), ['Cloud AI \u00b7 Oct 1\u20137'],
+    'a full timestamp for the last day was read as another day');
+
+  const empty = await boot({ costs: through('2026-10-07', (c) => { c.views.category.rows = [{ key: 'compute', micros: 1 }]; }) });
+  assert.deepEqual(wordsOf(cost(empty), 'dv-words'), ['No AI cost billed']);
+  assert.deepEqual(sub(empty), ['Oct 1\u20137'], 'a month with no AI line did not say which days it looked at');
+});
+
+const WORDS = {
+  failed: 'Collection failing, showing the last good figures',
+  unknown: 'Collection status unknown',
+  disabled: 'Collection switched off',
+  unconfigured: 'Collection not set up',
+  other: 'Collection needs attention',
+  none: 'No collection time'
+};
+
+test('a bill whose collector has failed or is off says so beside its amounts, in the Money pane\'s words', async () => {
+  const cost = (dom) => withClass(section(dom, 'activity'), 'is-cost')[0];
+  const notes = (dom) => wordsOf(cost(dom), 'dv-note');
+  const stale = (staleness, over) => boot({ costs: costsFixture((c) => {
+    c.staleness = staleness;
+    c.period.actualThrough = '2026-10-07';
+    if (over) over(c);
+  }) });
+
+  const cases = [
+    [{ state: 'failed', detail: 'The last 3 cost collections failed.' }, 'The last 3 cost collections failed.'],
+    [{ state: 'failed' }, WORDS.failed],
+    [{ state: 'disabled' }, WORDS.disabled],
+    [{ state: 'unconfigured' }, WORDS.unconfigured],
+    [{ state: 'unknown' }, WORDS.unknown],
+    [{ state: 'something_new' }, WORDS.other],
+    [{ state: 'failed', detail: 'Ask ops@example.com' }, '[hidden contact detail]'],
+  ];
+  for (const [staleness, expected] of cases) {
+    const dom = await boot({ costs: costsFixture((c) => { c.staleness = staleness; c.period.actualThrough = '2026-10-07'; }) });
+    assert.deepEqual(wordsOf(cost(dom), 'num'), ['$807.70'], 'the retained amount is still shown');
+    assert.deepEqual(wordsOf(cost(dom), 'dv-sub'), ['Cloud AI \u00b7 Oct 1\u20137'], expected + ': the covered days are named');
+    assert.equal(notes(dom).length, 1, expected + ': ' + JSON.stringify(notes(dom)));
+    assert.ok(notes(dom)[0].includes(expected), expected + ' is not in ' + notes(dom)[0]);
+  }
+
+  assert.deepEqual(notes(await stale({ state: 'ok' })), [], 'a collector doing its job is given no note');
+  assert.deepEqual(notes(await boot({ costs: costsFixture((c) => { delete c.staleness; }) })), [],
+    'a bill that says nothing about its collector was given a note');
+
+  const empty = await stale({ state: 'failed' }, (c) => { c.views.category.rows = [{ key: 'compute', micros: 1 }]; });
+  assert.deepEqual(notes(empty), [WORDS.failed],
+    'a month with no AI line hid that its collector was failing');
+
+  /* A failed collector on a bill that is not `ready` is said once. A collector
+     that is off or not set up is already the words, and repeating them is noise. */
+  const noBill = await boot({ costs: { availability: { state: 'unconfigured' }, staleness: { state: 'unconfigured' } } });
+  assert.deepEqual(wordsOf(cost(noBill), 'dv-words'), ['Not set up']);
+  assert.deepEqual(notes(noBill), [], 'the same fact was said twice');
+  const stuck = await boot({ costs: { availability: { state: 'not_published' }, staleness: { state: 'failed' } } });
+  assert.deepEqual(wordsOf(cost(stuck), 'dv-words'), ['Not published']);
+  assert.deepEqual(notes(stuck), [WORDS.failed]);
+  assert.ok(!hasDigit(allText(cost(stuck)).replace(/Collection.*/, '')), 'a figure was drawn for a bill that has not published');
+});
+
+test('the collector words are the ones the Money pane prints, read from its source', () => {
+  const money = read('assets/pane-spend.js');
+  for (const words of Object.values(WORDS)) {
+    assert.ok(money.includes("'" + words + "'"), words + ' is not in the Money pane, so the two panes say it differently');
+    assert.ok(PANE_SRC.includes("'" + words + "'"), words + ' is not in this pane');
+  }
+});
+
+test('a bill is called behind once its own publishing cycle is missed twice over, and says when it has no time at all', async () => {
+  const cost = (dom) => withClass(section(dom, 'activity'), 'is-cost')[0];
+  const notes = (dom) => wordsOf(cost(dom), 'dv-note');
+  const aged = (hours, over) => boot({ costs: costsFixture((c) => { c.asOf = hoursAgo(hours); if (over) over(c); }) });
+
+  assert.deepEqual(notes(await aged(5)), [], 'a normal cycle says nothing');
+  assert.deepEqual(notes(await aged(15)), [], 'one missed cycle is within the bill\'s own margin');
+  const late = notes(await aged(40));
+  assert.equal(late.length, 1);
+  assert.match(late[0], /^4\d hours behind$/);
+
+  assert.deepEqual(notes(await aged(40, (c) => { c.publishLagHours = 48; })), [],
+    'the threshold is the bill\'s own lag doubled, not a constant in the pane');
+  assert.match(notes(await aged(10, (c) => { c.publishLagHours = 4; }))[0], /^10 hours behind$/);
+  assert.match(notes(await aged(17, (c) => { delete c.publishLagHours; }))[0], /^1[67] hours behind$/,
+    'a bill that sends no lag is held to the pane\'s own eight hours');
+
+  assert.deepEqual(notes(await boot({ costs: costsFixture((c) => { c.asOf = null; }) })), [WORDS.none],
+    'a bill with no collection time said nothing about it');
+  assert.deepEqual(notes(await boot({ costs: costsFixture((c) => { delete c.asOf; }) })), [WORDS.none]);
+
+  /* Behind and failing are two facts, and both are said. */
+  const both = await aged(40, (c) => { c.staleness = { state: 'failed' }; });
+  assert.equal(notes(both).length, 2);
+  assert.equal(notes(both)[0], WORDS.failed);
+  assert.match(notes(both)[1], /behind$/);
 });
 
 /* ============================== human review ============================ */

@@ -145,7 +145,13 @@
 .dv-delta.is-up { color: var(--violet-ink); }
 .dv-half.is-cost { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--violet); }
 .dv-half.is-cost .dv-big { margin-top: 0; font-size: 56px; }
+.dv-half.is-cost .dv-sub { text-wrap: balance; }
 .dv-included { margin-top: 18px; font-size: 14px; color: var(--ink-2); }
+.dv-note {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 10px;
+  font-size: 14px; line-height: 1.35; color: var(--amber-ink); overflow-wrap: anywhere;
+}
+.dv-note .ico { width: 16px; height: 16px; flex: none; margin-top: 1px; }
 
 /* --------------------------------------------------------------- by job */
 

@@ -36,7 +36,12 @@
         days it has instead of comparing.
      5. **The cost is the bill's.** The AI figure is the AI row of the month's
         bill and is shown next to the bill's own total. A month the export has
-        not published yet falls back to the last one, and is named. */
+        not published yet falls back to the last one, and is named.
+     6. **The bill has its own age.** The page's "Updated" time is the
+        summary's. The cost block names the days the bill covers ("Oct 1\u20137")
+        from its own `actualThrough`, and says so when the collector is failing
+        or off, or the figures are old, because a ready bill can be the
+        amounts of the last good poll. */
 (function (global) {
   'use strict';
 
@@ -70,6 +75,19 @@
   var MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
   var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  /* The cost poller's own account of itself, in the words the Money pane
+     uses for the same states (pane-spend.js POLLER_WORDS). A bill whose
+     collector has failed or been switched off still arrives `ready`, with the
+     amounts of the last good poll. */
+  var POLLER_WORDS = {
+    failed: 'Collection failing, showing the last good figures',
+    unknown: 'Collection status unknown',
+    disabled: 'Collection switched off',
+    unconfigured: 'Collection not set up'
+  };
+  var FALLBACK_LAG_HOURS = 8;
+  var STALE_MULTIPLE = 2;
 
   var UNAVAILABLE_WORDS = {
     not_reporting: 'No reading',
@@ -736,6 +754,9 @@
       var total = num(bill.total && bill.total.micros);
       if (stateOf(bill) !== 'ready' || total === null) {
         costHalf.appendChild(h('p', { className: 'dv-words', text: wordsFor(bill) }));
+        /* A collector that is off or not set up is already the words above. */
+        var pollerState = textOf(bill.staleness && bill.staleness.state);
+        if (pollerState !== stateOf(bill)) appendNotes(costHalf, [pollerNote(bill)]);
         return;
       }
       var rows = list(bill.views && bill.views.category && bill.views.category.rows);
@@ -744,26 +765,65 @@
       var billed = num(aiRow && aiRow.micros);
       if (billed === null) {
         costHalf.appendChild(h('p', { className: 'dv-words', text: 'No AI cost billed' }));
-        costHalf.appendChild(h('p', { className: 'dv-sub', text: monthName(bill) }));
+        costHalf.appendChild(h('p', { className: 'dv-sub', text: billWindow(bill) }));
+        appendNotes(costHalf, [pollerNote(bill), ageNote(bill)]);
         return;
       }
       costHalf.appendChild(h('p', { className: 'dv-big' }, [
         h('span', { className: 'num', text: fmt.money(billed, bill.currency) })
       ]));
-      costHalf.appendChild(h('p', { className: 'dv-sub', text: 'Cloud AI \u00b7 ' + monthName(bill) }));
+      costHalf.appendChild(h('p', { className: 'dv-sub', text: 'Cloud AI \u00b7 ' + billWindow(bill) }));
       costHalf.appendChild(h('p', { className: 'dv-included', text:
         'Included in ' + fmt.money(total, bill.currency, 0) + ' cloud total' }));
+      appendNotes(costHalf, [pollerNote(bill), ageNote(bill)]);
     }
 
-    /* The month the bill covers, and "so far" while it is still open. */
-    function monthName(bill) {
+    /* The days the bill covers: the month once it is billed to its last day,
+       and otherwise "Oct 1\u20137", from the bill's own `actualThrough`. A bill
+       that does not say how far it reaches falls back to its billed-day count. */
+    function billWindow(bill) {
       var period = bill.period || {};
       var start = parseTime(period.start);
       if (start === null) return 'this month';
-      var name = MONTHS_LONG[new Date(start).getUTCMonth()];
+      var first = new Date(start);
+      var name = MONTHS_LONG[first.getUTCMonth()];
+      var through = parseTime(period.actualThrough);
+      if (through !== null && through >= start) {
+        var lastDay = Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 1) - DAY_MS;
+        return through >= lastDay ? name : spanLabel(start, through + DAY_MS);
+      }
       var billed = num(period.billedDays);
       var length = num(period.daysInPeriod);
       return billed !== null && length !== null && billed < length ? name + ' so far' : name;
+    }
+
+    /* Said only when there is something to say: the collector's own state when
+       it is not `ok`, in its own sentence when it sends one. */
+    function pollerNote(bill) {
+      var state = textOf(bill.staleness && bill.staleness.state);
+      if (!state || state === 'ok') return null;
+      var detail = textOf(bill.staleness.detail);
+      if (detail) return global.OpsPaneRegistry.maskContactDetails(detail);
+      return Object.prototype.hasOwnProperty.call(POLLER_WORDS, state)
+        ? POLLER_WORDS[state] : 'Collection needs attention';
+    }
+
+    /* How old the figures are, against the bill's own publishing lag, doubled.
+       The page's "Updated" time is the summary's, not the bill's. */
+    function ageNote(bill) {
+      var asOf = textOf(bill.asOf);
+      var hours = asOf ? fmt.hoursSince(asOf) : null;
+      if (hours === null) return 'No collection time';
+      var lag = num(bill.publishLagHours);
+      return hours >= (lag !== null && lag > 0 ? lag : FALLBACK_LAG_HOURS) * STALE_MULTIPLE
+        ? fmt.hours(hours) + ' behind' : null;
+    }
+
+    function appendNotes(half, notes) {
+      notes.forEach(function (note) {
+        if (!note) return;
+        half.appendChild(h('p', { className: 'dv-note' }, [icon('warn'), h('span', { text: note })]));
+      });
     }
 
     /* --------------------------------------------------- human review */

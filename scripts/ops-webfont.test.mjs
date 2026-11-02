@@ -149,7 +149,7 @@ const FLOOR_PANES = 10;            /* 10 declared in the registry */
 const FLOOR_PROBED = 4800;         /* 5,636 observed */
 const FLOOR_WITH_FACE = 4800;      /* 5,636 observed */
 const FLOOR_SANS_SITES = 4100;     /* 4,860 observed */
-const FLOOR_MONO_SITES = 520;      /* 616 observed; 776 before the scoring drawing was removed */
+const FLOOR_MONO_SITES = 420;      /* 496 observed; 776 before the scoring drawing was removed and Money was rebuilt */
 const FLOOR_GLYPHS = 93000;        /* 110,478 observed */
 
 function readRegistry() {

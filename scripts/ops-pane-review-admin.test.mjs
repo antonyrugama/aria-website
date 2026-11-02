@@ -133,6 +133,8 @@ test('review pane lists answers as plain rows and hides ratings before independe
   assert.match(treeText(root), /Hidden until you submit yours/, 'other ratings remain hidden before own rating');
   assert.match(treeText(root), /evidence\.demo\.output/, 'authorized evidence references render with the answer');
   assert.match(treeText(root), /qualified_human/, 'grading metadata renders with the rubric');
+  assert.match(treeText(root), new RegExp(`Outcome digest\\s+${'a'.repeat(64)}(?![0-9a-f])`), 'the opened detail names the exact outcome version being rated, in full');
+  assert.match(treeText(root), new RegExp(`Criterion digest\\s+${'b'.repeat(64)}(?![0-9a-f])`), 'the opened detail names the exact criterion version it is rated against, in full');
   assert.doesNotMatch(treeText(root), /blind/i, 'the detail does not use the word blinded');
 
   const rationale = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale');
@@ -157,6 +159,18 @@ test('review pane lists answers as plain rows and hides ratings before independe
     supersedesReviewId: null,
   });
   assert.deepEqual(toasts, ['Rating recorded']);
+});
+
+test('review detail says a digest was not reported rather than leaving it blank', async () => {
+  const { root } = loadPane((path) => {
+    if (path === '/api/ops/seval/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
+    return Promise.resolve({ data: { ...queueItem, outcomeDigest: undefined, criterionDigest: '', reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, correction: { activeReviewId: null }, labels: [] } });
+  });
+  await Promise.resolve();
+  await find(root, node => node.tag === 'button' && /^Review$/.test(node.textContent)).dispatch('click');
+  await Promise.resolve();
+  assert.match(treeText(root), /Outcome digest\s+Not reported/, 'a detail without an outcome digest says so');
+  assert.match(treeText(root), /Criterion digest\s+Not reported/, 'a detail without a criterion digest says so');
 });
 
 test('review pane sends the active review id for corrections', async () => {
@@ -287,15 +301,16 @@ test('review pane says an empty queue is empty', async () => {
   assert.doesNotMatch(treeText(root), /not fully read/, 'a complete empty queue is not called incomplete');
 });
 
-test('review pane markup and CSS are responsive and CSP-safe', () => {
+/* What the controls measure (44px tall, 14px text) is asserted in a browser by
+   scripts/ops-review-controls-rendered.test.mjs. Searching this stylesheet for
+   a `min-height: 44px` or for small font sizes could not bind to the element:
+   it passed while the Review action's own rule fell to 20px and while the
+   shared .btn-sm, which sets the action's text size, fell to 10px. */
+test('review pane markup is mobile-first and CSP-safe, with a narrow layout', () => {
   const html = readFileSync(HTML, 'utf8');
   const css = readFileSync(CSS, 'utf8');
   assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/, 'review page must be mobile-first');
   assert.doesNotMatch(html, /style="/i, 'review page must not rely on inline styles');
   assert.match(css, /@media \(max-width: 760px\)/, 'review CSS must include a narrow-width breakpoint');
   assert.match(css, /\.review-form \{ grid-template-columns: 1fr; \}/, 'narrow layout must collapse the form to one column');
-  assert.match(css, /min-height: 44px/, 'review controls must meet minimum touch target height');
-  const small = (css.match(/font-size:\s*(\d+(?:\.\d+)?)px/g) || [])
-    .map((rule) => parseFloat(rule.replace(/[^\d.]/g, ''))).filter((px) => px < 14);
-  assert.deepEqual(small, [], 'review text is never set under 14px');
 });

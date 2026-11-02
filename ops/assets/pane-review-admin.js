@@ -147,6 +147,9 @@
       ['Notes', detail.evidence && detail.evidence.comments ? detail.evidence.comments.join(' ') : 'No notes'],
       ['Judge it on', detail.rubric ? detail.rubric.statement : 'No rule'],
       ['Grading', detail.rubric && detail.rubric.grading ? JSON.stringify(detail.rubric.grading) : 'No grading metadata'],
+      /* The exact versions being rated, in full. The rows above the detail do not carry them. */
+      ['Outcome digest', detail.outcomeDigest || 'Not reported', 'review-digest'],
+      ['Criterion digest', detail.criterionDigest || 'Not reported', 'review-digest'],
       ['Other ratings', visible ? String(labels.length) : 'Hidden until you submit yours']
     ]));
     if (adjudicationMode) {

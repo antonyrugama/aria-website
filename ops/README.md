@@ -1331,8 +1331,13 @@ drawn from a figure the API did not give:
   every run has a finish time and a type. Otherwise the box says which of those is missing.
 - The **change since last week** shows only when the week before was fully reported. Otherwise
   it says how many of the 7 days were.
-- **Cost** is this month's AI line, or last month's when this month is not yet published, and
-  says "so far" while the month is incomplete.
+- **Cost** is this month's AI line, or last month's when this month is not yet published. It
+  names the days the bill covers from the bill's own `actualThrough` ("Oct 1–7", or the month
+  once it is billed to its last day), because the page's `Updated` time is the summary's and the
+  bill is a different read. When the bill's collector has failed, is switched off or its
+  figures are more than twice the bill's own `publishLagHours` old, a line beside the amount
+  says so, in the words the Money pane uses ("Collection failing, showing the last good
+  figures", "N hours behind").
 - **Human review** lists three open items at most, with "See all" for the rest, and prints a
   plus on the count when the queue was capped or only partly read.
 - Each read fails on its own with its own retry, so one failure does not blank the page.
@@ -1340,8 +1345,11 @@ drawn from a figure the API did not give:
 **Human review** is a list of answers waiting for a person. Each row is the question being
 judged, its area and whether anyone has rated it or reviewers disagree. Review opens one answer
 with its sources, what to judge it on and the ratings already given; a person rates it, or
-settles a disagreement after seeing the other ratings. Hashes and evidence references are still
-sent with the request but no longer shown.
+settles a disagreement after seeing the other ratings. The queue rows stay short; the opened
+answer shows the outcome digest and the criterion digest in full, because they name the exact
+versions being rated and the request carries them. Every action and field there is at least 44px
+tall and every line of text at least 14px, which
+`scripts/ops-review-controls-rendered.test.mjs` measures in Chrome at 390px and 1536px.
 
 **More** holds the tools an operator uses less often, under plain names: the scenario
 catalogue and its runs, checking a dataset declaration, putting evidence into quarantine, the
@@ -2747,7 +2755,7 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 584
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 157
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 161
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Health data has no reveal control at all, and no row. Not a disabled" = line 21
