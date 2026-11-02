@@ -167,7 +167,7 @@ async function boot(options) {
   const calls = [];
   const answers = opts.answers || [];
 
-  const dom = makeDom({ tokens: TOKENS, href: HREF, runTimers: opts.runTimers });
+  const dom = makeDom({ tokens: TOKENS, href: opts.href || HREF, runTimers: opts.runTimers });
   const body = dom.element('body');
   dom.root.appendChild(body);
   dom.doc.body = body;
@@ -947,6 +947,76 @@ test('a match count larger than the rows sent is reported, and one that agrees d
   assert.ok(!cardText(agree, 'Matches').includes('but sent'));
 });
 
+/* Round 1, finding 4. The warning used to live inside the picker, and a single
+   match has no picker: the pane opens the account itself. One row beside a
+   count of nine is the same contradiction, and the "no bulk listing" rule is
+   breached the same way, so the answer must not depend on how many rows came. */
+test('one row beside a larger count is reported too, and the account is still opened for you', async () => {
+  const lookup = lookupFixture((d) => { d.matchCount = 9; });
+  const dom = await openAccount({ lookup });
+  const text = cardText(dom, 'Matches');
+  assert.match(text, /1 of 9 accounts shown/);
+  assert.match(text, /says 9 accounts matched but sent 1/);
+  assert.ok(card(dom, 'Account'), 'the warning stopped the account opening');
+  assert.match(dom.announced.join(' | '), /1 of 9 accounts shown/, 'a screen reader was told "1 account matched"');
+  assert.ok(!dom.announced.some((m) => m === '1 account matched'));
+  assert.equal(dom.calls.filter((c) => c.method === 'GET').length, 1);
+});
+
+test('one row beside a count that agrees draws no Matches card and no warning', async () => {
+  const dom = await openAccount();
+  assert.equal(card(dom, 'Matches'), undefined, 'a single match drew a picker');
+  assert.ok(!liveText(dom).includes('but sent'));
+  assert.ok(dom.announced.includes('1 account matched'));
+});
+
+test('a count the API did not send as a number draws no warning', async () => {
+  for (const bad of [undefined, null, 'nine', NaN]) {
+    const dom = await openAccount({ lookup: lookupFixture((d) => { d.matchCount = bad; }) });
+    assert.equal(card(dom, 'Matches'), undefined, `matchCount ${String(bad)} drew a card`);
+  }
+});
+
+/* Round 1, finding 3. The reason is captured once at Search time, before the
+   lookup is sent, because the operator may edit the field while the request is
+   out. The detail GET carries that reason so the audit row for the opened
+   account says why, not the router's generic fallback. */
+const detailCall = (dom) => dom.calls.find((c) => c.method === 'GET' && /\/users\/[^/]+$/.test(c.endpoint));
+
+test('a single match is opened with the reason the lookup was made under', async () => {
+  const dom = await openAccount({ reason: 'SUP-4471' });
+  const call = detailCall(dom);
+  assert.ok(call, 'no detail call was made');
+  assert.equal(call.query && call.query.reason, 'SUP-4471', 'the account was opened without the reason it was looked up for');
+  assert.deepEqual(Object.keys(call.query), ['reason'], 'the detail call carried more than the reason');
+});
+
+test('a picked match is opened with the same reason, and an edit after Search does not change it', async () => {
+  const dom = await boot(threeAnswers());
+  await lookUp(dom, 'usr-2277', '  SUP-4471  ');
+  field(dom, 'lookupReason').value = 'something else entirely';
+  await pick(dom, 'usr-2419');
+  const call = detailCall(dom);
+  assert.equal(call.endpoint, '/api/ops/users/usr-2419');
+  assert.equal(call.query && call.query.reason, 'SUP-4471', 'the pick carried a reason the lookup was not made under');
+});
+
+test('a second search replaces the reason the next account is opened with', async () => {
+  const dom = await boot(threeAnswers());
+  await lookUp(dom, 'usr-2277', 'SUP-1111');
+  await lookUp(dom, 'usr-2277', 'SUP-2222');
+  await pick(dom, 'usr-2530');
+  assert.equal(detailCall(dom).query.reason, 'SUP-2222');
+});
+
+test('the reason rides the query, and the account identifier never does', async () => {
+  const dom = await openAccount({ identifier: 'person@example.invalid', reason: 'SUP-4471' });
+  const call = detailCall(dom);
+  assert.equal(call.endpoint, '/api/ops/users/usr-2277', 'the detail route is addressed by the coded reference');
+  assert.ok(!JSON.stringify(call).includes('person@example.invalid'), 'the typed identifier reached the detail call');
+  assert.equal(call.body, undefined, 'a GET carried a body');
+});
+
 test('the matches show coded references and the mask the API sent, and no raw identifier', async () => {
   const lookup = lookupFixture((d) => {
     d.matchCount = 2;
@@ -962,14 +1032,88 @@ test('the matches show coded references and the mask the API sent, and no raw id
 
 /* ============================================================ narrowings */
 
-test('the app list is the registry\'s, and the filters bar the shell would draw is off for this pane', async () => {
+test('the app list is the registry\'s, and the shell draws no App control over a pane that has its own', async () => {
   const dom = await boot({ answers: [] });
   const { SCOPES, PANES } = dom.window.OpsPaneRegistry;
   const options = findAll(field(dom, 'lookupScope'), (n) => n.tagName === 'OPTION')
     .map((o) => ({ v: o.getAttribute('value'), l: allText(o).trim() }));
   assert.equal(JSON.stringify(options), JSON.stringify(SCOPES.map((s) => ({ v: s.v, l: s.l }))));
-  assert.equal(PANES.users.scope, false);
+  /* The pane still HAS an App filter: the shell reads it off the URL, writes it
+     back and hands it to the other panes. Only the place it is drawn moved. */
+  assert.equal(PANES.users.scope, true, 'the shell was told this pane has no App filter, so it stops reading ?scope=');
+  assert.equal(PANES.users.scopeInPane, true);
   assert.equal(dom.doc.getElementById('filters'), null, 'the shell drew a filter bar over a pane that has its own');
+  assert.equal(dom.doc.querySelectorAll('.seg').length, 0, 'the shell drew an App segment beside the pane\'s own control');
+});
+
+/* Round 1, finding 1. On main `?scope=coaches` was read by the shell, which is
+   why a link from Analytics or a reload kept the App. The first version of this
+   pane told the registry it had no App filter, which turned that reading off,
+   so the same address searched every app. */
+const href = (qs) => HREF + qs;
+const emptyAnswers = [{ match: /\/lookup$/, data: lookupFixture((d) => { d.matches = []; d.matchCount = 0; }) }];
+const scopeBody = (dom) => dom.calls.find((c) => /\/lookup$/.test(c.endpoint)).body.scope;
+
+test('address: ?scope=coaches starts the App control on Coaches, and the lookup sends it', async () => {
+  const dom = await boot({ href: href('?scope=coaches'), answers: emptyAnswers });
+  assert.equal(field(dom, 'lookupScope').value, 'coaches', 'the control ignored the address it was opened with');
+  assert.equal(allText(buttons(dom.doc.querySelector('.u-find')).find((b) => /^Filters/.test(allText(b).trim()))).trim(),
+    'Filters · 1', 'the Filters count does not know an App is already chosen');
+  await lookUp(dom);
+  assert.equal(scopeBody(dom), 'coaches', 'a deep link to one App searched every app');
+});
+
+test('address: an address with no App, or one that is not an App, searches everything and says nothing', async () => {
+  for (const qs of ['', '?scope=aria', '?scope=']) {
+    const dom = await boot({ href: href(qs), answers: emptyAnswers });
+    assert.equal(field(dom, 'lookupScope').value, 'all', `${qs || 'no query'} did not fall back to All`);
+    await lookUp(dom);
+    assert.equal(scopeBody(dom), 'all');
+  }
+});
+
+test('address: picking an App writes it to the address, keeps the other parameters, and reaches the rail links', async () => {
+  const dom = await boot({ href: href('?range=7d'), answers: emptyAnswers });
+  const before = dom.window.history.entries.length;
+  field(dom, 'lookupScope').value = 'mobile';
+  field(dom, 'lookupScope').dispatch('change');
+  assert.equal(dom.window.history.entries.length, before + 1, 'a pick did not touch the address');
+  const written = dom.window.history.entries[dom.window.history.entries.length - 1];
+  assert.equal(new URL(written, ORIGIN).searchParams.get('scope'), 'mobile');
+  assert.equal(new URL(written, ORIGIN).pathname, '/ops/users.html');
+  assert.equal(dom.window.OpsPaneShell.filters().scope, 'mobile');
+  assert.equal(new URL(dom.window.OpsPaneShell.paneHref('analytics'), ORIGIN).searchParams.get('scope'), 'mobile',
+    'a link to another pane dropped the App picked here');
+
+  /* Back to All is a write too: a stale ?scope=mobile would re-narrow the
+     next reload. */
+  field(dom, 'lookupScope').value = 'all';
+  field(dom, 'lookupScope').dispatch('change');
+  const cleared = dom.window.history.entries[dom.window.history.entries.length - 1];
+  assert.equal(new URL(cleared, ORIGIN).searchParams.get('scope'), 'all');
+  await lookUp(dom);
+  assert.equal(scopeBody(dom), 'all');
+});
+
+test('address: the address never carries the account or the reason', async () => {
+  const dom = await boot({ href: href('?scope=coaches'), answers: [
+    { match: /\/lookup$/, data: lookupFixture() },
+    { match: /\/users\//, data: detailFixture() },
+  ] });
+  await lookUp(dom, 'person@example.invalid', 'SUP-4471');
+  field(dom, 'lookupScope').value = 'mobile';
+  field(dom, 'lookupScope').dispatch('change');
+  for (const entry of dom.window.history.entries) {
+    assert.ok(!/person|usr-2277|SUP-4471|example\.invalid/.test(String(entry)), 'the lookup leaked into the address: ' + entry);
+  }
+});
+
+test('address: an unchanged pick writes nothing to it', async () => {
+  const dom = await boot({ href: href('?scope=coaches'), answers: emptyAnswers });
+  const before = dom.window.history.entries.length;
+  field(dom, 'lookupScope').value = 'coaches';
+  field(dom, 'lookupScope').dispatch('change');
+  assert.equal(dom.window.history.entries.length, before, 'an unchanged App rewrote the address');
 });
 
 test('the narrowings reach the lookup, and an untouched one is not sent', async () => {

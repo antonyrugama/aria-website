@@ -205,7 +205,10 @@ a.u-link { padding: 0; }
   padding: 8px 0 6px;
 }
 .reveal-form .field { padding: 0 14px; min-height: 44px; border-radius: var(--r); }
-.reveal-form .field input { font-size: 16px; }
+/* The box fills the field, so the whole 44px is the target. Left at its own
+   line height it was a 24px control inside a 44px frame, and a tap on the
+   frame's padding focused nothing. */
+.reveal-form .field input { font-size: 16px; min-height: 44px; }
 .u-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .reveal-problem { font-size: 14px; color: var(--rose-ink); }
 .reveal-problem:empty { display: none; }

@@ -575,6 +575,7 @@ and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 | `definePane(id, render)` | register what a pane draws. `render(content, pane)` gets the pane's `<main>` and its registry entry, after parsing and after the session is confirmed |
 | `init()` | boot this page. Automatic on a page whose `<body data-pane>` names a registered pane |
 | `filters()` / `resetRange()` | the current selection; put the range back to the pane's default |
+| `setScope(scope)` | for a pane that draws its own App control (`scopeInPane`): set the App, write it to the address, tell the other listeners |
 | `paneFilters(nodes)` | the pane's own controls, in the shared filter bar, replacing any it put there before |
 | `paneHref(paneId)` | a link to another pane, carrying only the filters that pane has |
 | `setBadge(paneId, badge)` | a count beside every place the navigation names that pane, or `null` to remove it |
@@ -1740,10 +1741,19 @@ request and reply content is not shown here at any role. The one sentence on the
    lookup reads one account. App, State and Tier sit in a "Filters" disclosure under the search
    strip, and the link says how many are narrowed ("Filters · 2"). They are sent with the lookup
    exactly as before. Changing one clears any open reveal and asks for the search again rather
-   than re-running it, because a lookup is audited.
+   than re-running it, because a lookup is audited. Only where the App control is DRAWN moved:
+   the registry entry says `scope: true, scopeInPane: true`, so the shell still reads `?scope=`
+   (`/ops/users.html?scope=coaches` searches Coaches, as it does on main), writes a pick back
+   to the address through `setScope`, and carries the App on every link to this pane
+   (`paneHref('users')`). The account and the reason are never put in the address.
 3. **A single match opens itself.** The mock's "Matches" card is drawn only when the lookup
    returns more than one account, and nothing is selected until you pick one. The picker marks
-   the choice four ways: a wash, `aria-current`, `aria-pressed` and the word "Selected".
+   the choice four ways: a wash, `aria-current`, `aria-pressed` and the word "Selected". The one
+   exception is a result whose `matchCount` is larger than the rows sent: that draws the card
+   for a single row as well, with "1 of 9 accounts shown" and the warning, because the
+   contradiction does not depend on whether there is anything to pick. The account is still
+   opened. The reason typed at Search travels on the opened account's request
+   (`GET /api/ops/users/{reference}?reason=`), whether the account was opened for you or picked.
 4. **The avatar is one letter from the API's own mask, or a person glyph.** The mock shows two
    initials. Initials of a real name would need the real name, and this pane never derives
    anything from a value the API masked; the letter is drawn only when the Name field's own
@@ -2767,11 +2777,11 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 584
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 150
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 157
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Health data has no reveal control at all, and no row. Not a disabled" = line 21
-ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 118
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 122
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 660
 ```
 

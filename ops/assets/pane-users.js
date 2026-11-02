@@ -81,12 +81,21 @@
        deeper than the mock draws them, because the mock has no room for three
        selects and the API still honours every one.
 
-     GET /api/ops/users/{reference}
+     GET /api/ops/users/{reference}?reason=
        -> { data: { reference, kind, state, tier, memberSince, recorded,
                     summary{fields[]}, record{fields[], note},
                     activity{windowDays, events[]}, devices[],
                     billing{fields[]}, access{windowDays, entries[]},
                     supportActions{available[]} } }
+
+       reason      the reason the operator typed for the lookup this account
+                   came from, as it was when they pressed Search. The route
+                   records it on the access entry for opening the account and
+                   falls back to a generic line when it is absent, so every
+                   read carries the operator's own words rather than the
+                   fallback. It rides in the querystring because that is where
+                   the route reads it; the identifier never does, and the
+                   reference in the path is the coded one, never an address.
 
        kind        'coach' or 'athlete'
        recorded    as above, for the record this request wrote
@@ -474,6 +483,13 @@
     stateSelect = stateSel.select;
     tierSelect = tierSel.select;
 
+    /* The page may have been opened with an App already chosen: a link from
+       another pane carries it, and so does a reload. The shell has read the
+       querystring by now, and this control starts from what it read rather
+       than from "All", so the lookup that follows asks the question the link
+       asked. */
+    scopeSelect.value = shell.filters().scope || 'all';
+
     var panel = h('div', { className: 'u-narrow', id: 'lookupFilters', hidden: 'hidden' },
       [scopeSel.wrap, stateSel.wrap, tierSel.wrap]);
 
@@ -488,6 +504,13 @@
       else panel.setAttribute('hidden', 'hidden');
     });
 
+    /* The App choice is the one narrowing the rest of the dashboard shares, so
+       the shell is told: it is what keeps the address, the links to other
+       panes and a reload on the same App. */
+    scopeSelect.addEventListener('change', function () {
+      shell.setScope(scopeSelect.value || 'all');
+    });
+
     [scopeSelect, stateSelect, tierSelect].forEach(function (sel) {
       sel.addEventListener('change', function () {
         syncFiltersLabel();
@@ -498,6 +521,7 @@
     formError = h('p', { className: 'field-error', role: 'alert' });
     form.appendChild(h('div', { className: 'u-sub' }, [filtersButton, formError]));
     form.appendChild(panel);
+    syncFiltersLabel();
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
@@ -585,32 +609,42 @@
     }
   }
 
+  /* The count and the rows are two numbers for the same thing. Where the count
+     is the larger, the API has said it matched accounts it did not send, which
+     is the "no bulk listing" rule breached without anybody being told unless
+     the page says so. Answers the two numbers, or null when they agree or the
+     count was not a number. Asked of every result, whether or not it needs a
+     picker: one row beside a count of nine is the same contradiction. */
+  function countShortfall(data) {
+    var rows = (data.matches || []).length;
+    var claimed = typeof data.matchCount === 'number' && isFinite(data.matchCount)
+      ? data.matchCount : null;
+    return claimed !== null && claimed > rows ? { rows: rows, claimed: claimed } : null;
+  }
+
   function matchesCard(data, onPick, selectedRef) {
     var box = shell.card();
     var rows = (data.matches || []).length;
-    /* The count and the rows are two numbers for the same thing, so the header
-       states the one that is on screen. A server that ever capped the array
-       while leaving the count whole would otherwise have this header name
-       accounts the operator cannot see, which is the "no bulk listing" rule
-       breached without anybody being told. Saying both is the honest reading
-       of a payload that contradicts itself. */
-    var claimed = typeof data.matchCount === 'number' && isFinite(data.matchCount)
-      ? data.matchCount : null;
-    var short = claimed !== null && claimed > rows;
+    /* The header states the number that is on screen, and the note beside it
+       says the other one. A server that ever capped the array while leaving
+       the count whole would otherwise have this header name accounts the
+       operator cannot see. Saying both is the honest reading of a payload that
+       contradicts itself. */
+    var gap = countShortfall(data);
 
     box.appendChild(shell.cardHead(
       'Matches',
       null,
-      [h('span', { className: 'u-win', text: short
-        ? rows + ' of ' + plural(claimed, 'account')
+      [h('span', { className: 'u-win', text: gap
+        ? gap.rows + ' of ' + plural(gap.claimed, 'account') + ' shown'
         : plural(rows, 'account') })]
     ));
 
-    if (short) {
+    if (gap) {
       var capped = h('div', { className: 'note note-warn' });
       capped.appendChild(icon('warn'));
       capped.appendChild(h('div', {
-        text: 'The API says ' + plural(claimed, 'account') + ' matched but sent ' + rows +
+        text: 'The API says ' + plural(gap.claimed, 'account') + ' matched but sent ' + gap.rows +
           '. Narrow the account.'
       }));
       box.appendChild(h('div', { className: 'card-body' }, [capped]));
@@ -1359,6 +1393,7 @@
   var resultRegion = null;
   var lastResult = null;
   var lastIdentifier = '';
+  var lastReason = '';
   var selectedRef = null;
   var seq = 0;
   /* Whether a lookup has been issued since the last time the result was
@@ -1410,6 +1445,11 @@
     clearReveals();
     selectedRef = null;
     lastIdentifier = identifier;
+    /* Kept as it was typed when Search was pressed, not read back from the
+       field later: the operator may edit the box before they pick an account,
+       and the record of opening it should carry the reason the lookup was
+       made under. */
+    lastReason = reason;
 
     var mine = ++seq;
     looked = true;
@@ -1461,8 +1501,13 @@
     var notice = recordingNotice(lastResult.recorded, 'this lookup');
     if (notice) stack.appendChild(notice);
 
-    /* One match is not a choice, so it is opened rather than offered. */
-    if (matches.length > 1) stack.appendChild(matchesCard(lastResult, selectAccount, selectedRef));
+    /* One match is not a choice, so it is opened rather than offered. The card
+       is still drawn for a result whose count disagrees with its rows, because
+       that warning is not about whether there is anything to pick. */
+    var gap = countShortfall(lastResult);
+    if (matches.length > 1 || gap) {
+      stack.appendChild(matchesCard(lastResult, selectAccount, selectedRef));
+    }
 
     stack.appendChild(h('div', { className: 'stack', id: 'accountColumn' }, [
       matches.length > 1 ? stateCard('person', 'Pick an account', []) : loadingCard()
@@ -1471,7 +1516,9 @@
     settle(lastResult.recorded);
     landFocus();
 
-    shell.announce(matches.length === 1 ? '1 account matched' : matches.length + ' accounts matched');
+    shell.announce(gap
+      ? gap.rows + ' of ' + plural(gap.claimed, 'account') + ' shown'
+      : matches.length === 1 ? '1 account matched' : matches.length + ' accounts matched');
 
     if (matches.length === 1) selectAccount(matches[0].reference);
   }
@@ -1493,7 +1540,9 @@
     column.appendChild(loadingCard());
 
     var mine = ++seq;
-    session.call('/api/ops/users/' + encodeURIComponent(reference)).then(function (payload) {
+    session.call('/api/ops/users/' + encodeURIComponent(reference), {
+      query: { reason: lastReason }
+    }).then(function (payload) {
       if (mine !== seq) return;
       var detail = (payload && payload.data) || {};
       detail.reference = detail.reference || reference;

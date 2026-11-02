@@ -183,17 +183,52 @@ const DRIVE = `(async () => {
 })()`;
 
 /* Open what a phone has to be able to reach: the filters and the reveal form.
-   Clicked, never forced, so the controls drawn are the ones a person gets. */
+   Clicked, never forced, so the controls drawn are the ones a person gets.
+
+   Round 1, finding 2. A `.reveal-form` is in the DOM the whole time, under
+   `.hidden`, so asking whether one exists proved nothing and the form was never
+   measured: a rule that made it a thousand pixels wide still passed. What is
+   clicked is the Reveal control itself, found by what it is called and by being
+   on screen, and what is reported is whether the form that control belongs to
+   is VISIBLE (it paints, and so does the box that takes the reason) and how
+   many of its controls the measurement can now see. */
 const OPEN_EVERYTHING = `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const visible = (el) => {
+    if (!el) return false;
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 1 && r.height > 1;
+  };
   const filters = document.querySelector('.u-link[aria-controls="lookupFilters"]');
   if (filters && filters.getAttribute('aria-expanded') !== 'true') filters.click();
-  const reveal = document.querySelector('.u-act:not([disabled])');
-  if (reveal && !document.querySelector('.reveal-form')) reveal.click();
+
+  /* The page is the same one at every width, so a form opened at the last width
+     is still open. Cancelled first, so each width starts from a closed form and
+     the first Reveal control is the one clicked every time. */
+  for (const cancel of document.querySelectorAll('.reveal-form .u-no')) {
+    if (visible(cancel)) cancel.click();
+  }
+  await sleep(100);
+
+  const control = [...document.querySelectorAll('button.u-act')]
+    .find((b) => /^Reveal /.test(b.getAttribute('aria-label') || '') && !b.disabled && visible(b));
+  const form = control ? control.parentElement.querySelector('.reveal-form') : null;
+  const formBefore = visible(form);
+  if (control) control.click();
   await sleep(300);
+
+  const inForm = form ? [...form.querySelectorAll('input, button')].filter(visible) : [];
   return JSON.stringify({
     filters: !!filters && filters.getAttribute('aria-expanded') === 'true',
-    reveal: !!document.querySelector('.reveal-form')
+    reveal: {
+      control: !!control,
+      formBefore,
+      form: visible(form),
+      input: visible(form && form.querySelector('input')),
+      controls: inForm.length,
+      focused: !!form && form.contains(document.activeElement)
+    }
   });
 })()`;
 
@@ -484,8 +519,19 @@ test('both themes reached a picked account and every probe read something', () =
     }
     assert.deepEqual(Object.keys(c.phones).map(Number), PHONES);
     for (const width of PHONES) {
-      assert.deepEqual(c.phones[width].opened, { filters: true, reveal: true },
-        `[${theme}] ${width}px: the filters and the reveal form were not both open`);
+      const { opened } = c.phones[width];
+      assert.equal(opened.filters, true, `[${theme}] ${width}px: the filters were not open`);
+      assert.ok(opened.reveal.control, `[${theme}] ${width}px: no Reveal control was on screen to click`);
+      assert.equal(opened.reveal.formBefore, false,
+        `[${theme}] ${width}px: the reason form was already showing before Reveal was clicked, so the click proves nothing`);
+      assert.equal(opened.reveal.form, true,
+        `[${theme}] ${width}px: clicking Reveal did not show the reason form`);
+      assert.equal(opened.reveal.input, true,
+        `[${theme}] ${width}px: the reason form is showing but its box is not`);
+      assert.ok(opened.reveal.controls >= 3,
+        `[${theme}] ${width}px: only ${opened.reveal.controls} of the reason form's box, Show and Cancel are on screen`);
+      assert.equal(opened.reveal.focused, true,
+        `[${theme}] ${width}px: the cursor is not in the reason form it just opened`);
       assert.ok(c.phones[width].controls >= 8, `[${theme}] ${width}px measured ${c.phones[width].controls} controls`);
       assert.ok(c.phones[width].texts >= 30, `[${theme}] ${width}px measured ${c.phones[width].texts} text runs`);
       assert.equal(c.phones[width].vw, width, `[${theme}] the viewport is ${c.phones[width].vw}, not ${width}`);
