@@ -13,52 +13,46 @@ colour. This is traversal.
 
 | | |
 |---|---|
-| Panes walked | 1, at desktop 1440×900 — **1 walks** |
-| Tab stops recorded | 81 |
-| Interactive controls found | 79 |
+| Panes walked | 10, at desktop 1440×900 and 375px 375×812 — **20 walks** |
+| Tab stops recorded | 497 |
+| Interactive controls found | 450 |
 | Controls never reached by Tab | **0** |
 | Focus traps | **0** |
-| Walks whose Shift+Tab exactly retraces Tab | 0/1, **79 stops retraced** over 97 Shift+Tab presses |
+| Walks whose Shift+Tab exactly retraces Tab | 20/20, **457 stops retraced** over 475 Shift+Tab presses |
 | Walks that made no Shift+Tab press at all (scored neither way) | **0** |
-| Walks where the retrace's forward leg landed where the first walk said it would | 0/1 |
+| Walks where the retrace's forward leg landed where the first walk said it would | 20/20 |
 | Stops that jump backwards in reading order | **0** |
-| Walks where the skip link is the first stop | 1/1 |
-| Walks where it lands on `main#content` | 1/1 |
-| Walks where focus survives the theme re-render | 1/1 |
-| Community safety populated/decided probes | 0, 0 reports checked as literal text; 0 post-decision controls reached through the final control; focus returned to enabled Refresh |
+| Walks where the skip link is the first stop | 20/20 |
+| Walks where it lands on `main#content` | 20/20 |
+| Walks where focus survives the theme re-render | 20/20 |
+| Community safety populated/decided probes | 2, 6 reports checked as literal text; 29 post-decision controls reached through the final control; focus returned to enabled Refresh |
 | `aria-label` attributes missing their visible text (WCAG 2.5.3) | 0 |
 | Duplicate `id` attributes | 0 |
-| Modal dialogs probed | 0, 0 clean on all six properties |
+| Modal dialogs probed | 2, 2 clean on all six properties |
 | **Scroll containers never declared focusable** | **0** |
 | **Elements marked `hidden` that the stylesheet still paints** | **0** |
 
 ## Findings
 
-_Scoped run: only part of the dashboard was walked, and the filed-issue reconciliation is skipped. This document is not the audit._
-
-### F1. Shift+Tab does not retrace the Tab order
-
-On **evals/desktop** the reverse walk diverges at retraced stop 0: Shift+Tab landed on `k520` where the forward order says `k594`. 79 stops were retraced over 97 presses against 81 forward stops.
-
-Seen on: evals/desktop.
-
-**Not filed.**
+_None._
 
 ## What is clean, and how that is known
 
-- **No focus traps.** 1 walks, 81 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
-- **Nothing unreachable.** 79 enabled, visible, interactive controls; 0 were not reached by Tab.
-- **1 stops landed on something this tool does not call interactive**, and 0 of 1 walks ended by wrapping back to their first stop (1 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
-- **Tab order is reading order** on all 1 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
-- **Shift+Tab is the exact inverse of Tab** on 0 of 1 walks, over the WHOLE walk rather than a prefix of it: 79 stops retraced against 81 forward stops, which took 97 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
-- **The skip link works.** It is the first stop on 1/1 walks and Enter lands focus on `main#content` on 1/1.
-- **Focus survives a re-render** on 1/1 walks: the theme toggle rebuilds the pane and focus stays on the button that did it.
+- **No focus traps.** 20 walks, 497 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
+- **Nothing unreachable.** 450 enabled, visible, interactive controls; 0 were not reached by Tab.
+- **27 stops landed on something this tool does not call interactive**, and 3 of 20 walks ended by wrapping back to their first stop (17 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
+- **Tab order is reading order** on all 20 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
+- **Shift+Tab is the exact inverse of Tab** on 20 of 20 walks, over the WHOLE walk rather than a prefix of it: 457 stops retraced against 497 forward stops, which took 475 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
+- **The skip link works.** It is the first stop on 20/20 walks and Enter lands focus on `main#content` on 20/20.
+- **Focus survives a re-render** on 20/20 walks: the theme toggle rebuilds the pane and focus stays on the button that did it.
 - **No duplicate ids** (0), and **no `aria-label` that drops its visible text** (0). That is the attribute, not the computed accessible name — see NOT COVERED.
 
 ### The modal dialog
 
 | dialog | focus enters | holds Tab | holds Shift+Tab | wraps | Escape closes | focus restored |
 |---|---|---|---|---|---|---|
+| settings: "Revoke access for owner@ops.invalid" | yes | yes | yes | yes | yes | yes |
+| settings: "Revoke session ses_operator for operator@ops.invalid" | yes | yes | yes | yes | yes | yes |
 
 Each was opened **by Tab and Enter**, never by `element.focus()`: a dialog opened from a focus
 the operator could not have had is a dialog nobody can open. Forward containment is pressed one
@@ -97,8 +91,8 @@ it has controls is a coincidence, not a trap.
   widget is untested. If one is added this tool will report its single stop and say nothing
   about whether the arrows work.
 - **The rail drawer.** `ops/assets/operate.js` builds a drawer as well as the confirmation
-  dialog, but nothing in the 1 panes opens one, so it is unmeasured. The
-  0 dialogs in the table above are the only overlays reachable from the
+  dialog, but nothing in the 10 panes opens one, so it is unmeasured. The
+  2 dialogs in the table above are the only overlays reachable from the
   keyboard in this dashboard.
 - **Browsers other than the one that ran.** Everything above is Chrome. No current finding
   depends on Chrome's scroll-container focus exception.
@@ -149,8 +143,8 @@ produced plausible output that a reader would have believed.
   Scoring it on the match would have been a coin flip with a decimal point. It is scored on
   the press count, which was 3 in six unmutated runs across both shapes and 4 without the fix.
 
-The mutation battery exercises the finding kinds above and the instrument rules named
-in its generated table. Some clean rows are only live measurements. Rows with no executed
-killing experiment at all are named under NOT COVERED; the table remains the exact coverage
-record for everything else.
+The mutation battery keeps the historical fixes and the instrument rules named in its
+generated table under test. Some clean rows are only live measurements. Rows with no
+executed killing experiment at all are named under NOT COVERED; the table remains the exact
+coverage record for everything else.
 
