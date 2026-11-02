@@ -1060,7 +1060,7 @@ svg { display: block; }
   .topbar-end > .filter-label, .topbar-end > .seg { grid-column: 1 / -1; }
   .top-brand { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 3px; grid-area: brand; }
   .top-brand .brand-name { font-size: 24px; }
-  .top-brand .brand-sub { display: none; }
+  .top-brand .brand-sub { flex-basis: 100%; margin-top: 2px; font-size: 12px; }
   .page-head { grid-area: head; }
   .page-title { font-size: 32px; }
   .lookup-open {
