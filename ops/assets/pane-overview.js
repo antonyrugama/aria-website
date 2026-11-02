@@ -277,10 +277,18 @@
       return found.length ? found[0] : null;
     }
 
+    /* What each section is called when its read is said to have come back. */
+    var NAMES = {
+      health: 'Health', live: 'Happening now', people: 'Active people', charts: 'Daily lines',
+      moments: 'This week', problems: 'Problems', jobs: 'Happening now', ai: 'Aria AI',
+      spend: 'Cloud spend'
+    };
+
     /* Pressing Try again redraws the section, which destroys the button.
        Focus falls to <body> unless it is put somewhere on purpose, and the
        section's own heading is the node that exists whether the retry worked
-       or not. */
+       or not. What is spoken is the outcome: the section came back, or the
+       same failure is still there. */
     function landOn(sectionId) {
       var panel = shownPanel();
       if (!panel) return;
@@ -290,10 +298,17 @@
       head.setAttribute('tabindex', '-1');
       head.focus();
       var stuck = (host || panel).querySelectorAll('[data-retry]');
-      var title = String(head.textContent || '');
-      S.announce(stuck.length
-        ? title + ': ' + String(stuck[0].getAttribute('data-retry') || '') + '.'
-        : title + ' was read again.');
+      var message;
+      if (!host && !first(panel, '[id="today-health"]')) {
+        message = String(head.textContent || '') + ' again.';
+      } else if (!stuck.length) {
+        message = (host ? NAMES[sectionId] : 'Today') + ' was read again.';
+      } else if (host) {
+        message = String(stuck[0].getAttribute('data-retry') || '') + ' again.';
+      } else {
+        message = 'Today was read again. ' + fmt.plural(stuck.length, 'part') + ' could not be read.';
+      }
+      S.announce(message);
     }
 
     /* Re-read these reads and nothing else, then redraw the sections that
@@ -827,7 +842,9 @@
     /* The chart's accessible name, and the only place its data is spoken: a
        role="img" subtree is presentational. */
     function chartName(opts) {
-      var sentence = function (series, who) {
+      /* `back` is how many days earlier than the plotted week the series
+         ends, so the dashed week names its own last day and not this week's. */
+      var sentence = function (series, who, back) {
         var seen = series.filter(function (v) { return v !== null; });
         if (!seen.length) return who + ': no reading on any of ' + fmt.plural(series.length, 'day') + '.';
         var lo = Math.min.apply(null, seen);
@@ -835,14 +852,14 @@
         var lastAt = -1;
         series.forEach(function (v, i) { if (v !== null) lastAt = i; });
         var day = opts.end
-          ? ' on ' + monthDay(new Date(opts.end.getTime() - (series.length - lastAt) * DAY_MS))
+          ? ' on ' + monthDay(new Date(opts.end.getTime() - (series.length - lastAt + back) * DAY_MS))
           : '';
         return who + ': ' + fmt.int(seen.length) + ' of ' + fmt.plural(series.length, 'day') +
           ' with a reading, ' + (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
           ', ending ' + fmt.int(series[lastAt]) + day + '.';
       };
-      var name = opts.label + ', ' + sentence(opts.values, 'this week');
-      if (opts.ghost) name += ' ' + sentence(opts.ghost, 'the week before, dashed');
+      var name = opts.label + ', ' + sentence(opts.values, 'this week', 0);
+      if (opts.ghost) name += ' ' + sentence(opts.ghost, 'the week before, dashed', opts.values.length);
       return name;
     }
 

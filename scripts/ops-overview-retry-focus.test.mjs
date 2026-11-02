@@ -1,82 +1,55 @@
-/* Two defects in the Overview pane's retry controls.
+/* The retry, focus and announcement behaviour of the Today page.
 
-   Stadiora/Aria#10771 — the rules read was the one read with no way to ask
-   again. Its failure was reported honestly (the ribbon says `rules unread`,
-   the queue card says whether the checks are running could not be read) and
-   then the operator was stranded: nothing to press. Reloading the page was the
-   only way to retry, which also re-runs the two reads that had already worked.
+   Every section of Today draws from its own reads and offers its own Try
+   again, because the halves of this page come from different tables and an
+   operator who cannot see spend can still act on a critical problem. Pressing
+   one re-reads only the read that failed and redraws only the sections that
+   draw from it, which DESTROYS the button that was pressed. Two things follow
+   from that and are what this file binds:
 
-   Stadiora/Aria#10784 — pressing any Try again re-renders the panel, which
-   destroys the button that was pressed. Focus fell back to the document: the
-   keyboard operator is thrown to the top of the page by the control they just
-   used, and a screen-reader operator hears nothing at all about what happened
-   to the read.
+     - Focus falls to <body> unless the pane puts it somewhere on purpose: a
+       keyboard operator is thrown to the top of the page by the control they
+       just used. It lands on the heading of the section that was re-read,
+       made focusable for the purpose, whether the retry worked or not.
+
+     - A screen-reader operator hears nothing about what happened to the read
+       unless it is said, so the outcome is announced: the section came back,
+       or the same failure is still there.
 
    How these bind behaviour rather than sentences:
 
-     - Focus is asserted as CONTAINMENT in the panel the operator can see, not
-       as `activeElement !== body`. The harness leaves activeElement pointing
-       at the detached button after a re-render, which is not what a browser
-       does — but a detached node is not inside the shown panel in either, so
-       the containment question has the same answer in both and the pre-fix
-       code fails it.
+     - Focus is asserted as CONTAINMENT in the section host, inside the panel
+       the operator can see, not as `activeElement !== body`. The harness leaves
+       activeElement pointing at the detached button after a re-render, which is
+       not what a browser does, but a detached node is not inside the shown
+       panel in either, so the containment question has the same answer in
+       both.
 
-     - "Exactly one" counts are counts of rendered nodes carrying a value
-       resolved from the DOM. Nothing here greps the source.
+     - Every retry this page can draw is pressed IN THIS FILE and each one's
+       read is counted through `dom.calls`, so a button wired to a no-op fails.
 
-     - All four retries this pane can draw are pressed IN THIS FILE, and each
-       one's read is counted through `dom.calls`, so a button wired to a no-op
-       fails. The rules one, the figures one, the problems one, and the shell's
-       whole-pane card — which this pane does not build but does supply the
-       action for, and whose button carries none of the attributes the others
-       do. `boot()` hands back the answer table live, so a test can repair a
-       read between loads and watch the section recover.
+     - Two batches of reads can be held in flight at once and released in an
+       order the test chooses (`dom.hold` / `dom.release`). Which of two
+       overlapping retries is allowed to move focus and draw is decided by that
+       order, not by a sleep, so the answer is the same on a laptop and on the
+       runner.
 
-     - Two reads can be held in flight at once and released in an order the
-       test chooses (`dom.hold` / `dom.release`). Which of two overlapping
-       retries is allowed to move focus is decided by that order, not by a
-       sleep, so the answer is the same on a laptop and on the runner.
-
-     - Announcements are asserted two ways, on purpose. The first pair
-       composes the expected sentence from the band heading and the failure
-       heading as they were RENDERED, resolved through the button's own
-       aria-labelledby — that is the assertion that would catch a heading
-       changing. The tests about WHICH failure is named instead compare
-       against the headline as a stated constant, because the question there
-       is selection among two, and an expectation read out of the rendered
-       band would move with the selection it is checking.
+     - The button's name and the announcement are asserted against the heading
+       they were composed from, resolved through the button's own
+       aria-labelledby, so a heading that changes is caught.
 
    NOT COVERED here, deliberately:
 
-     - What a real browser does to focus when a focused element is removed.
-       The harness has no focus manager. What is asserted instead is where
-       this code PUTS focus, which is the half this PR changes; the browser's
-       half is the same in both directions and is why the assertion is
-       containment rather than identity.
-
-     - The accessible name of a retry. That is bound for the sibling pane by
-       `scripts/ops-alerts-severity-retry.test.mjs`, whose `nameText()` models
-       the two AccName rules that matter here; this file asserts only that the
-       `data-retry` value and the name reference the SAME heading node, which
-       is the invariant the announcement depends on.
+     - What a real browser does to focus when a focused element is removed. The
+       harness has no focus manager. What is asserted is where this code PUTS
+       focus, which is the half this page owns.
 
      - Whether the announcement is spoken. A `role="status"` region's text is
        what a test can see; the speaking is the screen reader's.
 
-     - The shell's whole-pane failure CARD, as markup. What it draws is
-       `shell-pane-v2.js`'s; what pressing its button does is this pane's, and
-       that half is pressed here in all three of its states — every read down,
-       render() itself throwing, and recovery from each. Its button carries
-       neither `data-retry` nor `aria-labelledby`, so `retriesIn()` cannot see
-       it and the tests that reach it find it by its word instead. Naming it
-       would be a change to the shell.
-
-     - What a browser does with a rapid double-press. The race test decides
-       the completion order itself; whether Chrome would deliver the second
-       Enter before the loading state replaces the button is the browser's
-       question, and round 2 of this PR's review measured that it sometimes
-       does. What is bound here is the consequence: an obsolete read must not
-       move focus. */
+     - What a browser does with a rapid double-press. The race test decides the
+       completion order itself; what is bound is the consequence, that an
+       obsolete read must not move focus or draw over a newer one. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -94,73 +67,90 @@ const MODEL_SRC = read('assets/alerts-model.js');
 const PANE_SRC = read('assets/pane-overview.js');
 
 const TOKENS = {
-  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
-  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
-  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+  '--cyan': '#00E5FF', '--violet': '#8B5CF6', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#F87171', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#F5F5F7',
 };
 
 /* ------------------------------------------------------------- fixtures */
 
-const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
+const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
 
-function summaryFixture() {
-  return {
-    generatedAt: '2026-09-20T06:00:00.000Z',
-    consent: { basis: 'operational', detail: 'Operational data only.' },
+const GOOD = {
+  summary: () => ({
+    generatedAt: '2026-11-01T09:41:00.000Z',
     people: {
       availability: { state: 'ready' },
       platform: { active: 1102, previousActive: 980 },
-      apps: [
-        { key: 'aria', label: 'Aria', active: 870, tone: 's1' },
-        { key: 'ariaxii', label: 'Aria XII', active: 412, tone: 's2' },
-      ],
-      window: { days: 7 },
-      comparison: { days: 7, label: 'the 7 days before' },
-      reportingFloor: 50,
-      environment: 'production',
+      apps: [{ app: 'mobile', label: 'Mobile', active: 870 }],
+      window: { start: '2026-10-25T00:00:00.000Z', endExclusive: '2026-11-01T00:00:00.000Z', days: 7 },
+      comparison: { days: 7 },
     },
     aiRuns: {
-      availability: { state: 'ready' },
-      window: { days: 7 }, runs: 4210, previous: { runs: 3900 },
+      availability: { state: 'ready' }, runs: 4820, previous: { runs: 4410, daysReported: 7 },
+      daysMissing: [], daysReported: 7, window: { days: 7 },
     },
-    cost: {
-      availability: { state: 'ready' },
-      window: { days: 7 }, total: { usd: 128.4 },
-      comparison: { changeBasisPoints: -420 },
-    },
-    release: {
-      availability: { state: 'ready' },
-      version: '2.4.1', releasedAt: hoursAgo(50),
-    },
-    activity: { days: [] },
-    omissions: [],
-  };
-}
+  }),
+  usage: () => ({
+    window: { endExclusive: '2026-11-01T00:00:00.000Z', daysCovered: 7, daysMissingRollups: [] },
+    availability: { state: 'ready' },
+    apps: [{ app: 'mobile', label: 'Mobile', trend: { values: [3, 4, 5, 6, 7, 8, 9] } }],
+  }),
+  growth: () => ({ payingSubscribers: { current: { count: 3 }, weeks: [] } }),
+  problems: () => ({ problems: [], total: 0 }),
+  rules: () => ({
+    rules: [{ key: 'q', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok' }],
+    channels: [{ key: 'teams', configured: true }],
+  }),
+  jobs: () => ({
+    generatedAt: '2026-11-01T09:40:00.000Z',
+    queue: { open: 3, byState: [{ state: 'running', jobs: 1 }, { state: 'queued', jobs: 2 }] },
+    attention: { completeness: 'whole_queue', stuck: [] },
+  }),
+  runs: () => ({
+    window: { range: '24h' }, coverage: { state: 'ready', coversWindow: true },
+    summary: { completed: 9, failed: 1 },
+  }),
+  costs: () => ({
+    availability: { state: 'ready' }, currency: 'USD',
+    period: { start: '2026-10-01T00:00:00.000Z', actualThrough: '2026-10-31T00:00:00.000Z', billedDays: 3 },
+    total: { micros: 300_000_000 },
+    daily: { series: [{ values: [90_000_000, 100_000_000, 110_000_000] }] },
+  }),
+};
 
-function problemsFixture() {
-  return {
-    problems: [{
-      id: 'p1', reference: 'PRB-1', title: 'Checkout latency', severity: 'critical',
-      status: 'open', category: 'performance', firedAt: hoursAgo(3), workPane: 'alerts',
-    }],
-  };
-}
+const URL_OF = {
+  summary: '/api/ops/summary', usage: '/api/ops/usage', growth: '/api/ops/growth',
+  problems: '/api/ops/alerts/problems', rules: '/api/ops/alerts/rules',
+  jobs: '/api/ops/jobs', runs: '/api/ops/runs', costs: '/api/ops/costs',
+};
 
-function rulesFixture() {
-  return {
-    rules: [{
-      id: 'r1', name: 'Checkout latency', enabled: true, thresholdUnit: 'ms',
-      lastEvaluatedAt: hoursAgo(1), lastEvaluationStatus: 'ok', lastFiredAt: hoursAgo(3),
-    }],
-    summary: { armed: 1, total: 1 },
-    channels: [{ key: 'email', configured: true }],
-  };
-}
-
-/* The three reads' error messages are distinct on purpose: every "the right
-   failure reached the screen" assertion below would pass on the wrong one if
-   they read alike. */
+/* The failures' messages are distinct on purpose: every "the right failure
+   reached the screen" assertion below would pass on the wrong one if they
+   read alike. */
 const boom = (what) => Object.assign(new Error(what + ' is down'), { status: 503 });
+
+/* The failure each read can make on screen, what it says, where it lives, what
+   is said when it comes back, and what repairs it. This table is the claim
+   under test: a failure that is not here has no way to be asked again. */
+const CASES = [
+  { name: 'problems', section: 'health', headline: 'Problems unread', spoken: 'Health',
+    reads: ['problems'], fail: { problems: boom('problems') } },
+  { name: 'rules', section: 'health', headline: 'Checks unread', spoken: 'Health',
+    reads: ['rules'], fail: { rules: boom('rules') } },
+  { name: 'summary, in the people figure', section: 'people', headline: 'Active people could not be read',
+    spoken: 'Active people', reads: ['summary'], fail: { summary: boom('summary') } },
+  { name: 'summary, in the AI tile', section: 'ai', headline: 'AI runs could not be read',
+    spoken: 'Aria AI', reads: ['summary'], fail: { summary: boom('summary') } },
+  { name: 'usage', section: 'charts', headline: 'The daily lines could not be read',
+    spoken: 'Daily lines', reads: ['usage'], fail: { usage: boom('usage') } },
+  { name: 'jobs', section: 'jobs', headline: 'Jobs could not be read',
+    spoken: 'Happening now', reads: ['jobs'], fail: { jobs: boom('jobs') } },
+  { name: 'runs', section: 'ai', headline: 'Last 24h could not be read',
+    spoken: 'Aria AI', reads: ['runs'], fail: { runs: boom('runs') } },
+  { name: 'costs', section: 'spend', headline: 'Cloud spend could not be read',
+    spoken: 'Cloud spend', reads: ['costs'], fail: { costs: boom('costs') } },
+];
 
 /* --------------------------------------------------------------- booting */
 
@@ -177,30 +167,27 @@ function buildPage(dom, body) {
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
   el(body, 'main', { class: 'gate gate-failed gate-center', id: 'gateFailed', tabindex: '-1' });
   const appGate = el(body, 'div', { class: 'gate gate-app' });
-  const app = el(appGate, 'div', { id: 'app' });
-  const rail = el(app, 'nav', { id: 'rail' });
-  el(rail, 'a', { class: 'nav-item', href: 'alerts.html' }).textContent = 'Problems';
+  el(appGate, 'div', { id: 'app' });
 }
 
-async function boot(options) {
-  const opts = options || {};
-  const answers = {
-    '/api/ops/summary': opts.summary === undefined ? summaryFixture() : opts.summary,
-    '/api/ops/alerts/problems': opts.problems === undefined ? problemsFixture() : opts.problems,
-    '/api/ops/alerts/rules': opts.rules === undefined ? rulesFixture() : opts.rules,
-  };
-
+/* `failing` replaces the named reads' answers with their failure. The answer
+   table is handed back live, so a test can repair a read between loads and
+   watch the section recover. */
+async function boot(failing) {
+  const answers = {};
+  for (const key of Object.keys(URL_OF)) {
+    answers[URL_OF[key]] = (failing && failing[key]) || GOOD[key]();
+  }
   const calls = {};
   const settle = async (n) => {
     for (let i = 0; i < (n || 12); i += 1) await new Promise((r) => setImmediate(r));
   };
 
-  /* Reads that can be held and released in an order the test chooses.
-     Two presses in quick succession are two batches in flight at once, and
-     which one lands first is the whole question — so it has to be decided
-     deliberately rather than by a sleep. Held answers are read at RELEASE
-     time, the way a server answers late, so a test can repair a read between
-     the press and the reply. */
+  /* Reads that can be held and released in an order the test chooses. Two
+     presses in quick succession are two batches in flight at once, and which
+     one lands first is the whole question, so it is decided deliberately.
+     Held answers are read at RELEASE time, the way a server answers late, so a
+     test can repair or break a read between the press and the reply. */
   const held = new Set();
   const waiting = [];
 
@@ -210,6 +197,7 @@ async function boot(options) {
   dom.doc.body = body;
   buildPage(dom, body);
 
+  const batchOf = (endpoint) => waiting.filter((w) => w.endpoint === endpoint).length;
   dom.window.OpsTheme = { current: () => 'dark', toggle() {} };
   dom.window.OpsSession = {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
@@ -241,13 +229,6 @@ async function boot(options) {
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
 
   await settle();
-  /* Which round of reads a held call belongs to: the nth time this endpoint
-     has been asked while held. Batch 0 is the first press, batch 1 the
-     second, and a test releases them by number rather than by position in a
-     queue that interleaves three endpoints. */
-  function batchOf(endpoint) {
-    return waiting.filter((w) => w.endpoint === endpoint).length;
-  }
   const hold = (...endpoints) => endpoints.forEach((e) => held.add(e));
   const release = async (batch) => {
     const mine = waiting.filter((w) => w.batch === batch);
@@ -258,15 +239,19 @@ async function boot(options) {
     });
     await settle(20);
   };
-  return Object.assign(dom, { answers, calls, settle, hold, release, waiting });
+  const repair = (...keys) => keys.forEach((k) => { answers[URL_OF[k]] = GOOD[k](); });
+  const breakAgain = (...keys) => keys.forEach((k) => { answers[URL_OF[k]] = boom(k); });
+  return Object.assign(dom, { answers, calls, settle, hold, release, waiting, repair, breakAgain });
 }
 
 /* ---------------------------------------------------------- what is drawn */
 
+const classesOf = (n) => String(n.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+
 /* Whichever of the shell's three panels is the one showing. They all sit in
-   #content at once and only data-shown says which the operator sees, so a
-   test that reads the live panel unconditionally reads a hidden one for an
-   empty render. */
+   #content at once and only data-shown says which the operator sees, so a test
+   that reads one unconditionally reads a hidden one for a render that went
+   elsewhere. */
 function shownPanel(dom) {
   const boxes = dom.doc.getElementById('content').querySelectorAll('[data-state]')
     .filter((n) => n.getAttribute('data-shown') !== null);
@@ -276,34 +261,35 @@ function shownPanel(dom) {
   return boxes[0];
 }
 
-const retriesIn = (root) => findAll(root, (n) => n.getAttribute
-  && n.getAttribute('data-retry') !== null);
+const retriesIn = (root) => findAll(root, (n) => n.getAttribute && n.getAttribute('data-retry') !== null);
+const retryFor = (dom, headline) => retriesIn(shownPanel(dom)).filter((n) => n.getAttribute('data-retry') === headline);
+const host = (dom, id) => dom.doc.getElementById('today-' + id);
+
+const inside = (node, root) => {
+  for (let n = node; n; n = n.parentNode) if (n === root) return true;
+  return false;
+};
 
 /* The heading a retry is named after, reached the way a browser reaches it:
    through the second id in aria-labelledby, resolved against the document.
    Never through data-retry, which is the value under test in one of these. */
 function namingHeading(dom, button) {
-  const ids = String(button.getAttribute('aria-labelledby') || '').split(/\s+/)
-    .filter(Boolean);
+  const ids = String(button.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
   assert.equal(ids.length, 2,
     'a retry should be named by its own word plus one heading, got: ' + ids.join(','));
+  assert.equal(ids[0], button.getAttribute('id'), 'a retry is not part of its own name');
   const head = dom.doc.getElementById(ids[1]);
   assert.ok(head, 'aria-labelledby points at ' + ids[1] + ', which is not in the document');
   return head;
 }
 
-/* What the shell's polite region is currently saying. The toast host also
-   uses role=status, so this narrows on the live region's own class. */
+/* What the shell's polite region is currently saying. The toast host also uses
+   role=status, so this narrows on the live region's own class. */
 function announcement(dom) {
   const said = findAll(dom.doc.body, (n) => n.getAttribute
     && n.getAttribute('role') === 'status'
-    && String(n.className || '').split(/\s+/).indexOf('sr') !== -1);
+    && classesOf(n).includes('sr'));
   return said.length ? String(said[said.length - 1].textContent || '') : '';
-}
-
-function bandTitles(root) {
-  return findAll(root, (n) => String(n.className || '').split(/\s+/)
-    .indexOf('band-title') !== -1);
 }
 
 /* Press a control and let every promise it started settle. */
@@ -319,496 +305,313 @@ function tap(button) {
   button.dispatchEvent({ type: 'click' });
 }
 
-const RULES_HEADLINE = 'Whether the checks are running could not be read';
+const asked = (dom, key) => dom.calls[URL_OF[key]] || 0;
+const wholeCardButton = (dom) => findAll(shownPanel(dom), (n) => n.tagName === 'BUTTON' && allText(n) === 'Try again')[0];
+const WHOLE = 'This pane could not be read';
 
-/* ------------------------------------------------------------ #10771 */
+/* ================================ the buttons ============================ */
 
-test('a failed rules read offers a way to ask again', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const retries = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE);
-  assert.equal(retries.length, 1,
-    'the rules failure should carry exactly one retry, got ' + retries.length);
-  assert.equal(String(retries[0].textContent || ''), 'Try again');
-});
-
-test('the retry sits with the rules failure in every state that can draw one', async () => {
-  /* The three states the pane can be in while the rules read is unreadable.
-     Each renders the failure somewhere different — inside the queue card when
-     the queue is empty, as its own card when the queue has rows, and beside
-     the problems failure when both reads are down — and the operator has to be
-     offered the same control in all three. */
-  const states = [
-    ['a queue with rows', { rules: boom('rules for admin@example.invalid') }],
-    ['an empty queue', { rules: boom('rules for admin@example.invalid'), problems: { problems: [] } }],
-    ['the problems read down too', {
-      rules: boom('rules for admin@example.invalid'),
-      problems: boom('problems for owner@example.invalid'),
-    }],
-  ];
-  for (const [what, options] of states) {
-    const dom = await boot(options);
-    const panel = shownPanel(dom);
-    const mine = retriesIn(panel)
-      .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE);
-    assert.equal(mine.length, 1,
-      `with ${what} the rules failure drew ${mine.length} retries, not one`);
-    assert.ok(allText(panel).indexOf('rules for [hidden contact detail] is down') !== -1,
-      `with ${what} the operator is not shown the masked rules failure copy`);
-    assert.ok(allText(panel).indexOf('@example.invalid') === -1,
-      `with ${what} a raw address reached the pane`);
+test('every read that can fail has exactly one way to ask again, in the section it failed in', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    const found = retryFor(dom, c.headline);
+    assert.equal(found.length, 1, c.name + ': expected exactly one retry named "' + c.headline + '"');
+    assert.equal(found[0].tagName, 'BUTTON');
+    assert.equal(found[0].getAttribute('type'), 'button');
+    assert.equal(allText(found[0]), 'Try again');
+    assert.ok(inside(found[0], host(dom, c.section)), c.name + ': the retry is not in the ' + c.section + ' section');
   }
 });
 
-test('the rules failure is never stated twice on one screen', async () => {
-  /* The card and the in-queue block are alternatives, not a pair: printing
-     both would put the same headline on screen twice, which is the density
-     this dashboard was redrawn to remove. */
-  for (const options of [
-    { rules: boom('rules') },
-    { rules: boom('rules'), problems: { problems: [] } },
-    { rules: boom('rules'), problems: boom('problems') },
-  ]) {
-    const dom = await boot(options);
-    const panel = shownPanel(dom);
-    const said = findAll(panel, (n) => String(n.textContent || '') === RULES_HEADLINE);
-    assert.equal(said.length, 1,
-      'the rules headline is on screen ' + said.length + ' times, not once');
+test('a retry is named by its own word and the heading beside it, and says the same heading when it speaks', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    const [button] = retryFor(dom, c.headline);
+    const head = namingHeading(dom, button);
+    assert.equal(allText(head), c.headline, c.name + ': the name and the data-retry value are different headings');
+    assert.ok(inside(head, host(dom, c.section)), c.name + ': the heading is in another section');
   }
 });
 
-test('pressing the rules retry asks for the rules again', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const before = Object.assign({}, dom.calls);
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  await press(dom, again);
-  assert.equal(dom.calls['/api/ops/alerts/rules'], before['/api/ops/alerts/rules'] + 1,
-    'the rules read did not happen again');
-  /* The other two go with it because this pane has one loader, and that is
-     the honest thing to say about it rather than to claim otherwise: what
-     matters for #10771 is that the operator no longer has to reload the page.
-     The count is asserted so a change to that behaviour has to be deliberate. */
-  assert.equal(dom.calls['/api/ops/summary'], before['/api/ops/summary'] + 1);
+test('a failure is stated once on a screen, never twice', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    const text = allText(shownPanel(dom));
+    assert.equal(text.split(c.headline).length - 1, 1, c.name + ': "' + c.headline + '" is on the screen more than once');
+  }
 });
 
-test('a rules read that comes back takes its own failure off the screen', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  dom.answers['/api/ops/alerts/rules'] = rulesFixture();
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.equal(retriesIn(panel)
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE).length, 0,
-    'the rules retry is still on screen after the read succeeded');
-  assert.ok(allText(panel).indexOf(RULES_HEADLINE) === -1,
-    'the pane still says the rules are unreadable after reading them');
+test('the retries on one screen each have a name of their own', async () => {
+  const dom = await boot({
+    summary: boom('summary'), usage: boom('usage'), jobs: boom('jobs'), runs: boom('runs'),
+    costs: boom('costs'), problems: boom('problems'),
+  });
+  const retries = retriesIn(shownPanel(dom));
+  assert.equal(retries.length, 7, 'every failed section has a retry');
+  const names = retries.map((b) => allText(namingHeading(dom, b)));
+  assert.equal(new Set(names).size, names.length, 'two retries share a name: ' + names.join(' | '));
+  const ids = retries.map((b) => b.getAttribute('id'));
+  assert.equal(new Set(ids).size, ids.length, 'two retries share an id');
 });
 
-/* ------------------------------------------------------------ #10784 */
+/* ================================ pressing ================================ */
 
-test('a retry leaves focus somewhere the operator can see', async () => {
-  /* Containment, not identity: the pre-fix code leaves focus on the button it
-     just removed from the tree, and a removed node is outside the shown panel
-     in the harness and in a browser alike. */
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.ok(dom.doc.activeElement,
-    'nothing has focus at all after the retry');
-  assert.ok(panel.contains(dom.doc.activeElement),
-    'focus is outside the panel the operator is looking at');
+test('pressing a retry asks for its own read again, and for nothing else', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    const before = Object.fromEntries(Object.keys(URL_OF).map((k) => [k, asked(dom, k)]));
+    await press(dom, retryFor(dom, c.headline)[0]);
+    for (const key of Object.keys(URL_OF)) {
+      const expected = before[key] + (c.reads.includes(key) ? 1 : 0);
+      assert.equal(asked(dom, key), expected,
+        c.name + ': ' + key + ' was asked ' + asked(dom, key) + ' times, wanted ' + expected);
+    }
+  }
 });
 
-test('focus lands on the heading of the section that was re-read', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  await press(dom, again);
-  const landed = dom.doc.activeElement;
-  assert.equal(String(landed.className || ''), 'band-title');
-  assert.equal(String(landed.textContent || ''), 'What needs a person');
-  assert.equal(landed.getAttribute('tabindex'), '-1',
-    'a heading cannot hold focus without one, so this is load-bearing');
+test('a read that comes back takes its own failure off the screen and draws the section', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    dom.repair(...c.reads);
+    await press(dom, retryFor(dom, c.headline)[0]);
+    assert.equal(retryFor(dom, c.headline).length, 0, c.name + ': the failure is still on the screen');
+    assert.ok(!allText(shownPanel(dom)).includes(c.headline), c.name + ': the headline is still on the screen');
+    assert.equal(retriesIn(shownPanel(dom)).length, 0, c.name + ': a retry is left with nothing to retry');
+  }
+});
+
+test('a read that is still down keeps one retry in the same place and says it is still down', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    await press(dom, retryFor(dom, c.headline)[0]);
+    const again = retryFor(dom, c.headline);
+    assert.equal(again.length, 1, c.name + ': expected one retry after a failed retry, found ' + again.length);
+    assert.ok(inside(again[0], host(dom, c.section)));
+    assert.equal(announcement(dom), c.headline + ' again.', c.name);
+  }
+});
+
+test('a retry can be pressed again and again, and asks each time', async () => {
+  const dom = await boot({ jobs: boom('jobs') });
+  for (let n = 2; n <= 4; n += 1) {
+    await press(dom, retryFor(dom, 'Jobs could not be read')[0]);
+    assert.equal(asked(dom, 'jobs'), n);
+  }
+  dom.repair('jobs');
+  await press(dom, retryFor(dom, 'Jobs could not be read')[0]);
+  assert.equal(retryFor(dom, 'Jobs could not be read').length, 0);
+});
+
+test('one read behind two failures is asked once, and both failures go when it comes back', async () => {
+  const dom = await boot({ summary: boom('summary') });
+  assert.equal(retryFor(dom, 'Active people could not be read').length, 1);
+  assert.equal(retryFor(dom, 'AI runs could not be read').length, 1);
+  dom.repair('summary');
+  await press(dom, retryFor(dom, 'Active people could not be read')[0]);
+  assert.equal(asked(dom, 'summary'), 2, 'the summary was asked once per press');
+  assert.equal(retriesIn(shownPanel(dom)).length, 0, 'the AI failure outlived the read it was about');
+});
+
+/* ================================== focus ================================= */
+
+test('focus lands on the heading of the section that was re-read, whether it came back or not', async () => {
+  for (const repaired of [true, false]) {
+    for (const c of CASES) {
+      const dom = await boot(c.fail);
+      if (repaired) dom.repair(...c.reads);
+      await press(dom, retryFor(dom, c.headline)[0]);
+      const focus = dom.doc.activeElement;
+      const label = c.name + (repaired ? ' (came back)' : ' (still down)');
+      assert.ok(focus, label + ': nothing has focus');
+      assert.ok(inside(focus, shownPanel(dom)), label + ': focus is outside the panel the operator can see');
+      assert.ok(inside(focus, host(dom, c.section)), label + ': focus is not in the ' + c.section + ' section');
+      assert.ok(classesOf(focus).some((k) => k === 'sec-title' || k === 'state-title'), label + ': focus is not on a heading');
+    }
+  }
+});
+
+test('the heading that takes focus is focusable, not merely focused', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    await press(dom, retryFor(dom, c.headline)[0]);
+    assert.equal(dom.doc.activeElement.getAttribute('tabindex'), '-1',
+      c.name + ': a heading with no tabindex cannot hold focus in a browser');
+  }
 });
 
 test('each retry lands in its own section rather than in the first one', async () => {
-  /* The figures retry and the rules retry are the same control in two places.
-     A landing that named one band for both would pass every test above and
-     throw a figures operator into the queue. */
-  const dom = await boot({ summary: boom('summary') });
-  const panel = shownPanel(dom);
-  const titles = bandTitles(panel).map((n) => String(n.textContent || ''));
-  const again = retriesIn(panel)
-    .filter((n) => n.getAttribute('data-retry') === 'These figures could not be read')[0];
-  assert.ok(again, 'the figures failure has no retry to press');
-  const before = dom.calls['/api/ops/summary'];
-  await press(dom, again);
-  assert.equal(dom.calls['/api/ops/summary'], before + 1,
-    'the figures retry was pressed and the read never went out again');
-  const landed = dom.doc.activeElement;
-  assert.equal(String(landed.textContent || ''), titles[titles.length - 1],
-    'the figures retry landed on ' + landed.textContent + ', not the last band');
-  assert.notEqual(titles[0], titles[titles.length - 1],
-    'the two bands share a heading, so this test cannot tell them apart');
+  const dom = await boot({ jobs: boom('jobs'), costs: boom('costs') });
+  await press(dom, retryFor(dom, 'Cloud spend could not be read')[0]);
+  assert.ok(inside(dom.doc.activeElement, host(dom, 'spend')), 'focus did not land in the section that was retried');
+  assert.ok(!inside(dom.doc.activeElement, host(dom, 'jobs')));
+  await press(dom, retryFor(dom, 'Jobs could not be read')[0]);
+  assert.ok(inside(dom.doc.activeElement, host(dom, 'jobs')));
+  assert.equal(asked(dom, 'jobs'), 2);
+  assert.equal(asked(dom, 'costs'), 2, 'the first retry was asked for again by the second');
 });
 
-test('focus still lands when the retry succeeds and deletes its own control', async () => {
-  const dom = await boot({ summary: boom('summary') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === 'These figures could not be read')[0];
-  dom.answers['/api/ops/summary'] = summaryFixture();
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.equal(retriesIn(panel).length, 0, 'the read recovered but a retry is still drawn');
-  assert.ok(panel.contains(dom.doc.activeElement),
-    'the control was deleted and focus went with it');
-  assert.equal(String(dom.doc.activeElement.className || ''), 'band-title');
+test('focus still lands when the retry works and deletes its own control', async () => {
+  const dom = await boot({ jobs: boom('jobs') });
+  const [button] = retryFor(dom, 'Jobs could not be read');
+  dom.repair('jobs');
+  await press(dom, button);
+  assert.equal(inside(button, shownPanel(dom)), false, 'the pressed button is still on the screen');
+  assert.notEqual(dom.doc.activeElement, button, 'focus stayed on a node that is gone');
+  assert.ok(inside(dom.doc.activeElement, host(dom, 'jobs')));
 });
 
-test('a retry does not land the operator in a panel that is no longer shown', async () => {
-  /* #content keeps the empty panel and the live panel at once and clears only
-     the one it fills, so a live-then-empty sequence leaves the band this pane
-     drew a render ago inside a live box that nobody is shown. Resolving the
-     landing by document id finds that one — it is the only node with that id,
-     and it is the wrong one. */
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  dom.answers['/api/ops/alerts/rules'] = { rules: [], summary: { armed: 0, total: 0 }, channels: [] };
-  dom.answers['/api/ops/alerts/problems'] = { problems: [] };
-  dom.answers['/api/ops/summary'] = null;
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.equal(panel.getAttribute('data-state'), 'empty',
-    'this test needs the empty render to be what happened, and it is not');
-  const stale = dom.doc.getElementById('ov-band-attention');
-  assert.ok(stale, 'the stale band is gone, so this test is no longer about anything');
-  assert.ok(!panel.contains(stale),
-    'the stale band is inside the shown panel, so it is not stale');
-  assert.ok(panel.contains(dom.doc.activeElement),
-    'focus landed in the hidden panel the previous render left behind');
-});
+/* ============================== the announcement ========================= */
 
-/* ------------------------------------------------- what the operator hears */
-
-test('the outcome is spoken, because a heading does not say what happened', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  const head = namingHeading(dom, again);
-  const band = bandTitles(shownPanel(dom))
-    .filter((n) => String(n.textContent || '') === 'What needs a person')[0];
-  await press(dom, again);
-  assert.equal(announcement(dom),
-    String(band.textContent || '') + ': ' + String(head.textContent || '') + '.');
-});
-
-test('a read that came back is announced as having come back', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  const band = bandTitles(shownPanel(dom))
-    .filter((n) => String(n.textContent || '') === 'What needs a person')[0];
-  dom.answers['/api/ops/alerts/rules'] = rulesFixture();
-  await press(dom, again);
-  assert.equal(announcement(dom), String(band.textContent || '') + ' was read again.');
-});
-
-test('the spoken failure and the button name are the same heading', async () => {
-  /* data-retry is what the announcement reads and aria-labelledby is what a
-     screen reader reads. They are written from one node by one function, and
-     this is the assertion that keeps them that way: resolve the heading
-     through the id reference, compare its text with the attribute. */
-  const dom = await boot({ rules: boom('rules'), summary: boom('summary') });
-  const panel = shownPanel(dom);
-  const retries = retriesIn(panel);
-  assert.ok(retries.length >= 2, 'this test needs two retries, found ' + retries.length);
-  for (const again of retries) {
-    const head = namingHeading(dom, again);
-    assert.equal(again.getAttribute('data-retry'), String(head.textContent || ''));
+test('a read that came back is announced as having come back, under the section\'s name', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    dom.repair(...c.reads);
+    await press(dom, retryFor(dom, c.headline)[0]);
+    assert.equal(announcement(dom), c.spoken + ' was read again.', c.name);
   }
 });
 
-/* ----------------------------------------- the other two retries on the pane
-
-   The rules and figures retries above are two of four controls this pane can
-   draw. The problems failure draws a third through the same helper, and the
-   shell draws a fourth for the pane's own whole-read failure and takes the
-   action as an argument. Both were wired to bare load() before review round 1
-   found that nothing here pressed them. */
-
-const PROBLEMS_HEADLINE = 'The problems could not be read';
-const WHOLE_PANE_HEADLINE = 'This pane could not be read';
-
-/* The shell's whole-pane retry, which carries no data-retry: the shell writes
-   that card itself and this pane only hands it the action. Found by its word
-   rather than by an attribute for that reason. */
-function retryByWord(root) {
-  return findAll(root, (n) => String(n.tagName || '').toLowerCase() === 'button'
-    && String(n.textContent || '') === 'Try again');
-}
-
-test('pressing the problems retry asks for the problems again and lands focus', async () => {
-  const dom = await boot({ problems: boom('problems') });
-  const before = dom.calls['/api/ops/alerts/problems'];
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === PROBLEMS_HEADLINE)[0];
-  assert.ok(again, 'the problems failure drew no retry to press');
-  await press(dom, again);
-  assert.equal(dom.calls['/api/ops/alerts/problems'], before + 1,
-    'the problems retry was pressed and the read never went out again');
-  const panel = shownPanel(dom);
-  assert.ok(panel.contains(dom.doc.activeElement),
-    'the problems retry left focus outside the panel the operator can see');
-  assert.equal(String(dom.doc.activeElement.className || ''), 'band-title');
-  assert.equal(String(dom.doc.activeElement.textContent || ''), 'What needs a person');
-  assert.equal(announcement(dom), 'What needs a person: ' + PROBLEMS_HEADLINE + '.');
-});
-
-test('the pane-wide failure card offers a retry that lands focus too', async () => {
-  /* Every read down, so the shell draws its own card in place of the pane. It
-     builds the button; this pane supplies what pressing it does. Handed bare
-     load(), it re-read the pane and dropped focus on the document — the third
-     site Stadiora/Aria#10784 names. */
-  const dom = await boot({
-    problems: boom('problems'), rules: boom('rules'), summary: boom('summary'),
-  });
-  const panel = shownPanel(dom);
-  assert.ok(allText(panel).indexOf(WHOLE_PANE_HEADLINE) !== -1,
-    'this test needs the shell card, and the pane rendered something else');
-  const again = retryByWord(panel);
-  assert.equal(again.length, 1, 'the whole-pane card drew ' + again.length + ' retries, not one');
-  const before = dom.calls['/api/ops/summary'];
-  await press(dom, again[0]);
-  assert.equal(dom.calls['/api/ops/summary'], before + 1,
-    'the whole-pane retry was pressed and no read went out again');
-  const after = shownPanel(dom);
-  assert.ok(after.contains(dom.doc.activeElement),
-    'the whole-pane retry left focus outside the panel the operator can see');
-  assert.equal(String(dom.doc.activeElement.className || ''), 'state-title',
-    'with no band to land in, the landing is the card that replaced the pane');
-  assert.equal(announcement(dom), WHOLE_PANE_HEADLINE + '.');
-});
-
-test('the pane-wide retry lands in the band when the reads come back', async () => {
-  const dom = await boot({
-    problems: boom('problems'), rules: boom('rules'), summary: boom('summary'),
-  });
-  const again = retryByWord(shownPanel(dom))[0];
-  dom.answers['/api/ops/alerts/problems'] = problemsFixture();
-  dom.answers['/api/ops/summary'] = summaryFixture();
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.ok(allText(panel).indexOf(WHOLE_PANE_HEADLINE) === -1,
-    'two reads came back and the pane still says it could not be read at all');
-  assert.equal(String(dom.doc.activeElement.className || ''), 'band-title',
-    'the reads came back and drew bands, and the landing stayed on the fallback');
-  assert.equal(String(dom.doc.activeElement.textContent || ''), 'What needs a person');
-});
-
-test('a band holding two failures announces the one that was retried', async () => {
-  /* Both reads in the attention band are down, so two retries sit in one band
-     and the answer has to be about the read the operator asked for. The rules
-     retry is the SECOND of the two, so an announcement that names whatever is
-     first in the band names the problems read instead — a true sentence about
-     something the operator did not press. */
-  const dom = await boot({ problems: boom('problems'), rules: boom('rules') });
-  const panel = shownPanel(dom);
-  const order = retriesIn(panel).map((n) => String(n.getAttribute('data-retry') || ''));
-  assert.deepEqual(order, [PROBLEMS_HEADLINE, RULES_HEADLINE],
-    'this test needs the rules retry to be the later of the two, and it is not');
-  const again = retriesIn(panel)
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  await press(dom, again);
-  assert.equal(announcement(dom), 'What needs a person: ' + RULES_HEADLINE + '.');
-});
-
-test('a retry that works reports what is still unread beside it', async () => {
-  /* The other half of the same band: the retried read comes back and its
-     sibling has not. "Was read again" would be true of the button that was
-     pressed and false of the section the operator is now looking at. */
-  const dom = await boot({ problems: boom('problems'), rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  dom.answers['/api/ops/alerts/rules'] = rulesFixture();
-  await press(dom, again);
-  const left = retriesIn(shownPanel(dom)).map((n) => String(n.getAttribute('data-retry') || ''));
-  assert.deepEqual(left, [PROBLEMS_HEADLINE],
-    'the rules read came back and the band holds ' + left.join(', '));
-  assert.equal(announcement(dom), 'What needs a person: ' + PROBLEMS_HEADLINE + '.');
-});
-
-/* ------------------------------------- two reads in flight, and which lands
-
-   loadToken already stops an older read from RENDERING. Its promise still
-   fulfils, and the landing hangs off that promise, so before review round 2
-   an obsolete request could still move focus — after the newer one had
-   landed and after the operator had moved on. */
-
-test('a superseded retry does not take focus back when it finishes last', async () => {
-  const dom = await boot({
-    problems: boom('problems'), rules: boom('rules'), summary: boom('summary'),
-  });
-  dom.hold('/api/ops/alerts/problems', '/api/ops/alerts/rules', '/api/ops/summary');
-  const first = retryByWord(shownPanel(dom))[0];
-  tap(first);
-  await dom.settle(4);
-  tap(first);
-  await dom.settle(4);
-  assert.equal(dom.calls['/api/ops/summary'], 3,
-    'this test needs two retries in flight at once, and the pane made '
-    + dom.calls['/api/ops/summary'] + ' reads in total');
-
-  await dom.release(1);
-  const landed = dom.doc.activeElement;
-  assert.equal(String(landed.className || ''), 'state-title',
-    'the newer read did not land, so there is nothing for the older one to steal');
-
-  /* The operator moves on, which is the whole point: without this the older
-     landing puts focus where it already was and nothing looks wrong. */
-  const moved = retryByWord(shownPanel(dom))[0];
-  moved.focus();
-  assert.equal(dom.doc.activeElement, moved);
-
-  await dom.release(0);
-  assert.equal(dom.doc.activeElement, moved,
-    'a read that rendered nothing dragged focus back to '
-    + String(dom.doc.activeElement.className || ''));
-});
-
-test('the read that did render still lands when it finishes last', async () => {
-  /* The other completion order, so the gate cannot be satisfied by never
-     landing at all. */
-  const dom = await boot({
-    problems: boom('problems'), rules: boom('rules'), summary: boom('summary'),
-  });
-  dom.hold('/api/ops/alerts/problems', '/api/ops/alerts/rules', '/api/ops/summary');
-  const first = retryByWord(shownPanel(dom))[0];
-  tap(first);
-  await dom.settle(4);
-  tap(first);
-  await dom.settle(4);
-
-  await dom.release(0);
-  assert.equal(dom.doc.activeElement, first,
-    'the obsolete read landed on ' + String(dom.doc.activeElement.className || '')
-    + ', so the gate is not doing anything');
-  await dom.release(1);
-  assert.equal(String(dom.doc.activeElement.className || ''), 'state-title',
-    'the read that actually rendered did not land');
-});
-
-/* -------------------------------------- the placements round 2 found unbound */
-
-test('both retries in one band announce their own failure, not a fixed end of the list', async () => {
-  /* Round 2's finding: pressing only the LAST of the two is satisfied by an
-     implementation that always names the last. Both are pressed here, in one
-     test, so a constant index fails whichever end it picks. */
-  const dom = await boot({ problems: boom('problems'), rules: boom('rules') });
-  const order = retriesIn(shownPanel(dom)).map((n) => String(n.getAttribute('data-retry') || ''));
-  assert.deepEqual(order, [PROBLEMS_HEADLINE, RULES_HEADLINE],
-    'this test needs the two failures in a known order, and got ' + order.join(' | '));
-
-  for (const headline of order) {
-    const fresh = await boot({ problems: boom('problems'), rules: boom('rules') });
-    const again = retriesIn(shownPanel(fresh))
-      .filter((n) => n.getAttribute('data-retry') === headline)[0];
-    assert.ok(again, 'no retry carries ' + headline);
-    await press(fresh, again);
-    assert.equal(announcement(fresh), 'What needs a person: ' + headline + '.',
-      'pressing the retry for "' + headline + '" announced something else');
+test('a read that is still down is announced with the heading its button was named after', async () => {
+  for (const c of CASES) {
+    const dom = await boot(c.fail);
+    const heading = allText(namingHeading(dom, retryFor(dom, c.headline)[0]));
+    await press(dom, retryFor(dom, c.headline)[0]);
+    assert.equal(announcement(dom), heading + ' again.', c.name);
   }
 });
 
-test('the rules retry drawn inside the queue card lands in the queue card band', async () => {
-  /* The rules failure renders in two places and only one of them was pressed
-     before round 2. This is the in-card one: an empty queue, where the
-     failure is also the reason the list is short. A wrong band argument here
-     sends the operator to the figures and reports the wrong outcome. */
-  const dom = await boot({ rules: boom('rules'), problems: { problems: [] } });
-  const panel = shownPanel(dom);
-  const again = retriesIn(panel)
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  assert.ok(again, 'the in-queue rules failure drew no retry');
-  const card = bandTitles(panel).filter((n) => String(n.textContent || '') === 'What needs a person');
-  assert.equal(card.length, 1, 'this test needs one attention band, found ' + card.length);
-  await press(dom, again);
-  assert.equal(String(dom.doc.activeElement.className || ''), 'band-title');
-  assert.equal(String(dom.doc.activeElement.textContent || ''), 'What needs a person',
-    'the in-queue retry landed on ' + dom.doc.activeElement.textContent);
-  assert.equal(announcement(dom), 'What needs a person: ' + RULES_HEADLINE + '.');
+test('two failures on one screen announce the one that was retried', async () => {
+  const dom = await boot({ jobs: boom('jobs'), costs: boom('costs') });
+  await press(dom, retryFor(dom, 'Jobs could not be read')[0]);
+  assert.equal(announcement(dom), 'Jobs could not be read again.');
+  await press(dom, retryFor(dom, 'Cloud spend could not be read')[0]);
+  assert.equal(announcement(dom), 'Cloud spend could not be read again.');
+  dom.repair('jobs');
+  await press(dom, retryFor(dom, 'Jobs could not be read')[0]);
+  assert.equal(announcement(dom), 'Happening now was read again.',
+    'the retried read came back, and the failure beside it is not the news');
 });
 
-/* ---------------------------------------- the fallback landing, in full
+/* ============================ the whole-pane card ======================== */
 
-   A heading cannot hold focus without tabindex="-1" in a browser, and the
-   fake DOM will focus one anyway. The band landing asserted it; the two
-   fallback landings did not, so an implementation that set it only for bands
-   passed both. */
+const EVERY_CORE = ['summary', 'usage', 'problems', 'rules', 'jobs', 'runs', 'costs'];
+const allDown = () => Object.fromEntries(EVERY_CORE.map((k) => [k, boom(k)]));
 
-test('the fallback landing is focusable, not merely focused', async () => {
-  const dom = await boot({
-    problems: boom('problems'), rules: boom('rules'), summary: boom('summary'),
-  });
-  await press(dom, retryByWord(shownPanel(dom))[0]);
-  const landed = dom.doc.activeElement;
-  assert.equal(String(landed.className || ''), 'state-title');
-  assert.equal(landed.getAttribute('tabindex'), '-1',
-    'the whole-pane card heading cannot take focus in a browser without one');
+test('when every read is down the pane says so once, with one way to ask again', async () => {
+  const dom = await boot(allDown());
+  const text = allText(shownPanel(dom));
+  assert.ok(text.includes(WHOLE), text);
+  assert.equal(text.split(WHOLE).length - 1, 1);
+  assert.equal(retriesIn(shownPanel(dom)).length, 0, 'the sections are not drawn behind the card');
+  assert.equal(host(dom, 'health'), null, 'a section is on a screen that failed as a whole');
+  assert.ok(wholeCardButton(dom), 'the card has no Try again');
 });
 
-test('the empty-state landing is focusable, not merely focused', async () => {
-  const dom = await boot({ rules: boom('rules') });
-  const again = retriesIn(shownPanel(dom))
-    .filter((n) => n.getAttribute('data-retry') === RULES_HEADLINE)[0];
-  dom.answers['/api/ops/alerts/rules'] = { rules: [], summary: { armed: 0, total: 0 }, channels: [] };
-  dom.answers['/api/ops/alerts/problems'] = { problems: [] };
-  dom.answers['/api/ops/summary'] = null;
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.equal(panel.getAttribute('data-state'), 'empty',
-    'this test needs the empty render, and it is not what happened');
-  const landed = dom.doc.activeElement;
-  assert.equal(String(landed.className || ''), 'state-title');
-  assert.equal(landed.getAttribute('tabindex'), '-1',
-    'the empty-state heading cannot take focus in a browser without one');
+test('the whole-pane retry asks for every read again and lands focus when they come back', async () => {
+  const dom = await boot(allDown());
+  dom.repair(...EVERY_CORE);
+  await press(dom, wholeCardButton(dom));
+  for (const key of Object.keys(URL_OF)) assert.equal(asked(dom, key), 2, key + ' was not asked again');
+  assert.ok(host(dom, 'health') && inside(host(dom, 'health'), shownPanel(dom)), 'the page did not come back');
+  assert.ok(!allText(shownPanel(dom)).includes(WHOLE));
+  assert.ok(inside(dom.doc.activeElement, shownPanel(dom)), 'focus is not in the panel the operator can see');
+  assert.equal(dom.doc.activeElement.getAttribute('tabindex'), '-1');
+  assert.equal(announcement(dom), 'Today was read again.');
 });
 
-/* ------------------------------------------- the backstop for a broken render
+test('the whole-pane retry that fails again lands on the card and says so', async () => {
+  const dom = await boot(allDown());
+  await press(dom, wholeCardButton(dom));
+  assert.ok(allText(shownPanel(dom)).includes(WHOLE));
+  assert.ok(inside(dom.doc.activeElement, shownPanel(dom)));
+  assert.equal(allText(dom.doc.activeElement), WHOLE);
+  assert.equal(announcement(dom), WHOLE + ' again.');
+});
 
-   The three reads cannot reject, so load()'s catch is not a failed-read path:
-   it is what happens when render() itself throws. A rules payload the pane
-   cannot walk reaches it, which round 2 demonstrated and which is why this is
-   a test rather than a declared-unreachable row in the mutation table. */
+test('a whole-pane retry that brings back only some of the page says how much is still down', async () => {
+  const dom = await boot(allDown());
+  dom.repair('summary', 'usage', 'problems', 'rules', 'jobs');
+  await press(dom, wholeCardButton(dom));
+  assert.ok(host(dom, 'health'), 'the page that did come back is not drawn');
+  assert.equal(retriesIn(shownPanel(dom)).length, 2, 'runs and costs are still down');
+  assert.equal(announcement(dom), 'Today was read again. 2 parts could not be read.');
+});
 
-const UNWALKABLE_RULES = { rules: [null], channels: [] };
+test('a section retry announces the section, never the whole page', async () => {
+  const dom = await boot({ runs: boom('runs') });
+  dom.repair('runs');
+  await press(dom, retryFor(dom, 'Last 24h could not be read')[0]);
+  assert.equal(announcement(dom), 'Aria AI was read again.');
+});
 
-test('a render that throws leaves a retry that lands focus', async () => {
-  const dom = await boot({ rules: UNWALKABLE_RULES });
-  const panel = shownPanel(dom);
-  assert.ok(allText(panel).indexOf(WHOLE_PANE_HEADLINE) !== -1,
-    'this test needs render() to have thrown, and the pane drew something else');
-  const again = retryByWord(panel);
-  assert.equal(again.length, 1, 'the backstop card drew ' + again.length + ' retries, not one');
-  await press(dom, again[0]);
-  const landed = dom.doc.activeElement;
-  assert.equal(String(landed.className || ''), 'state-title',
-    'the backstop retry left focus on ' + String(landed.className || ''));
-  assert.equal(landed.getAttribute('tabindex'), '-1');
-  assert.equal(announcement(dom), WHOLE_PANE_HEADLINE + '.');
+/* ================================ a late answer ========================== */
+
+test('a superseded whole-pane retry does not draw over a newer one or take focus back', async () => {
+  const dom = await boot(allDown());
+  dom.hold(...Object.values(URL_OF));
+  const button = wholeCardButton(dom);
+  tap(button);
+  tap(button);
+  await dom.settle();
+  assert.equal(dom.waiting.length, 16, 'two batches of eight reads are in flight');
+
+  /* The newer press is answered with a healthy system, the older one lands
+     last and is answered with a failure. Whatever it carries must not reach
+     the screen. */
+  dom.repair(...EVERY_CORE);
+  await dom.release(1);
+  assert.ok(host(dom, 'health'), 'the newer answer did not draw');
+  const focused = dom.doc.activeElement;
+  dom.breakAgain(...EVERY_CORE);
+  await dom.release(0);
+  assert.ok(host(dom, 'health') && !allText(shownPanel(dom)).includes(WHOLE),
+    'an older answer replaced the newer one');
+  assert.equal(retriesIn(shownPanel(dom)).length, 0, 'an older answer drew failures over a healthy page');
+  assert.equal(dom.doc.activeElement, focused, 'an older answer took focus');
+  assert.equal(announcement(dom), 'Today was read again.', 'an older answer spoke');
+});
+
+test('a superseded press that finishes first draws nothing, and the newer one draws when it lands', async () => {
+  const dom = await boot(allDown());
+  dom.hold(...Object.values(URL_OF));
+  const button = wholeCardButton(dom);
+  tap(button);
+  tap(button);
+  await dom.settle();
+  dom.repair(...EVERY_CORE);
+  await dom.release(0);
+  assert.equal(host(dom, 'health'), null, 'the older press drew while a newer one was still in flight');
+  await dom.release(1);
+  assert.ok(host(dom, 'health'), 'the newer press did not draw');
+});
+
+/* ================================= a throw =============================== */
+
+/* A payload that makes drawing throw: a getter that fails when the pane reads
+   people out of it. The reads themselves cannot reject, so this is the one
+   failure that reaches the pane's own catch. */
+const walkable = () => GOOD.summary();
+const hostile = () => ({ get people() { throw new Error('summary shape is wrong'); }, aiRuns: {} });
+
+test('a render that throws leaves the whole-pane card with a retry that lands focus', async () => {
+  const dom = await boot({ summary: hostile() });
+  assert.ok(allText(shownPanel(dom)).includes(WHOLE), 'a render that threw left nothing to say so');
+  assert.equal(retriesIn(shownPanel(dom)).length, 0);
+  const button = wholeCardButton(dom);
+  assert.ok(button, 'a render that threw left no way to ask again');
+  await press(dom, button);
+  assert.equal(asked(dom, 'summary'), 2, 'the retry did not ask again');
+  assert.ok(inside(dom.doc.activeElement, shownPanel(dom)), 'focus did not land in the panel that is shown');
+  assert.equal(announcement(dom), WHOLE + ' again.');
 });
 
 test('a render that throws recovers when the payload it choked on comes back walkable', async () => {
-  const dom = await boot({ rules: UNWALKABLE_RULES });
-  const again = retryByWord(shownPanel(dom))[0];
-  dom.answers['/api/ops/alerts/rules'] = rulesFixture();
-  await press(dom, again);
-  const panel = shownPanel(dom);
-  assert.ok(allText(panel).indexOf(WHOLE_PANE_HEADLINE) === -1,
-    'the payload came back walkable and the pane still says it could not be read');
-  assert.equal(String(dom.doc.activeElement.textContent || ''), 'What needs a person');
+  const dom = await boot({ summary: hostile() });
+  dom.answers[URL_OF.summary] = walkable();
+  await press(dom, wholeCardButton(dom));
+  assert.ok(host(dom, 'people'), 'the page did not come back');
+  assert.ok(!allText(shownPanel(dom)).includes(WHOLE));
+  assert.equal(allText(host(dom, 'people')).includes('1,102'), true);
+  assert.ok(inside(dom.doc.activeElement, shownPanel(dom)));
+  assert.equal(announcement(dom), 'Today was read again.');
 });

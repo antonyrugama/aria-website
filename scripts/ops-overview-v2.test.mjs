@@ -1,33 +1,34 @@
-/* Unit tests for ops/assets/pane-overview.js — the Overview pane on the v2
-   design system.
+/* Unit tests for ops/assets/pane-overview.js, the Today page.
 
-   What is worth testing here is the four rules in that file's docblock, every
-   one of which is a rule about NOT drawing something, and none of which a
+   What is worth testing here is the set of rules in that file's docblock,
+   nearly all of them rules about NOT drawing something, and none of which a
    screenshot or a headless-Chrome overflow check can see:
 
-     - a figure is labelled with the window the answer says it covers, read
-       from the day-grain or hour-grain window rather than written into the pane;
      - a block whose availability is not `ready` renders words and never a
        numeral, so "not connected" can never look like zero;
-     - the two apps are never added together;
-     - the omissions list is rendered from the answer rather than from a list
-       in the client, and the cost tile draws no budget track.
+     - the two apps are never added together, and the change in people is an
+       absolute difference, never a rate;
+     - a day with no reading is a gap in the line, never a drop to zero;
+     - "No critical issues" is a claim, printed only after a complete, readable
+       problems result, and only when something was in a position to notice;
+     - a moment in "This week" is earned by its own rule or it is not drawn,
+       and a failed growth read removes its tile and says nothing about it;
+     - the person on a problem is never named, because the session layer
+       withholds the address and the pane must not rebuild a name from one.
 
-   Plus the two things that are easy to re-break by accident: the chart's
-   accessible NAME has to carry the data, because role="img" is
-   children-presentational and SVG <text> inside it is announced to nobody;
-   and every doorway has to point at the pane the registry says owns it.
+   Plus the things that are easy to re-break by accident: the chart's accessible
+   NAME has to carry the data, because role="img" is children-presentational;
+   a severity that is the name of an object built-in must not put JavaScript on
+   the screen; and every doorway has to point at the pane the registry says owns
+   it.
 
-   Every test here but one has a published mutation in the pull request: the
-   exact file and the exact original line whose removal or inversion makes that
-   test fail. A test with no such line is a test that pins nothing.
+   The retry, focus and announcement behaviour is ops-overview-retry-focus, the
+   degraded and never-a-zero behaviour is ops-overview-degraded, and the
+   whitespace-only and malformed strings are ops-overview-blank-text.
 
-   The exception is `the tone vocabulary is read from the sheets, not from a
-   list here`, and it is NOT COVERED by any published row. Its inputs are the
-   two stylesheets, and the tone words it names are declared by ops/assets/aria.css,
-   which this pull request is not allowed to edit. The only mutation that would
-   falsify it lives in a file outside this change, so none is published rather
-   than a weaker one being passed off as proof. */
+   Every test here has a published mutation in the pull request: the exact file
+   and the exact original line whose removal or inversion makes that test fail.
+   A test with no such line is a test that pins nothing. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -43,161 +44,152 @@ const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const MODEL_SRC = read('assets/alerts-model.js');
 const PANE_SRC = read('assets/pane-overview.js');
-const PANE_DATA_SRC = read('assets/pane-data.js');
 
 const TOKENS = {
-  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
-  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
-  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+  '--cyan': '#00E5FF', '--violet': '#8B5CF6', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#F87171', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#F5F5F7',
 };
 
 /* ------------------------------------------------------------- fixtures */
 
-const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
+/* Every fixture is a function that returns a fresh object, because every test
+   below takes something away from a whole, healthy answer and a shared object
+   would carry the removal into the next test. Dates are fixed: the pane reads
+   every date from the answer and never from the clock, so a fixed date says
+   the same thing every day it is run. */
+const WEEK = {
+  start: '2026-10-25T00:00:00.000Z', endExclusive: '2026-11-01T00:00:00.000Z', days: 7,
+};
 
-/* Problem stamps are relative for the same reason the release card's are, one
-   fixture down: the ribbon prints how long ago the oldest problem started,
-   against the real clock. These were fixed dates, so they aged a little every
-   day, and the day they reached "24 hours ago" the sweep below read that as a
-   claim about a 24 hour WINDOW and went red. The release card had already been
-   converted for exactly this; these were the site that conversion missed.
+const MOBILE_DAILY = [12, 15, 14, 17, 16, 19, 18, 17, 20, 22, 19, 21, 23, 20, 22,
+  25, 24, 22, 26, 27, 25, 24, 28, 30, 26, 29, 31, 28, 33, 37];
+const COACHES_DAILY = [4, 5, 4, 6, 5, 7, 6, 5, 7, 8, 6, 7, 8, 6, 7,
+  9, 8, 7, 8, 9, 7, 6, 8, 9, 7, 8, 9, 8, 7, 9];
 
-   The offsets keep the original spacing (05:20, 05:25, 05:30, 05:55 against a
-   06:00 read), so the oldest is still the oldest and an acknowledgement still
-   lands after the problem it acknowledges. */
 const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
 
-const DAYS = ['2026-09-13', '2026-09-14', '2026-09-15', '2026-09-16',
-  '2026-09-17', '2026-09-18', '2026-09-19'];
-const HOUR_KEYS = Array.from({ length: 24 }, (_, n) =>
-  new Date(Date.UTC(2026, 8, 19, 9 + n)).toISOString());
-const HOURS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00',
-  '15:00', '16:00', '17:00', '18:00', '19:00', '20:00',
-  '21:00', '22:00', '23:00', '00:00', '01:00', '02:00',
-  '03:00', '04:00', '05:00', '06:00', '07:00', '08:00'];
+const edit = (make, over) => {
+  const base = make();
+  if (!over) return base;
+  const out = over(base);
+  return out === undefined ? base : out;
+};
 
-/* A whole, healthy answer. Every test below starts here and takes something
-   away, because the rules under test are rules about absence. */
 function summaryFixture(over) {
-  const base = {
-    generatedAt: '2026-09-20T06:00:00.000Z',
+  return edit(() => ({
+    generatedAt: '2026-11-01T09:41:00.000Z',
     consent: { basis: 'operational' },
     people: {
       availability: { state: 'ready' },
       platform: { active: 1102, previousActive: 980 },
       apps: [
-        { key: 'aria', label: 'Aria', active: 870, tone: 's1' },
-        { key: 'ariaxii', label: 'Aria XII', active: 412, tone: 's2' },
+        { app: 'mobile', label: 'Mobile', active: 870, previousActive: 800 },
+        { app: 'coaches', label: 'Coaches Web', active: 412, previousActive: 390 },
       ],
-      window: { days: 7 },
+      window: WEEK,
       comparison: { days: 7, label: 'the 7 days before' },
-      reportingFloor: 50,
+      reportingFloor: 5,
       environment: 'production',
     },
     aiRuns: {
       availability: { state: 'ready' },
-      runs: 4820, previous: { runs: 4410 },
-      daysMissing: [], daysReported: 7, window: { days: 7 },
+      runs: 4820, previous: { runs: 4410, daysReported: 7 },
+      daysMissing: [], daysReported: 7, window: WEEK,
     },
-    cost: {
-      availability: { state: 'ready' },
-      micros: 412_000_000, currency: 'USD',
-      comparison: { changeBasisPoints: 640, label: 'the same days last month' },
-      window: { dayOfPeriod: 12, daysInPeriod: 31 },
-      basis: 'spend',
-      asOf: '2026-09-19T00:00:00.000Z',
-    },
-    release: {
-      availability: { state: 'ready' },
-      platforms: [
-        /* Relative, not absolute. The releases card prints how long ago the
-           store was asked, worked out against the real clock, so a fixed date
-           here says "3 hours ago" the day it is written and something new
-           every day after. It said "24 hours ago" exactly once, on the day
-           after this fixture's date, and turned the sweep below red for one
-           day. A fixture that moves with the clock stays the same. */
-        { label: 'iOS', versionName: '2.9.1', versionCode: 291, fetchedAt: hoursAgo(3) },
-        { label: 'Android', versionName: '2.9.0', versionCode: 290, fetchedAt: hoursAgo(3) },
-      ],
-    },
-    activity: {
-      availability: { state: 'ready' },
-      labels: DAYS,
-      series: [
-        { key: 'aria', label: 'Aria', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
-        { key: 'ariaxii', label: 'Aria XII', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] },
-      ],
-      daysMissingRollups: [],
-      window: { days: 7 },
-    },
-    omissions: [
-      { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' },
-    ],
-  };
-  if (!over) return base;
-  /* An override that mutates and returns nothing used to yield undefined here,
-     which boot() then read as "no override" and quietly served the default
-     fixture — a test written to remove a field would pass against a payload
-     that still had it. Both styles work now. */
-  const out = over(base);
-  return out === undefined ? base : out;
+  }), over);
 }
 
-function hourlyActivity(over) {
-  const activity = {
-    availability: { state: 'ready' },
-    labels: HOURS.slice(),
-    series: [
-      {
-        key: 'mobile',
-        label: 'Mobile',
-        color: 's1',
-        values: [51, 43, null, 0, 59, null, 62, 64, 61, 67, 70, 72,
-          74, 73, 71, 69, 66, 63, 60, 58, 55, 53, 52, 54],
-      },
-      {
-        key: 'coaches',
-        label: 'Coaches Web',
-        color: 's2',
-        values: [83, 80, null, 76, 73, 71, 69, null, 64, 61, 58, 56,
-          54, 52, 50, 49, 47, 45, 43, 41, 39, 37, 35, 33],
-      },
-    ],
-    reportingStart: HOUR_KEYS[0],
-    hoursMissingRollups: [HOUR_KEYS[2]],
+function usageFixture(over) {
+  return edit(() => ({
     window: {
-      start: HOUR_KEYS[0],
-      endExclusive: '2026-09-20T09:00:00.000Z',
-      hours: 24,
-      grain: 'hour',
-      timezone: 'UTC',
+      range: '30d', start: '2026-10-02T00:00:00.000Z', endExclusive: '2026-11-01T00:00:00.000Z',
+      days: 30, grain: 'day', timezone: 'UTC', daysCovered: 30, daysMissingRollups: [],
     },
-  };
-  if (!over) return activity;
-  const out = over(activity);
-  return out === undefined ? activity : out;
+    availability: { state: 'ready', detail: '' },
+    apps: [
+      { app: 'mobile', label: 'Mobile', trend: { values: MOBILE_DAILY.slice() } },
+      { app: 'coaches', label: 'Coaches Web', trend: { values: COACHES_DAILY.slice() } },
+    ],
+  }), over);
+}
+
+function growthFixture(over) {
+  return edit(() => ({
+    payingSubscribers: {
+      current: { count: 31 },
+      weeks: [20, 21, 22, 23, 24, 25, 27, 29].map((count) => ({ count })),
+    },
+  }), over);
 }
 
 function problemsFixture(rows) {
-  return {
-    problems: rows === undefined ? [{
-      id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
-      title: 'Generation queue is backing up',
-      summary: 'Nothing has drained for 40 minutes.',
-      firedAt: minutesAgo(40),
-      workPane: 'jobs', workPaneLabel: 'Jobs running now',
-    }] : rows,
-    total: rows === undefined ? 1 : rows.length,
-  };
+  const list = rows === undefined ? [{
+    id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
+    title: 'Generation queue is backing up',
+    summary: 'Nothing has drained for 40 minutes.',
+    detectedAt: '2026-10-30T08:00:00.000Z',
+    workPane: 'jobs-live', workPaneLabel: 'Happening now',
+  }] : rows;
+  return { problems: list, total: list.length };
 }
 
-const RULES = {
-  rules: [
-    { key: 'queue', label: 'Queue depth', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'firing', lastFiredAt: minutesAgo(40) },
-    { key: 'errors', label: 'Error rate', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok', lastFiredAt: null },
-  ],
-  channels: [{ key: 'teams', label: 'Teams', configured: true, status: 'ok' }],
+function rulesFixture(over) {
+  return edit(() => ({
+    rules: [
+      { key: 'queue', label: 'Queue depth', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok', lastFiredAt: null },
+      { key: 'errors', label: 'Error rate', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok', lastFiredAt: null },
+    ],
+    channels: [{ key: 'teams', label: 'Teams', configured: true, status: 'ok' }],
+  }), over);
+}
+
+function jobsFixture(over) {
+  return edit(() => ({
+    generatedAt: '2026-11-01T09:40:00.000Z',
+    queue: {
+      open: 19,
+      byState: [{ state: 'running', jobs: 6 }, { state: 'queued', jobs: 13 }],
+    },
+    attention: { completeness: 'whole_queue', stuck: [] },
+  }), over);
+}
+
+function runsFixture(over) {
+  return edit(() => ({
+    window: { range: '24h' },
+    coverage: { state: 'ready', coversWindow: true },
+    summary: { runs: 26, completed: 24, failed: 1, canceled: 1, unfinished: 0 },
+  }), over);
+}
+
+function costsFixture(over) {
+  return edit(() => ({
+    availability: { state: 'ready' },
+    currency: 'USD',
+    period: {
+      start: '2026-10-01T00:00:00.000Z', actualThrough: '2026-10-31T00:00:00.000Z',
+      billedDays: 31,
+    },
+    total: { micros: 3_100_000_000 },
+    daily: {
+      series: [{ values: Array.from({ length: 31 }, (_, i) => (85 + i) * 1_000_000) }],
+    },
+  }), over);
+}
+
+const ENDPOINTS = {
+  summary: '/api/ops/summary',
+  usage: '/api/ops/usage',
+  growth: '/api/ops/growth',
+  problems: '/api/ops/alerts/problems',
+  rules: '/api/ops/alerts/rules',
+  jobs: '/api/ops/jobs',
+  runs: '/api/ops/runs',
+  costs: '/api/ops/costs',
 };
+
+const boom = (message) => Object.assign(new Error(message || 'The server did not answer.'), { code: 'http_500' });
 
 /* -------------------------------------------------------------- the page */
 
@@ -218,14 +210,22 @@ function buildPage(dom, body) {
 }
 
 /* Loads the page the way ops/index.html loads it: registry, aria.js, the
-   bootstrap, the alerts model, then the pane module. */
+   bootstrap, the alerts model, then the pane module. `options` replaces a
+   read's answer by its short name; an Error rejects, and a function is asked
+   with the query so one endpoint can answer two ranges differently. The answer
+   table is handed back live. */
 async function boot(options) {
   const opts = options || {};
   const calls = [];
   const answers = {
-    '/api/ops/summary': opts.summary === undefined ? summaryFixture() : opts.summary,
-    '/api/ops/alerts/problems': opts.problems === undefined ? problemsFixture() : opts.problems,
-    '/api/ops/alerts/rules': opts.rules === undefined ? RULES : opts.rules,
+    [ENDPOINTS.summary]: opts.summary === undefined ? summaryFixture() : opts.summary,
+    [ENDPOINTS.usage]: opts.usage === undefined ? usageFixture() : opts.usage,
+    [ENDPOINTS.growth]: opts.growth === undefined ? growthFixture() : opts.growth,
+    [ENDPOINTS.problems]: opts.problems === undefined ? problemsFixture() : opts.problems,
+    [ENDPOINTS.rules]: opts.rules === undefined ? rulesFixture() : opts.rules,
+    [ENDPOINTS.jobs]: opts.jobs === undefined ? jobsFixture() : opts.jobs,
+    [ENDPOINTS.runs]: opts.runs === undefined ? runsFixture() : opts.runs,
+    [ENDPOINTS.costs]: opts.costs === undefined ? costsFixture() : opts.costs,
   };
 
   const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/index.html' });
@@ -239,8 +239,10 @@ async function boot(options) {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint, o) => {
-      calls.push({ endpoint, query: o && o.query });
-      const answer = answers[endpoint];
+      const query = o && o.query;
+      calls.push({ endpoint, query });
+      let answer = answers[endpoint];
+      if (typeof answer === 'function') answer = answer(query);
       if (answer instanceof Error) return Promise.reject(answer);
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
@@ -258,1453 +260,949 @@ async function boot(options) {
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
 
-  for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
+  for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
 
-  return { ...dom, body, calls, answers, content: dom.doc.getElementById('content') };
+  return Object.assign(dom, { calls, answers });
 }
 
-/* The live panel only. The loading, empty and degraded panels are siblings of
-   it and are hidden by aria.css, so reading the whole region would read text
-   the operator cannot see. */
-function livePanel(dom) {
-  const shown = dom.doc.getElementById('content')
-    .querySelectorAll('[data-state]')
-    .filter((n) => (n.getAttribute('data-state') || '').split(' ').indexOf('live') !== -1);
-  return shown[0];
-}
+/* ------------------------------------------------------------- reading it */
 
-function liveText(dom) {
-  return allText(livePanel(dom));
-}
+const classesOf = (n) => String(n.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+const withClass = (root, cls) => findAll(root, (n) => classesOf(n).includes(cls));
+const section = (dom, id) => dom.doc.getElementById('today-' + id);
+const wordsOf = (root, cls) => withClass(root, cls).map(allText);
+const one = (root, cls) => {
+  const found = withClass(root, cls);
+  assert.equal(found.length, 1, `expected exactly one .${cls}, found ${found.length}`);
+  return found[0];
+};
+const hasDigit = (text) => /\d/.test(text);
+const FN_TEXT = /function|=>|\[native code\]|\bObject\b/;
 
-/* The activity chart, which is the only svg on this pane that is a picture of
-   data rather than an icon: an icon carries aria-hidden and no role. */
-function chartOf(dom) {
-  return findAll(livePanel(dom),
-    (n) => n.tagName === 'svg' && n.getAttribute('role') === 'img')[0]
-    || findAll(livePanel(dom), (n) => n.tagName === 'svg' && !n.getAttribute('aria-hidden'))[0];
-}
+const healthText = (dom) => allText(one(section(dom, 'health'), 'health-text'));
+const healthTone = (dom) => {
+  const dot = withClass(section(dom, 'health'), 'dot')[0];
+  return dot ? classesOf(dot).find((c) => c.startsWith('is-')) : null;
+};
 
-/* One tile, by its heading. Whole-pane text is the wrong instrument for a
-   rule about one figure's label: another sentence elsewhere can carry the
-   same words and the assertion passes without the tile being right. */
-function tileText(dom, heading) {
-  const tile = findAll(livePanel(dom), (n) => (n.className || '').indexOf('kpi') !== -1)
-    .filter((n) => heading.test(allText(n)))[0];
-  return tile ? allText(tile) : '';
-}
+/* The two lines under the title of a moment, by label. */
+const moments = (dom) => withClass(section(dom, 'moments'), 'moment').map((m) => ({
+  value: allText(one(m, 'moment-value')),
+  label: allText(one(m, 'moment-label')),
+  sub: allText(one(m, 'moment-sub')),
+  tone: classesOf(m).find((c) => c.startsWith('is-')),
+}));
 
-/* Every numeral on screen, so a rule about never printing one can be checked
-   without guessing which element it would have landed in. */
-function numerals(text) {
-  return (text.match(/\d/g) || []).length;
-}
+const lines = (dom) => withClass(section(dom, 'charts'), 'tc-line');
 
-/* =========================== the window label ========================== */
+/* =========================== the problems read ========================== */
 
-test('every figure says the window the answer covered, taken from the answer', async () => {
-  const seven = await boot({});
-  assert.match(tileText(seven, /Active people/), /Last 7 whole UTC days/,
-    'a 7-day answer was not labelled 7 days');
+test('the pane asks for the eight reads it draws from, with the questions it means to ask', async () => {
+  const dom = await boot();
+  const asked = (endpoint) => dom.calls.filter((c) => c.endpoint === endpoint);
 
-  /* The same pane, the same code, a different answer. If the window were
-     written into the client this second read would still say 7. */
-  const three = await boot({
-    summary: summaryFixture((s) => {
-      s.people.window.days = 3;
-      s.aiRuns.window.days = 3;
-      s.activity.window.days = 3;
-      s.activity.labels = DAYS.slice(4);
-      s.activity.series.forEach((x) => { x.values = x.values.slice(4); });
-      s.aiRuns.daysReported = 3;
-      return s;
-    }),
+  assert.deepEqual(Object.values(ENDPOINTS).sort(), [...new Set(dom.calls.map((c) => c.endpoint))].sort(),
+    'Today should ask for exactly these eight reads and no others');
+  for (const endpoint of Object.values(ENDPOINTS)) {
+    assert.equal(asked(endpoint).length, 1, endpoint + ' should be asked once on load');
+  }
+
+  const q = (endpoint) => asked(endpoint)[0].query || {};
+  assert.deepEqual({ ...q(ENDPOINTS.usage) }, { scope: 'all', range: '30d', env: 'production' });
+  assert.deepEqual({ ...q(ENDPOINTS.problems) }, { status: 'open', limit: dom.window.OpsAlertsModel.PAGE });
+  assert.deepEqual({ ...q(ENDPOINTS.runs) }, { range: '24h' });
+  assert.deepEqual({ ...q(ENDPOINTS.costs) }, { range: 'month' });
+});
+
+test('the first of a month falls back to the month before, and only then', async () => {
+  const published = await boot({
+    costs: (query) => costsFixture(),
   });
-  const text = tileText(three, /Active people/);
-  assert.match(text, /Last 3 whole UTC days/,
-    'a 3-day answer was still labelled something else: ' + text);
-  assert.doesNotMatch(text, /7 whole UTC days/,
-    'the pane printed a 7-day window for a 3-day answer');
-  assert.doesNotMatch(liveText(three), /Last 7 whole UTC days/,
-    'another block kept the old window while the answer moved');
-});
+  assert.deepEqual(published.calls.filter((c) => c.endpoint === ENDPOINTS.costs).map((c) => c.query.range),
+    ['month'], 'a month that has billed a day is the answer');
 
-test('the pane never claims a 24 hour window the pipeline cannot answer', async () => {
-  const dom = await boot({});
-  const text = liveText(dom);
-
-  /* Swept over everything rather than over the tiles, because a window can be
-     claimed in a sentence, a chart description or a footnote, and a sweep
-     that only reads the labels misses the other three.
-
-     One sentence is taken out by name: how long ago the app stores were
-     asked. That is the age of a READ, not the span a figure covers, and a
-     store asked 24 hours ago says so honestly. It is asserted to still be on
-     the page first, or the exclusion would cover the defect by deleting the
-     card that carries it.
-
-     The ribbon's oldest-problem sentence is taken out on the same grounds and
-     with the same presence assertion. It prints the age of an EVENT — when the
-     oldest open problem started — which is no more a window claim than the
-     read age is. It was not excluded when the read age was, so a problem that
-     happened to be between 24 and 25 hours old turned this red on a pane that
-     had claimed nothing. Both sentences state an age; neither states a span.
-
-     NOT COVERED: an age printed in a wording AGE below does not list. The
-     pattern tracks fmt.ago()'s vocabulary, so a new branch there needs a new
-     branch here, and the presence assertions are what make that failure loud
-     rather than silent. */
-  const AGE = '(?:\\d+ seconds?|a minute|\\d+ minutes|an hour|\\d+ hours|\\d+ days) ago';
-  const readAge = /Read from the stores (within the hour|[\d,.]+ hours? ago)\./;
-  assert.match(text, readAge,
-    'the releases card printed no read age, so the exclusion below covers nothing');
-
-  const heroAge = new RegExp('Oldest started [^,.]+, ' + AGE + '\\.');
-  assert.match(text, heroAge,
-    'the ribbon printed no oldest-problem age, so the exclusion below covers nothing');
-
-  assert.doesNotMatch(text.replace(readAge, '').replace(heroAge, ''),
-    /24 hours|last day|today/i,
-    'a figure claimed an hourly window that nothing behind it aggregates to');
-});
-
-/* The branch above covers an answer that DID describe a window. The one below
-   covers the answer that did not, which is the worse case: a tile with no
-   window to print either guesses one or says so, and only one of those is
-   honest. Nothing bound this path until it was raised in review. */
-test('a block whose answer describes no window says so rather than guessing one', async () => {
+  const lastMonth = costsFixture((c) => { c.period.billedDays = 30; c.total.micros = 3_000_000_000; });
   const dom = await boot({
-    summary: summaryFixture((s) => { delete s.people.window; }),
+    costs: (query) => (query.range === 'month'
+      ? { availability: { state: 'not_published', detail: 'Not yet.' } }
+      : lastMonth),
   });
-  const tile = tileText(dom, /Active people/i);
-  assert.match(tile, /Window not reported/,
-    'a tile with no window in the answer printed no window at all');
-  assert.doesNotMatch(tile, /whole UTC day/,
-    'a tile with no window in the answer named a window anyway');
-  assert.match(tileText(dom, /runs/i), /whole UTC day/,
-    'the other tiles lost their window label too, so this proves nothing');
+  assert.deepEqual(dom.calls.filter((c) => c.endpoint === ENDPOINTS.costs).map((c) => c.query.range),
+    ['month', 'last-month']);
+  assert.match(allText(section(dom, 'spend')), /\$114\.00/,
+    'the closing day of the month before is the latest billed day, and is drawn');
 });
 
-test('hour-grain activity says last 24 hours in UTC and reads x-axis labels from the answer', async () => {
-  const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.activity = hourlyActivity((a) => {
-        a.labels[0] = '09:15';
-        a.labels[a.labels.length - 1] = '08:45';
-      });
-    }),
-  });
-  const text = liveText(dom);
-  assert.match(text, /People active each hour/,
-    'the hour-grain chart kept the daily heading');
-  assert.match(text, /Last 24 hours \(UTC\)/,
-    'the hour-grain chart did not label the 24-hour UTC window from the answer');
-  assert.doesNotMatch(text, /People active each day/,
-    'the hour-grain payload was still described as daily');
-  assert.match(text, /09:15/,
-    'the first x-axis label did not come from the activity labels array');
-  assert.match(text, /08:45/,
-    'the last x-axis label did not come from the activity labels array');
+/* ============================== the people ============================== */
 
-  const name = (chartOf(dom) && chartOf(dom).getAttribute('aria-label')) || '';
-  assert.match(name, /People active each hour over the last 24 hours \(UTC\), one line per app/,
-    'the chart spoken description did not say each hour over the last 24 hours (UTC)');
-  assert.equal((name.match(/each hour/g) || []).length, 1,
-    'the chart spoken description repeated "each hour": ' + name);
-  assert.doesNotMatch(name, /each day|whole UTC day/,
-    'the chart spoken description still used day-grain copy');
+test('the headline people figure is the platform count, not the two apps added up', async () => {
+  const dom = await boot();
+  const people = section(dom, 'people');
+  assert.equal(allText(one(people, 'big')), '1,102');
+  assert.notEqual(allText(one(people, 'big')), '1,282', 'the apps were added together');
+
+  const split = withClass(people, 'split-item').map((n) => [
+    allText(one(n, 'split-label')), allText(one(n, 'split-value'))]);
+  assert.deepEqual(split, [['Mobile', '870'], ['Coaches Web', '412']],
+    'each app is drawn beside the headline with its own count');
 });
 
-/* ================= availability: words, never a numeral ================= */
-
-const BLOCKS = [
-  { block: 'people', heading: /Active people/i },
-  { block: 'aiRuns', heading: /runs/i },
-  { block: 'cost', heading: /Cloud spend/i },
-  { block: 'release', heading: /release/i },
-];
-
-for (const { block, heading } of BLOCKS) {
-  test('a ' + block + ' block that is not ready prints words and no numeral', async () => {
-    for (const state of ['not_reporting', 'not_collected', 'not_published']) {
-      const dom = await boot({
-        summary: summaryFixture((s) => {
-          /* Exactly what the route does: the state changes AND the figures
-             leave the payload. A block that kept its numbers would let this
-             test pass on a pane that ignores availability entirely. */
-          s[block] = { availability: { state: state }, window: { days: 7 } };
-          return s;
-        }),
-      });
-      const tile = findAll(livePanel(dom), (n) => (n.className || '').indexOf('kpi') !== -1)
-        .filter((n) => heading.test(allText(n)))[0];
-      assert.ok(tile, block + ' lost its tile entirely when it was ' + state);
-      const text = allText(tile);
-      assert.equal(numerals(text.replace(/7 days/g, '')), 0,
-        block + ' printed a numeral while ' + state + ': ' + text);
-      assert.ok(text.replace(/\s+/g, ' ').trim().length > 12,
-        block + ' went blank while ' + state + ' instead of saying so');
-
-      /* The rest of the pane is still ready in this same render. Without
-         this the test would pass on a pane that printed no numeral anywhere,
-         which is how the first draft of it passed against a fixture whose
-         availability shape was wrong throughout. */
-      assert.ok(numerals(liveText(dom)) > 8,
-        'the whole pane went wordless, so this proves nothing about ' + block);
-    }
+for (const [state, words] of [
+  ['not_reporting', 'No reading'], ['not_collected', 'Not collected'],
+  ['insufficient', 'Too few to report'], ['unconfigured', 'Not set up'],
+  ['disabled', 'Switched off'], ['something_new', 'Not reported'],
+]) {
+  test('a people block that is ' + state + ' prints words and no numeral', async () => {
+    const dom = await boot({
+      summary: summaryFixture((s) => { s.people.availability = { state }; }),
+    });
+    const people = section(dom, 'people');
+    assert.equal(withClass(people, 'num').length, 0, 'a figure is drawn for a block that is not ready');
+    assert.equal(allText(one(people, 'big')), words);
+    assert.ok(!hasDigit(allText(one(people, 'big'))), 'a numeral beside "' + words + '"');
+    assert.equal(withClass(people, 'delta').length, 0, 'a change is drawn against a figure that is not drawn');
+    assert.equal(withClass(people, 'split-item').length, 0, 'an app count is drawn for a block that is not ready');
   });
 }
 
 test('a state that is not ready prints words even when a figure came with it', async () => {
-  /* The route drops the figures when the state is not `ready`, so a pane can
-     pass the test above while ignoring availability altogether. This is the
-     same answer with the figures left in: the state alone has to decide. */
   const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.people.availability = { state: 'not_reporting' };
-      return s;
-    }),
+    summary: summaryFixture((s) => { s.people.availability = { state: 'insufficient', detail: 'Fewer than 5 people.' }; }),
   });
-  const tile = tileText(dom, /Active people/);
-  assert.equal(numerals(tile.replace(/7 days|7 whole UTC days/g, '')), 0,
-    'a stale figure was printed for a block that is not reporting: ' + tile);
-  assert.match(tile, /No reading/, 'the state was not named');
+  const people = section(dom, 'people');
+  assert.equal(allText(one(people, 'big')), 'Too few to report');
+  assert.ok(!allText(people).includes('1,102'), 'the figure that came with the block is on screen');
+  assert.equal(allText(one(people, 'hp-note')), 'Fewer than 5 people.', 'the reason in the answer is said');
 });
 
-test('a ready block with no figure in it says so rather than printing zero', async () => {
-  const dom = await boot({
-    summary: summaryFixture((s) => {
-      delete s.people.platform;
-      return s;
-    }),
-  });
-  const tile = tileText(dom, /Active people/);
-  assert.doesNotMatch(tile, /\b0\b/,
-    'a missing figure was drawn as a measured zero: ' + tile);
-  assert.match(tile, /Not reported|No reading/, 'a missing figure was drawn as nothing at all');
-});
-
-test('a block that is not reporting is never drawn as a zero', async () => {
-  const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.people = { availability: { state: 'not_reporting' }, window: { days: 7 } };
-      return s;
-    }),
-  });
-  const text = liveText(dom);
-  assert.doesNotMatch(text, /\b0 (active )?people\b/i, 'not reporting was drawn as zero');
-});
-
-/* ======================== the two apps, never summed ==================== */
-
-test('the headline people figure is the platform count, not the two apps added up', async () => {
-  const fixture = summaryFixture();
-  const sum = fixture.people.apps.reduce((n, a) => n + a.active, 0);
-  assert.notEqual(sum, fixture.people.platform.active,
-    'the fixture cannot tell the two apart, so this test proves nothing');
-
-  const dom = await boot({});
-  const text = liveText(dom);
-  assert.match(text, new RegExp(String(fixture.people.platform.active).replace(/(\d)(?=(\d{3})+$)/g, '$1,')),
-    'the platform distinct count is not on the pane');
-  assert.doesNotMatch(text, new RegExp('\\b' + String(sum).replace(/(\d)(?=(\d{3})+$)/g, '$1,') + '\\b'),
-    'the two apps were added together: somebody who used both was counted twice');
-});
-
-test('the activity chart is one line per app and never a combined one', async () => {
-  const dom = await boot({});
-  const svg = chartOf(dom);
-  assert.ok(svg, 'the activity chart is not on the pane');
-  const groups = findAll(svg, (n) => n.tagName === 'g' && n.getAttribute('data-series'));
-  const keys = groups.map((g) => g.getAttribute('data-series'));
-  assert.deepEqual(keys.sort(), ['aria', 'ariaxii'],
-    'the chart drew something other than one line per app: ' + keys.join(', '));
-  for (const g of groups) {
-    const lines = findAll(g, (n) => n.tagName === 'path');
-    assert.equal(lines.length, 1,
-      g.getAttribute('data-series') + ' was drawn as ' + lines.length + ' lines, not one');
+test('a ready block with no figure says so rather than printing zero', async () => {
+  for (const platform of [undefined, {}, { active: null }, { active: '1,102' }, { active: NaN }]) {
+    const dom = await boot({
+      summary: summaryFixture((s) => { s.people.platform = platform; }),
+    });
+    const big = one(section(dom, 'people'), 'big');
+    assert.ok(classesOf(big).includes('words'), 'a figure that did not arrive is drawn as a number: ' + JSON.stringify(platform));
+    assert.ok(!hasDigit(allText(big)), 'a numeral where there is no figure: ' + allText(big));
   }
 });
 
-/* ============================ the chart's name ========================== */
+test('the change in people is a difference of people, and absence is shown as absence', async () => {
+  const delta = async (mutate) => {
+    const dom = await boot({ summary: summaryFixture(mutate) });
+    const node = one(section(dom, 'people'), 'delta');
+    return { text: allText(node), classes: classesOf(node) };
+  };
+
+  const up = await delta();
+  assert.equal(up.text, '+122 vs last week');
+  assert.ok(up.classes.includes('is-up'));
+
+  const down = await delta((s) => { s.people.platform.previousActive = 1200; });
+  assert.equal(down.text, '\u2212' + '98 vs last week', 'a fall uses a true minus sign and the size of the fall');
+  assert.ok(down.classes.includes('is-down'));
+
+  const flat = await delta((s) => { s.people.platform.previousActive = 1102; });
+  assert.equal(flat.text, 'No change vs last week');
+  assert.ok(flat.classes.includes('is-flat'));
+
+  const longer = await delta((s) => { s.people.comparison.days = 14; });
+  assert.equal(longer.text, '+122 vs the 14 days before', 'the comparison names the window the answer used');
+
+  for (const strip of [
+    (s) => { delete s.people.platform.previousActive; },
+    (s) => { s.people.platform.previousActive = null; },
+    (s) => { delete s.people.comparison; },
+  ]) {
+    const absent = await delta(strip);
+    assert.equal(absent.text, 'No comparison yet');
+    assert.ok(absent.classes.includes('is-none'));
+    assert.ok(!/no change|\+0|0 vs/i.test(absent.text), 'an absent comparison read as no change');
+  }
+});
+
+test('the window under the figure is the one the answer covered, written as a range of days', async () => {
+  const range = async (mutate) => {
+    const dom = await boot({ summary: summaryFixture(mutate) });
+    const found = withClass(section(dom, 'people'), 'hp-range');
+    return found.length ? allText(found[0]) : null;
+  };
+  assert.equal(await range(), 'Oct 25\u201331');
+  assert.equal(await range((s) => {
+    s.people.window = { start: '2026-10-28T00:00:00.000Z', endExclusive: '2026-11-04T00:00:00.000Z', days: 7 };
+  }), 'Oct 28\u2013Nov 3', 'a week that crosses a month names both months');
+  assert.equal(await range((s) => { s.people.window = { days: 14 }; }), 'Last 14 days',
+    'a window with no dates is named by its length and nothing is guessed');
+  assert.equal(await range((s) => { s.people.window = { days: 1 }; }), 'Last 1 day');
+  assert.equal(await range((s) => { s.people.window = {}; }), null,
+    'a window the answer does not describe is not described');
+  assert.equal(await range((s) => {
+    s.people.window = { start: '2026-11-01T00:00:00.000Z', endExclusive: '2026-10-25T00:00:00.000Z', days: 7 };
+  }), 'Last 7 days', 'a window that ends before it starts is not printed as a range');
+});
+
+/* =============================== the charts ============================= */
+
+test('the daily chart is one line per app and never a combined one', async () => {
+  const dom = await boot();
+  const charts = section(dom, 'charts');
+  assert.deepEqual(wordsOf(charts, 'chart-title'), ['Mobile daily', 'Coaches Web daily']);
+  assert.equal(withClass(charts, 'chart-block').length, 2);
+  assert.equal(withClass(charts, 'tchart').length, 2, 'each app is its own chart');
+  assert.equal(lines(dom).length, 2, 'each chart draws one line when no day is missing');
+  assert.ok(!/total|combined|all apps|both/i.test(allText(charts)), 'a combined series is named');
+});
+
+test('only the first chart carries a legend and the dashed week before it', async () => {
+  const dom = await boot();
+  const [lead, other] = withClass(section(dom, 'charts'), 'chart-block');
+  assert.equal(withClass(lead, 'tc-legend').length, 1);
+  assert.deepEqual(wordsOf(lead, 'tc-key'), ['This week', 'Last week']);
+  assert.equal(withClass(lead, 'tc-ghost').length, 1, 'the lead chart draws last week behind this one');
+  assert.equal(withClass(other, 'tc-legend').length, 0);
+  assert.equal(withClass(other, 'tc-ghost').length, 0, 'a second chart is not drawn against a ghost');
+});
+
+test('a week that mostly did not report is not drawn as a comparison', async () => {
+  const dom = await boot({
+    usage: usageFixture((u) => {
+      const values = MOBILE_DAILY.slice();
+      for (let i = 16; i < 21; i += 1) values[i] = null; // five of the seven days before
+      u.apps[0].trend.values = values;
+    }),
+  });
+  const lead = withClass(section(dom, 'charts'), 'chart-block')[0];
+  assert.equal(withClass(lead, 'tc-ghost').length, 0, 'a dashed line through a week that is mostly gaps');
+  assert.deepEqual(wordsOf(lead, 'tc-key'), ['This week'], 'the legend names a line that is not drawn');
+});
 
 test('the chart carries its data in the accessible name, not only in the drawing', async () => {
-  const dom = await boot({});
-  const svg = chartOf(dom);
-  assert.ok(svg, 'the activity chart is not on the pane');
-  assert.equal(svg.getAttribute('role'), 'img');
-
-  /* role="img" is children-presentational, so <text> inside this element is
-     announced to nobody. Everything a reader gets is in the name. */
-  const name = svg.getAttribute('aria-label') || '';
-  assert.ok(name.length > 40, 'the chart has no name, or a name that says nothing: ' + name);
-  for (const series of summaryFixture().activity.series) {
-    assert.ok(name.indexOf(series.label) !== -1,
-      'the name does not mention ' + series.label);
-  }
-  assert.match(name, /1,102/, 'the name does not carry the latest figure');
-  assert.match(name, /910/, 'the name does not carry the range the line covers');
-  assert.match(name, /2026-09-19/, 'the name does not say when the line ends');
-
-  const inside = findAll(svg, (n) => n.tagName === 'text');
-  for (const node of inside) {
-    assert.ok(name.indexOf(allText(node)) !== -1 || allText(node).length <= 12,
-      'a figure is drawn inside the chart and is in no accessible name: ' + allText(node));
-  }
+  const dom = await boot();
+  const [lead, other] = withClass(section(dom, 'charts'), 'tchart');
+  assert.equal(lead.getAttribute('role'), 'img');
+  assert.equal(lead.getAttribute('aria-label'),
+    'Mobile daily active people, this week: 7 of 7 days with a reading, low 26, high 37, ending 37 on Oct 31.' +
+    ' the week before, dashed: 7 of 7 days with a reading, low 22, high 28, ending 28 on Oct 24.');
+  assert.equal(other.getAttribute('aria-label'),
+    'Coaches Web daily active people, this week: 7 of 7 days with a reading, low 7, high 9, ending 9 on Oct 31.');
+  /* The drawing inside is not announced; the name is the only place the data
+     is spoken. */
+  const svgs = findAll(lead, (n) => n.tagName === 'svg');
+  assert.ok(svgs.length && svgs.every((s) => s.getAttribute('aria-hidden') === 'true'));
 });
 
 test('a day with no stored reading breaks the line rather than joining across it', async () => {
   const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.activity.series[0].values = [910, 940, null, 980, 1040, 1077, 1102];
-      s.activity.daysMissingRollups = ['2026-09-15'];
-      return s;
+    usage: usageFixture((u) => {
+      const values = MOBILE_DAILY.slice();
+      values[26] = null;
+      u.apps[0].trend.values = values;
     }),
   });
-  const svg = chartOf(dom);
-  const group = findAll(svg, (n) => n.tagName === 'g' && n.getAttribute('data-series') === 'aria')[0];
-  const lines = findAll(group, (n) => n.tagName === 'path');
+  const [lead] = withClass(section(dom, 'charts'), 'chart-block');
+  const traced = withClass(lead, 'tc-line').map((p) => p.getAttribute('d'));
+  assert.equal(traced.length, 2, 'one line was drawn across a day with no reading');
+  assert.ok(traced.every((d) => (d.match(/M/g) || []).length === 1), 'a path restarts inside itself');
 
-  /* Two strokes with nothing between them, rather than one stroke through the
-     day nothing was stored for. Joining would draw a measurement that was
-     never taken; dropping to zero would draw one that was taken and was zero. */
-  assert.equal(lines.length, 2,
-    'the gap day was joined across instead of breaking the line into two');
-  for (const line of lines) {
-    const d = line.getAttribute('d') || '';
-    assert.doesNotMatch(d, /NaN/, 'the gap day reached the path as NaN');
-    assert.equal((d.match(/M/g) || []).length, 1, 'a stroke restarted inside itself: ' + d);
-  }
-  const other = findAll(svg, (n) => n.tagName === 'g' && n.getAttribute('data-series') === 'ariaxii')[0];
-  assert.equal(findAll(other, (n) => n.tagName === 'path').length, 1,
-    'the app with a full window lost its line too');
-
-  const text = liveText(dom);
-  assert.match(text, /15 Sep 2026/, 'the gap day is drawn but never named');
-  assert.match(text, /6 of 7 days/,
-    'the app with a missing day still claims a reading for every day');
-  assert.doesNotMatch(text, /\b0 people on 2026-09-15\b/,
-    'the gap day was reported as a measured zero');
+  const name = one(lead, 'tchart').getAttribute('aria-label');
+  assert.match(name, /this week: 6 of 7 days with a reading/);
 });
 
-test('not-enough-data activity copy follows the payload grain', async () => {
-  const day = await boot({
-    summary: summaryFixture((s) => {
-      s.activity.series.forEach((one) => {
-        one.values = one.values.map((v, index) => (index === 0 ? v : null));
-      });
-      s.activity.daysMissingRollups = DAYS.slice(1);
+test('a reported zero stays a zero on the line, and no reading is not one', async () => {
+  const zero = await boot({
+    usage: usageFixture((u) => {
+      const values = MOBILE_DAILY.slice();
+      values[27] = 0;
+      u.apps[0].trend.values = values;
     }),
   });
-  const dayText = liveText(day);
-  assert.match(dayText, /People active each day/,
-    'the day-grain not-enough-data case did not render the daily card');
-  assert.match(dayText, /Not enough days to draw a line yet/,
-    'the day-grain not-enough-data branch lost its day heading');
-  assert.match(dayText, /Fewer than two days in this window have a stored reading\./,
-    'the day-grain not-enough-data branch lost its day detail');
+  const [lead] = withClass(section(zero, 'charts'), 'chart-block');
+  assert.equal(withClass(lead, 'tc-line').length, 1, 'a reported zero breaks the line');
+  assert.ok(wordsOf(lead, 'tc-val').includes('0'), 'a reported zero has no value on the chart');
+  assert.match(one(lead, 'tchart').getAttribute('aria-label'), /7 of 7 days with a reading, low 0, high 37/);
 
-  const hour = await boot({
-    summary: summaryFixture((s) => {
-      s.activity = hourlyActivity((a) => {
-        a.series.forEach((one) => {
-          one.values = one.values.map((v, index) => (index === 0 ? 7 : null));
-        });
-        a.hoursMissingRollups = HOUR_KEYS.slice(1);
-      });
+  const none = await boot({
+    usage: usageFixture((u) => {
+      u.apps[0].trend.values = MOBILE_DAILY.map((v, i) => (i >= 23 ? null : v));
     }),
   });
-  const hourText = liveText(hour);
-  assert.match(hourText, /People active each hour/,
-    'the hour-grain not-enough-data case did not render the hourly card');
-  assert.match(hourText, /Not enough hours to draw a line yet/,
-    'the hour-grain not-enough-data branch did not use hour heading copy');
-  assert.match(hourText, /Fewer than two hours in this window have a stored reading\./,
-    'the hour-grain not-enough-data branch did not use hour detail copy');
-  assert.doesNotMatch(hourText, /Not enough days to draw a line yet|Fewer than two days/,
-    'the hour-grain not-enough-data branch still used day copy');
+  const [bare] = withClass(section(none, 'charts'), 'chart-block');
+  assert.equal(withClass(bare, 'tc-line').length, 0);
+  assert.match(one(bare, 'tchart').getAttribute('aria-label'), /this week: no reading on any of 7 days\./);
+  assert.ok(!wordsOf(bare, 'tc-val').includes('0'), 'a week with no reading is drawn as a zero');
 });
 
-test('hour-grain null readings are gaps, reported zeroes stay zero, and apps are not summed', async () => {
+test('the chart is labelled with the dates of the days it draws', async () => {
+  const dom = await boot();
+  const [lead] = withClass(section(dom, 'charts'), 'chart-block');
+  assert.deepEqual(wordsOf(lead, 'tc-x'), ['Oct 25', 'Oct 28', 'Oct 31']);
+  assert.deepEqual(wordsOf(lead, 'tc-y'), ['38', '19', '0'],
+    'the ceiling is an even number just over the peak, and the floor is zero');
+  assert.deepEqual(wordsOf(lead, 'tc-val').slice(-1), ['37'], 'the last reading is labelled');
+});
+
+for (const state of ['not_reporting', 'insufficient', 'unconfigured', 'not_something']) {
+  test('daily lines that are ' + state + ' print words and draw no chart', async () => {
+    const dom = await boot({
+      usage: usageFixture((u) => { u.availability = { state, detail: 'Nothing to chart yet.' }; }),
+    });
+    const charts = section(dom, 'charts');
+    assert.equal(withClass(charts, 'tchart').length, 0);
+    assert.ok(!hasDigit(allText(one(charts, 'big'))));
+    assert.equal(allText(one(charts, 'hp-note')), 'Nothing to chart yet.');
+  });
+}
+
+/* ============================== the moments ============================= */
+
+test('the best mobile day is earned by a strict maximum over a fortnight with no missing rollup', async () => {
+  const dom = await boot({ growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }) });
+  assert.deepEqual(moments(dom), [
+    { value: '37', label: 'Best Mobile day', sub: 'in 30 days', tone: 'is-cyan' },
+  ]);
+
+  const none = async (mutate, why) => {
+    const d = await boot({
+      growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
+      usage: usageFixture(mutate),
+    });
+    assert.deepEqual(moments(d), [], why);
+    assert.equal(withClass(section(d, 'moments'), 'sec-label').length, 0, 'the label is drawn over nothing: ' + why);
+  };
+  await none((u) => { u.apps[0].trend.values[28] = 37; }, 'a tie is not a best day');
+  await none((u) => { u.apps[0].trend.values[10] = 40; }, 'an earlier higher day is not beaten');
+  await none((u) => { u.window.daysCovered = 13; }, 'less than a fortnight says nothing about a best');
+  await none((u) => { u.window.daysMissingRollups = ['2026-10-12']; }, 'a day with no rollup could have been higher');
+  await none((u) => { delete u.window.daysMissingRollups; }, 'a window that does not say which rollups are missing');
+  await none((u) => { u.availability = { state: 'insufficient' }; }, 'usage that is not ready');
+  await none((u) => { u.apps[0].trend.values[29] = null; }, 'a latest day with no reading');
+  await none((u) => { u.apps = u.apps.slice(1); }, 'a mobile line that did not arrive');
+  await none((u) => { u.apps[0].trend.values = u.apps[0].trend.values.slice(-13); }, 'a line shorter than the fortnight');
+});
+
+test('a null day among the earlier ones does not stop the best day being earned', async () => {
   const dom = await boot({
-    summary: summaryFixture((s) => { s.activity = hourlyActivity(); }),
+    growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
+    usage: usageFixture((u) => { u.apps[0].trend.values[5] = null; }),
   });
-  const svg = chartOf(dom);
-  assert.ok(svg, 'the activity chart is not on the pane');
-
-  const groups = findAll(svg, (n) => n.tagName === 'g' && n.getAttribute('data-series'));
-  const keys = groups.map((g) => g.getAttribute('data-series')).sort();
-  assert.deepEqual(keys, ['coaches', 'mobile'],
-    'the hour-grain chart drew a combined series instead of one line per app: ' + keys.join(', '));
-
-  const mobile = groups.filter((g) => g.getAttribute('data-series') === 'mobile')[0];
-  const lines = findAll(mobile, (n) => n.tagName === 'path');
-  assert.equal(lines.length, 3,
-    'the two missing mobile hours were joined across instead of making three line runs');
-  for (const line of lines) {
-    assert.doesNotMatch(line.getAttribute('d') || '', /NaN/,
-      'a missing hourly reading reached the path as NaN');
-  }
-
-  const text = liveText(dom);
-  assert.match(text, /1 hour did not report/,
-    'the hour-grain chart did not say how many hours did not report');
-  assert.match(text, /22 of 24 hours/,
-    'the mobile series did not count hourly nulls as gaps');
-  const name = svg.getAttribute('aria-label') || '';
-  assert.match(name, /1 hour did not report/,
-    'the chart spoken description did not say how many hours did not report');
-  assert.match(name, /low 0, high 74/,
-    'a reported zero was not kept as a measured hourly value');
-  assert.doesNotMatch(text, /\b134\b/,
-    'Mobile and Coaches Web were summed into a combined activity value');
-  assert.doesNotMatch(text, /\b0 people on 11:00\b/,
-    'a missing hour was described as a measured zero');
+  assert.equal(moments(dom).length, 1, 'a gap was read as a day that beat the latest');
 });
 
-/* ===================== the cost tile and the omissions ================== */
+test('the best day is named for the line that earned it', async () => {
+  const dom = await boot({
+    growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
+    usage: usageFixture((u) => { u.apps[0].label = '  Aria Mobile  '; }),
+  });
+  assert.equal(moments(dom)[0].label, 'Best Aria Mobile day');
+});
+
+test('most paying is earned only by a count above all eight weekly readings', async () => {
+  const quiet = { summary: summaryFixture((s) => { s.aiRuns.runs = 1; }), usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
+  const dom = await boot({ ...quiet });
+  assert.deepEqual(moments(dom), [{ value: '31', label: 'Most paying', sub: 'in 8 weeks', tone: 'is-cyan' }]);
+
+  const none = async (mutate, why) => {
+    const d = await boot({ ...quiet, growth: growthFixture(mutate) });
+    assert.deepEqual(moments(d), [], why);
+  };
+  await none((g) => { g.payingSubscribers.weeks[3].count = 31; }, 'level with a week is not a record');
+  await none((g) => { g.payingSubscribers.weeks[3].count = 35; }, 'a higher week before');
+  await none((g) => { g.payingSubscribers.weeks = g.payingSubscribers.weeks.slice(1); }, 'seven weeks of eight');
+  await none((g) => { g.payingSubscribers.weeks[0].count = null; }, 'a week with no count');
+  await none((g) => { g.payingSubscribers.weeks.push({ count: 1 }); }, 'nine weeks of eight');
+  await none((g) => { delete g.payingSubscribers.current; }, 'no current reading');
+  await none((g) => { g.payingSubscribers.current.count = '31'; }, 'a count that is not a number');
+  await none((g) => { delete g.payingSubscribers; }, 'no subscriber history at all');
+});
+
+test('a growth read that fails or is missing removes its tile and says nothing about it', async () => {
+  const quiet = { summary: summaryFixture((s) => { s.aiRuns.runs = 1; }), usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
+  for (const growth of [Object.assign(new Error('Not found'), { code: 'http_404' }), boom('Growth fell over.')]) {
+    const dom = await boot({ ...quiet, growth });
+    assert.deepEqual(moments(dom), []);
+    const page = allText(dom.doc.getElementById('content'));
+    assert.ok(!/paying|growth|Growth fell over/i.test(page), 'the failed growth read is mentioned: ' + page);
+    assert.equal(withClass(dom.doc.getElementById('content'), 'fail-line').length, 0, 'the growth failure drew a failure');
+    assert.ok(!findAll(dom.doc.getElementById('content'), (n) => n.getAttribute('data-retry') !== null
+      && /paying|growth/i.test(n.getAttribute('data-retry'))).length, 'growth has a retry');
+    /* The rest of the page is not degraded by it: nothing anywhere asks to be
+       retried. */
+    assert.equal(findAll(dom.doc.getElementById('content'), (n) => n.getAttribute('data-retry') !== null).length, 0,
+      'a retry is on the page for a pane that read what it needs');
+  }
+});
+
+test('more AI runs is earned only when both weeks are fully reported and the count rose', async () => {
+  const lone = { growth: new Error('gone'), usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
+  const dom = await boot({ ...lone });
+  assert.deepEqual(moments(dom), [{ value: '+410', label: 'More AI runs', sub: 'vs last week', tone: 'is-violet' }]);
+
+  const none = async (mutate, why) => {
+    const d = await boot({ ...lone, summary: summaryFixture(mutate) });
+    assert.deepEqual(moments(d), [], why);
+  };
+  await none((s) => { s.aiRuns.previous.runs = 4820; }, 'the same number of runs');
+  await none((s) => { s.aiRuns.previous.runs = 5000; }, 'fewer runs');
+  await none((s) => { s.aiRuns.daysMissing = ['2026-10-28']; }, 'a day missing from this week');
+  await none((s) => { s.aiRuns.daysReported = 6; }, 'a week that is not fully reported');
+  await none((s) => { s.aiRuns.previous.daysReported = 5; }, 'a week before that is not fully reported');
+  await none((s) => { delete s.aiRuns.previous; }, 'no week before');
+  await none((s) => { s.aiRuns.previous = { runs: null, daysReported: 7 }; }, 'no run count for the week before');
+  await none((s) => { s.aiRuns.availability = { state: 'not_reporting' }; }, 'runs that are not ready');
+  await none((s) => { delete s.aiRuns.window; }, 'a week of no stated length');
+  await none((s) => { delete s.aiRuns.daysMissing; }, 'no list of the days that are missing');
+});
+
+test('all three moments sit under one label, in order, and none drawn is no strip', async () => {
+  const dom = await boot();
+  assert.deepEqual(wordsOf(section(dom, 'moments'), 'sec-label'), ['This week']);
+  assert.deepEqual(moments(dom).map((m) => m.label), ['Best Mobile day', 'Most paying', 'More AI runs']);
+
+  const empty = await boot({
+    growth: new Error('gone'), usage: usageFixture((u) => { u.window.daysCovered = 3; }),
+    summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }),
+  });
+  assert.equal(section(empty, 'moments').childNodes.length, 0, 'a strip was drawn with nothing earned');
+});
+
+/* ============================ the health line =========================== */
+
+const OK = 'No critical issues';
+
+test('the health line says no critical issues only when it has earned the claim', async () => {
+  const calm = await boot({ problems: problemsFixture([]) });
+  assert.equal(healthText(calm), OK);
+  assert.equal(healthTone(calm), 'is-ok');
+
+  /* A rules answer with no channel list at all says nothing about delivery, so
+     it is not "no destination is set". */
+  const silent = await boot({
+    problems: problemsFixture([]),
+    rules: rulesFixture((r) => { delete r.channels; }),
+  });
+  assert.equal(healthText(silent), OK);
+
+  const acknowledged = await boot({
+    problems: problemsFixture([{ id: 'a', severity: 'warning', status: 'acknowledged', title: 'Cost' }]),
+  });
+  assert.equal(healthText(acknowledged), OK, 'a warning is not a critical issue');
+});
+
+test('the health line never says no critical issues over a read it could not trust', async () => {
+  const cases = [
+    ['a failed problems read', { problems: boom('down') }, 'Problems unread', 'is-warn'],
+    ['a rules read that failed', { problems: problemsFixture([]), rules: boom('down') }, 'Checks unread', 'is-warn'],
+    ['checks that are not running', {
+      problems: problemsFixture([]),
+      rules: rulesFixture((r) => { r.rules.forEach((x) => { x.enabled = false; }); }),
+    }, 'Checks not running', 'is-warn'],
+    ['checks that never ran', {
+      problems: problemsFixture([]),
+      rules: rulesFixture((r) => { r.rules.forEach((x) => { x.lastEvaluatedAt = null; }); }),
+    }, 'Checks not running', 'is-warn'],
+    ['no destination to tell anyone', {
+      problems: problemsFixture([]),
+      rules: rulesFixture((r) => { r.channels[0].configured = false; }),
+    }, 'No alert destination set', 'is-warn'],
+    ['a channel list that is empty', {
+      problems: problemsFixture([]),
+      rules: rulesFixture((r) => { r.channels = []; }),
+    }, 'No alert destination set', 'is-warn'],
+    ['a full page of problems', {
+      problems: problemsFixture(Array.from({ length: 100 }, (_, i) => ({
+        id: 'w' + i, severity: 'warning', status: 'open', title: 'Slow ' + i }))),
+    }, 'At least 100 open problems', 'is-warn'],
+    ['a critical problem', {}, '1 critical issue', 'is-crit'],
+    ['a critical problem somebody is already on', {
+      problems: problemsFixture([{ id: 'c', severity: 'critical', status: 'acknowledged', title: 'Down' }]),
+    }, '1 critical issue', 'is-crit'],
+  ];
+  for (const [name, options, words, tone] of cases) {
+    const dom = await boot(options);
+    assert.equal(healthText(dom), words, name);
+    assert.equal(healthTone(dom), tone, name);
+    assert.ok(!allText(section(dom, 'health')).includes(OK), name + ' says ' + OK);
+  }
+});
+
+test('critical issues are counted and a closed one is not', async () => {
+  const dom = await boot({
+    problems: problemsFixture([
+      { id: '1', severity: 'critical', status: 'open', title: 'A' },
+      { id: '2', severity: 'critical', status: 'acknowledged', title: 'B' },
+      { id: '3', severity: 'critical', status: 'closed', title: 'C' },
+      { id: '4', severity: 'warning', status: 'open', title: 'D' },
+    ]),
+  });
+  assert.equal(healthText(dom), '2 critical issues');
+  assert.equal(healthTone(dom), 'is-crit');
+});
+
+test('every status dot is decoration, because the health line says it in words', async () => {
+  for (const options of [{}, { problems: problemsFixture([]) }, { problems: boom('x') }]) {
+    const dom = await boot(options);
+    const dots = withClass(dom.doc.getElementById('content'), 'dot');
+    assert.ok(dots.length >= 1);
+    for (const dot of dots) {
+      assert.equal(dot.getAttribute('aria-hidden'), 'true', 'a status dot is announced as something');
+      assert.equal(allText(dot), '', 'a status dot carries words');
+    }
+    assert.ok(allText(one(section(dom, 'health'), 'health-text')).length > 3);
+  }
+});
+
+/* =============================== the queue =============================== */
+
+test('the queue lists the three worst problems, worst first then oldest, and counts the rest', async () => {
+  const row = (id, severity, at, title) => ({ id, severity, status: 'open', title, detectedAt: at, firedAt: at });
+  const dom = await boot({
+    problems: problemsFixture([
+      row('1', 'warning', '2026-10-01T00:00:00.000Z', 'Old warning'),
+      row('2', 'critical', '2026-10-20T00:00:00.000Z', 'Newer critical'),
+      row('3', 'info', '2026-09-01T00:00:00.000Z', 'Oldest info'),
+      row('4', 'critical', '2026-10-10T00:00:00.000Z', 'Older critical'),
+      row('5', 'warning', '2026-10-15T00:00:00.000Z', 'New warning'),
+    ]),
+  });
+  const rows = withClass(section(dom, 'problems'), 'prob-row');
+  assert.deepEqual(rows.map((r) => allText(one(r, 'prob-title'))),
+    ['Older critical', 'Newer critical', 'Old warning']);
+  assert.equal(allText(one(section(dom, 'problems'), 'prob-more')), '+2 more');
+  assert.deepEqual(rows.map((r) => allText(one(r, 'prob-since'))), ['Since Oct 10', 'Since Oct 20', 'Since Oct 1']);
+});
+
+test('a full page of problems says the rest is a floor, not a count', async () => {
+  const rows = Array.from({ length: 100 }, (_, i) => ({
+    id: 'p' + i, severity: 'warning', status: 'open', title: 'Slow ' + i,
+    detectedAt: '2026-10-01T00:00:00.000Z' }));
+  const dom = await boot({ problems: problemsFixture(rows) });
+  assert.equal(allText(one(section(dom, 'problems'), 'prob-more')), '+97 or more');
+});
+
+test('a quiet queue draws no rows and no empty frame', async () => {
+  const dom = await boot({ problems: problemsFixture([]) });
+  assert.equal(section(dom, 'problems').childNodes.length, 0);
+});
+
+test('a problem never names the person on it, because the pane was never given a name', async () => {
+  const dom = await boot({
+    problems: problemsFixture([
+      { id: 'a', severity: 'warning', status: 'acknowledged', title: 'Cloud costs up',
+        acknowledgedBy: 'adm_op', acknowledgedByEmail: 'anthony@ops.invalid', summary: 'Spend is high.' },
+      { id: 'b', severity: 'warning', status: 'open', title: 'Slow job',
+        acknowledgedBy: null, acknowledgedByEmail: null },
+    ]),
+  });
+  const rows = withClass(section(dom, 'problems'), 'prob-row');
+  assert.deepEqual(rows.map((r) => allText(one(r, 'prob-who'))), ['Someone is on it', 'Nobody on it']);
+  assert.equal(withClass(rows[0], 'who-av').length, 1, 'somebody being on it has a person glyph');
+  assert.equal(withClass(rows[1], 'who-av').length, 0, 'nobody being on it has no person glyph');
+
+  const everything = allDomTextAndAttrs(dom.doc.getElementById('content'));
+  for (const leaked of ['anthony@ops.invalid', 'anthony', 'adm_op', 'Spend is high.']) {
+    assert.ok(!everything.includes(leaked), leaked + ' reached the screen');
+  }
+});
+
+test('a problem title has its contact details masked, and an empty one is named as untitled', async () => {
+  const dom = await boot({
+    problems: problemsFixture([
+      { id: 'a', severity: 'critical', status: 'open', title: 'Email from jane@example.com is failing' },
+      { id: 'b', severity: 'warning', status: 'open', title: '   ' },
+      { id: 'c', severity: 'info', status: 'open' },
+    ]),
+  });
+  const titles = withClass(section(dom, 'problems'), 'prob-title').map(allText);
+  assert.ok(!titles[0].includes('jane@example.com'), 'an address reached the screen: ' + titles[0]);
+  assert.match(titles[0], /^Email from .+ is failing$/);
+  assert.deepEqual(titles.slice(1), ['Untitled problem', 'Untitled problem']);
+  const view = findAll(section(dom, 'problems'), (n) => classesOf(n).includes('prob-view'));
+  assert.ok(!view[0].getAttribute('aria-label').includes('jane@example.com'));
+});
+
+test('a critical problem says critical in the row itself, in words a screen reader reads first', async () => {
+  const dom = await boot({
+    problems: problemsFixture([
+      { id: 'a', severity: 'critical', status: 'open', title: 'T1' },
+      { id: 'b', severity: 'warning', status: 'open', title: 'T2' },
+      { id: 'c', severity: 'info', status: 'open', title: 'T3' },
+    ]),
+  });
+  const rows = withClass(section(dom, 'problems'), 'prob-row');
+  assert.deepEqual(rows.map((r) => allText(one(r, 'sr'))), ['Critical:', 'Warning:', 'Info:']);
+  assert.deepEqual(rows.map((r) => classesOf(r).find((c) => c.startsWith('is-'))), ['is-crit', 'is-warn', 'is-info']);
+});
+
+test('a severity this pane does not know reaches the row as the word that arrived', async () => {
+  const dom = await boot({
+    problems: problemsFixture([{ id: 'a', severity: 'blocker', status: 'open', title: 'Odd' }]),
+  });
+  const row = withClass(section(dom, 'problems'), 'prob-row')[0];
+  assert.equal(allText(one(row, 'sr')), 'blocker:');
+  assert.ok(classesOf(row).includes('is-info'), 'an unknown severity is drawn in a tone of its own invention');
+});
+
+for (const severity of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+  test('a severity named ' + severity + ' does not put JavaScript on the screen', async () => {
+    const dom = await boot({
+      problems: problemsFixture([{ id: 'a', severity, status: 'open', title: 'Hostile' }]),
+    });
+    const row = withClass(section(dom, 'problems'), 'prob-row')[0];
+    assert.ok(row, 'the row was not drawn');
+    const spoken = allText(one(row, 'sr'));
+    assert.ok(!FN_TEXT.test(spoken), 'a function is read out: ' + spoken);
+    assert.equal(spoken, severity + ':');
+    const klass = classesOf(row).join(' ');
+    assert.ok(!FN_TEXT.test(klass), 'a function is in the class list: ' + klass);
+    assert.ok(classesOf(row).includes('is-info'));
+    assert.ok(!/undefined|\[object/.test(allDomTextAndAttrs(row)), 'the row says something it should not');
+  });
+}
+
+test('a severity of nothing at all is named unknown and nothing says undefined', async () => {
+  for (const severity of [undefined, null, '', '   ', 5, {}]) {
+    const dom = await boot({
+      problems: problemsFixture([{ id: 'a', severity, status: 'open', title: 'Blank' }]),
+    });
+    const row = withClass(section(dom, 'problems'), 'prob-row')[0];
+    assert.equal(allText(one(row, 'sr')), 'Unknown:', JSON.stringify(severity));
+    assert.ok(!/undefined|null|\[object|NaN/.test(allDomTextAndAttrs(dom.doc.getElementById('content'))),
+      'the screen says something it should not for ' + JSON.stringify(severity));
+  }
+});
+
+test('each problem opens the pane its work happens in, and an unknown pane opens Problems', async () => {
+  const dom = await boot({
+    problems: problemsFixture([
+      { id: 'a', severity: 'critical', status: 'open', title: 'A', workPane: 'jobs-live' },
+      { id: 'b', severity: 'critical', status: 'open', title: 'B', workPane: 'run-history' },
+      { id: 'c', severity: 'critical', status: 'open', title: 'C', workPane: 'spend' },
+      { id: 'd', severity: 'warning', status: 'open', title: 'D', workPane: 'nowhere' },
+      { id: 'e', severity: 'warning', status: 'open', title: 'E', workPane: 'overview' },
+      { id: 'f', severity: 'warning', status: 'open', title: 'F' },
+    ]),
+  });
+  const registry = dom.window.OpsPaneRegistry;
+  const hrefs = withClass(section(dom, 'problems'), 'prob-view').map((a) => a.getAttribute('href').split('?')[0]);
+  /* The queue lists the three worst, in order, so the last three are in the
+     "more" count. The first three are critical. */
+  assert.deepEqual(hrefs, [registry.PANES.jobs.file, registry.PANES.history.file, registry.PANES.spend.file]);
+
+  const rest = await boot({
+    problems: problemsFixture([
+      { id: 'd', severity: 'warning', status: 'open', title: 'D', workPane: 'nowhere' },
+      { id: 'e', severity: 'warning', status: 'open', title: 'E', workPane: 'overview' },
+      { id: 'f', severity: 'warning', status: 'open', title: 'F' },
+    ]),
+  });
+  assert.deepEqual(
+    withClass(section(rest, 'problems'), 'prob-view').map((a) => a.getAttribute('href').split('?')[0]),
+    Array(3).fill(registry.PANES.alerts.file),
+    'a problem whose work pane is not known, or is Today itself, opens Problems');
+});
+
+/* ============================== happening now ============================= */
+
+test('the live line says how many are running now, and is absent when it cannot say', async () => {
+  const live = async (mutate) => {
+    const dom = await boot({ jobs: jobsFixture(mutate) });
+    const found = withClass(section(dom, 'live'), 'live-text');
+    return found.length ? allText(found[0]) : null;
+  };
+  assert.equal(await live(), '6 running now');
+  assert.equal(await live((j) => { j.queue.byState = [{ state: 'running', jobs: 0 }]; }), 'Nothing running');
+  assert.equal(await live((j) => { j.queue.byState = [{ state: 'queued', jobs: 4 }]; }), null,
+    'a missing running count was read as nothing running');
+  assert.equal(await live((j) => { delete j.queue; }), null);
+});
+
+test('the jobs tile counts what the read counted, and says so when a figure did not arrive', async () => {
+  const dom = await boot();
+  const tile = section(dom, 'jobs');
+  assert.equal(allText(one(tile, 'big')), '19 jobs');
+  const rows = (root) => withClass(root, 'job-row').map((r) => [allText(one(r, 'job-n')), allText(one(r, 'job-l'))]);
+  assert.deepEqual(rows(tile), [['6', 'running'], ['13', 'queued'], ['0', 'stuck']]);
+
+  const blank = await boot({ jobs: jobsFixture((j) => { delete j.queue.open; j.queue.byState = []; }) });
+  assert.equal(allText(one(section(blank, 'jobs'), 'big')), 'Not reported');
+  assert.deepEqual(rows(section(blank, 'jobs')), [['-', 'running'], ['-', 'queued'], ['0', 'stuck']],
+    'a count that did not arrive was drawn as zero');
+
+  const one1 = await boot({ jobs: jobsFixture((j) => { j.queue.open = 1; }) });
+  assert.equal(allText(one(section(one1, 'jobs'), 'big')), '1 job');
+
+  const canceling = await boot({
+    jobs: jobsFixture((j) => { j.queue.byState.push({ state: 'canceling', jobs: 2 }); }),
+  });
+  assert.deepEqual(rows(section(canceling, 'jobs')).map((r) => r[1]), ['running', 'queued', 'canceling', 'stuck']);
+});
+
+test('a stuck count is exactly as wide as the read behind it', async () => {
+  const stuck = async (completeness, list) => {
+    const dom = await boot({
+      jobs: jobsFixture((j) => { j.attention = { completeness, stuck: list }; }),
+    });
+    return withClass(section(dom, 'jobs'), 'job-row')
+      .filter((r) => classesOf(r).includes('is-stuck')).map((r) => allText(one(r, 'job-n')))[0];
+  };
+  assert.equal(await stuck('whole_queue', []), '0', 'a whole-queue read that saw none has seen none');
+  assert.equal(await stuck('whole_queue', [{}, {}]), '2');
+  assert.equal(await stuck('working_set_only', []), 'none seen', 'a bounded read that saw none is not "none"');
+  assert.equal(await stuck('working_set_only', [{}, {}]), '2+', 'a bounded read is a floor');
+  assert.equal(await stuck('something_else', [{}]), '-', 'a read of unknown width says nothing');
+  assert.equal(await stuck('whole_queue', undefined), '-', 'a list that did not arrive is not an empty one');
+});
+
+/* ================================ Aria AI =============================== */
+
+test('the AI tile says how many runs and how many of the last day worked', async () => {
+  const dom = await boot();
+  const tile = section(dom, 'ai');
+  assert.equal(allText(one(tile, 'big')), '4,820 runs \u00b7 7 days');
+  assert.equal(allText(one(tile, 'ai-worked')), '24 / 25 worked');
+  assert.equal(allText(one(tile, 'ai-window')), 'Last 24h');
+  assert.equal(withClass(tile, 'ai-bar').length, 1);
+  assert.equal(withClass(tile, 'ai-miss').length, 1, 'a failure draws a miss on the bar');
+  assert.equal(withClass(tile, 'ai-fill')[0].style.width, '96.00%');
+});
+
+test('a cancellation is neither a success nor a failure, so it is not in the rate', async () => {
+  const dom = await boot({
+    runs: runsFixture((r) => { r.summary = { completed: 20, failed: 0, canceled: 9 }; }),
+  });
+  assert.equal(allText(one(section(dom, 'ai'), 'ai-worked')), '20 / 20 worked');
+  assert.equal(withClass(section(dom, 'ai'), 'ai-miss').length, 0, 'a miss is drawn with no failure');
+});
+
+test('the last day is words, never a rate, unless the read covered the whole day', async () => {
+  const words = async (mutate) => {
+    const dom = await boot({ runs: runsFixture(mutate) });
+    const tile = section(dom, 'ai');
+    assert.equal(withClass(tile, 'ai-bar').length, 0, 'a bar is drawn for a rate that is not drawn');
+    assert.equal(withClass(tile, 'ai-window').length, 0);
+    return allText(one(tile, 'ai-worked'));
+  };
+  assert.equal(await words((r) => { r.window.range = '7d'; }), 'Last 24h not reported');
+  assert.equal(await words((r) => { delete r.window; }), 'Last 24h not reported');
+  assert.equal(await words((r) => { r.coverage.coversWindow = false; }), 'Last 24h not fully recorded');
+  assert.equal(await words((r) => { r.coverage.state = 'partial'; }), 'Last 24h not fully recorded');
+  assert.equal(await words((r) => { delete r.coverage; }), 'Last 24h not fully recorded');
+  assert.equal(await words((r) => { delete r.summary.failed; }), 'Last 24h not reported');
+  assert.equal(await words((r) => { r.summary.completed = '24'; }), 'Last 24h not reported');
+  assert.equal(await words((r) => { r.summary = { completed: 0, failed: 0 }; }), 'No runs finished');
+});
+
+test('the run count is words when the summary is not ready', async () => {
+  for (const [state, text] of [['not_reporting', 'No reading'], ['unconfigured', 'Not set up'], ['mystery', 'Not reported']]) {
+    const dom = await boot({
+      summary: summaryFixture((s) => { s.aiRuns.availability = { state }; }),
+    });
+    const big = one(section(dom, 'ai'), 'big');
+    assert.equal(allText(big), text);
+    assert.equal(withClass(big, 'num').length, 0, 'a number beside a block that is not ready');
+  }
+  const noRuns = await boot({ summary: summaryFixture((s) => { delete s.aiRuns.runs; }) });
+  assert.ok(classesOf(one(section(noRuns, 'ai'), 'big')).includes('words'), 'a missing run count was drawn as a number');
+});
+
+test('a single run is a run and a single day is a day', async () => {
+  const dom = await boot({
+    summary: summaryFixture((s) => { s.aiRuns.runs = 1; s.aiRuns.window = { days: 1 }; s.aiRuns.daysReported = 1; }),
+  });
+  assert.equal(allText(one(section(dom, 'ai'), 'big')), '1 run \u00b7 1 day');
+});
+
+/* ================================ spend ================================= */
+
+test('the spend tile shows the latest billed day, drawn from the billed days only', async () => {
+  const dom = await boot();
+  const tile = section(dom, 'spend');
+  assert.equal(allText(one(tile, 'big')), '$115.00', 'the latest billed day is the last of the billed values');
+  assert.equal(allText(one(tile, 'spend-day')), 'Oct 31');
+  assert.equal(allText(one(tile, 'spend-avg')), '$100.00 daily avg \u00b7 Oct');
+  const chart = one(tile, 'tchart');
+  assert.ok(classesOf(chart).includes('is-spark'));
+  assert.equal(chart.getAttribute('aria-label'),
+    'Daily cloud spend over 31 billed days, this week: 31 of 31 days with a reading, low 85,000,000, high 115,000,000, ending 115,000,000.');
+});
+
+test('the spend line is never longer than the days that billed', async () => {
+  const dom = await boot({
+    costs: costsFixture((c) => {
+      c.period.billedDays = 10;
+      c.total.micros = 1_000_000_000;
+    }),
+  });
+  assert.equal(allText(one(section(dom, 'spend'), 'big')), '$94.00', 'the last billed day is the tenth, not the last value');
+  assert.match(one(section(dom, 'spend'), 'tchart').getAttribute('aria-label'), /10 of 10 days/);
+  assert.equal(allText(one(section(dom, 'spend'), 'spend-avg')).split(' ')[0], '$100.00');
+});
 
 test('the cost tile draws no budget track, because nothing records a budget', async () => {
-  const dom = await boot({});
-  const panel = livePanel(dom);
-  const bars = findAll(panel, (n) => /\b(meter|budget|track|progress)\b/.test(n.className || ''));
-  assert.deepEqual(bars.map((n) => n.className), [],
-    'a budget bar was drawn against a target nothing in the platform records');
-  assert.equal(findAll(panel, (n) => n.tagName === 'progress').length, 0);
+  const dom = await boot();
+  const tile = allDomTextAndAttrs(section(dom, 'spend'));
+  assert.ok(!/budget|forecast|projected|limit|of \$/i.test(tile), tile);
+  assert.equal(withClass(section(dom, 'spend'), 'meter').length, 0);
 });
 
-test('the omissions list is rendered from the answer, not from a list in the pane', async () => {
-  const named = await boot({
-    summary: summaryFixture((s) => {
-      s.omissions = [
-        { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' },
-        { key: 'forecast', title: 'No month-end forecast', detail: 'Only billed usage is stored.' },
-      ];
-      return s;
-    }),
+for (const [state, words] of [['not_published', 'Not published'], ['not_collected', 'Not collected'], ['strange', 'Not reported']]) {
+  test('a bill that is ' + state + ' prints words and its own reason, never a figure', async () => {
+    const dom = await boot({
+      costs: costsFixture((c) => { c.availability = { state, detail: 'The export has not landed.' }; }),
+    });
+    const tile = section(dom, 'spend');
+    assert.equal(allText(one(tile, 'big')), words);
+    assert.equal(allText(one(tile, 'hp-note')), 'The export has not landed.');
+    assert.equal(withClass(tile, 'num').length, 0);
+    assert.equal(withClass(tile, 'tchart').length, 0);
   });
-  const text = liveText(named);
-  assert.match(text, /No month-end forecast/,
-    'an omission the answer named is missing, so the list is hard-coded here');
-  assert.match(text, /Only billed usage is stored/, 'the reason was dropped');
+}
 
-  /* The other direction, which is the one that matters: a figure that gains a
-     source has to leave the list without an edit in this file. */
-  const gained = await boot({ summary: summaryFixture((s) => { s.omissions = []; return s; }) });
-  assert.doesNotMatch(liveText(gained), /No budget bar|budget/i,
-    'an omission the answer no longer names is still printed by the pane');
+test('a month with no billed day is words, not a zero dollar day', async () => {
+  for (const billedDays of [0, null, undefined]) {
+    const dom = await boot({ costs: costsFixture((c) => { c.period.billedDays = billedDays; }) });
+    const tile = section(dom, 'spend');
+    assert.ok(classesOf(one(tile, 'big')).includes('words'), 'billedDays ' + billedDays);
+    assert.ok(!hasDigit(allText(one(tile, 'big'))));
+  }
 });
 
-test('overview omission diagnostics mask contact details before the DOM sees them', async () => {
-  const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.omissions = [{
-        key: 'budget',
-        title: 'No budget bar',
-        detail: 'Contact Coach.Person+run@eu.example.com for this failure.',
-      }];
-      return s;
-    }),
-  });
-  const surface = allDomTextAndAttrs(livePanel(dom));
-  assert.doesNotMatch(surface, /Coach\.Person\+run@eu\.example\.com/,
-    'the overview omission detail reached DOM text or attributes with an address in it');
-  assert.match(surface, /Contact \[hidden contact detail\] for this failure\./,
-    'the route diagnostic was not drawn with its contact detail masked');
-});
-
-test('the static overview omissions are deduplicated by route keys', async () => {
-  const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.omissions = [
-        {
-          key: 'what_aria_has_been_doing',
-          title: 'Route copy for request types',
-          detail: 'The route should not make a second row for the same missing approved band.'
-        },
-        {
-          key: 'where_the_money_goes',
-          title: 'Route copy for money card',
-          detail: 'The route should not make a second row for the same missing approved card.'
-        }
-      ];
-      return s;
-    }),
-  });
-  const titles = Array.from(livePanel(dom).querySelectorAll('.omit-title'))
-    .map((node) => allText(node));
-
-  assert.equal(titles.filter((title) => title === 'What Aria has been doing').length, 1,
-    'the request-type static omission duplicated when the route used the same stable key');
-  assert.equal(titles.filter((title) => title === 'Where the money goes').length, 1,
-    'the money static omission duplicated when the route used the same stable key');
-  assert.equal(titles.some((title) => /Route copy/.test(title)), false,
-    'a route duplicate with the same key reached the screen');
-});
-
-test('the approved request-type table is acknowledged beside route omissions', async () => {
-  const dom = await boot({});
-  const text = liveText(dom);
-
-  assert.match(text, /Not drawn here, and why/,
-    'the acknowledgement card is not on the pane');
-  assert.match(text, /What Aria has been doing/,
-    'the approved request-type table is still silent');
-  assert.match(text, /No route serves per-request-type requests, reliability, latency and cost yet\./,
-    'the request-type table cause is missing or too vague');
-  assert.match(text, /summary route returns platform totals only/,
-    'the request-type table cause does not explain why the route cannot draw the rows');
-});
-
-test('the approved overview money card points at the Cloud costs pane', async () => {
-  const dom = await boot({});
-  const text = liveText(dom);
-
-  assert.match(text, /Where the money goes/,
-    'the approved overview money card is still silent');
-  assert.match(text, /Cloud costs draws the spend breakdown by category and resource group/,
-    'the overview money-card cause does not point at the pane that draws the breakdown');
-  assert.match(text, /Overview has no smaller spend-breakdown field/,
-    'the overview money-card cause does not state this pane gap');
-});
-
-/* ============================== the doorways =========================== */
+/* ============================== the doorways ============================ */
 
 test('every doorway points at the pane the registry says owns the question', async () => {
-  const dom = await boot({});
+  const dom = await boot();
   const registry = dom.window.OpsPaneRegistry;
   const files = Object.keys(registry.PANES).map((id) => registry.PANES[id].file);
 
-  const links = findAll(livePanel(dom), (n) => n.tagName === 'A' && n.getAttribute('href'));
-  assert.ok(links.length >= 4, 'the pane has no doorways on it at all');
+  const links = findAll(dom.doc.getElementById('content'), (n) => n.tagName === 'A' && n.getAttribute('href'));
+  assert.ok(links.length >= 5, 'the pane has no doorways on it at all');
   for (const link of links) {
     const file = (link.getAttribute('href') || '').split('?')[0];
     assert.ok(files.indexOf(file) !== -1,
       'a doorway points at ' + file + ', which is not a pane the registry names');
-    assert.ok(allText(link).replace(/\s+/g, ' ').trim().length > 3,
-      'a doorway has no words in it');
+    assert.ok(allText(link).length > 3 || link.getAttribute('aria-label'), 'a doorway has no words in it');
   }
 
-  /* The specific paths the approved mock draws. */
-  const hrefs = links.map((l) => (l.getAttribute('href') || '').split('?')[0]);
-  for (const file of ['analytics.html', 'run-history.html', 'spend.html', 'releases.html']) {
-    assert.ok(hrefs.indexOf(file) !== -1, 'no doorway into ' + file);
+  const into = (host) => withClass(section(dom, host), 'tile-link').map((a) => a.getAttribute('href').split('?')[0]);
+  assert.deepEqual(into('jobs'), [registry.PANES.jobs.file]);
+  assert.deepEqual(into('ai'), [registry.PANES.history.file]);
+  assert.deepEqual(into('spend'), [registry.PANES.spend.file]);
+  assert.deepEqual(withClass(section(dom, 'spend'), 'spend-link').map((a) => a.getAttribute('href').split('?')[0]),
+    [registry.PANES.spend.file]);
+  const hrefs = links.map((l) => l.getAttribute('href').split('?')[0]);
+  for (const file of ['jobs-live.html', 'run-history.html', 'spend.html']) {
+    assert.ok(hrefs.includes(file), 'no doorway into ' + file);
   }
 });
 
-test('the reporting floor is the same number the understand panes use', async () => {
-  const floor = /REPORTING_FLOOR\s*=\s*(\d+)/;
-  const here = floor.exec(PANE_SRC);
-  const there = floor.exec(PANE_DATA_SRC);
-  assert.ok(here && there, 'one of the two files stopped naming a reporting floor');
-  assert.equal(here[1], there[1],
-    'Overview and the understand panes now hide a share over different group sizes');
+test('a doorway in the page is a link the browser can follow and never a script', async () => {
+  const dom = await boot();
+  for (const link of findAll(dom.doc.getElementById('content'), (n) => n.getAttribute('href') !== null)) {
+    assert.match(link.getAttribute('href'), /^[a-z0-9-]+\.html/, 'a doorway is not a relative page: ' + link.getAttribute('href'));
+  }
 });
 
-/* The test above pins the literal; it cannot see whether the literal is ever
-   applied, which is the source-grep shape this repository has been caught by
-   before. Raised in review. This one runs the branch. */
-test('a comparison over too small a group prints no rate', async () => {
-  const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.people.platform.previousActive = 9;
-      s.people.reportingFloor = 50;
-    }),
+/* ============================ the head and the badge ===================== */
+
+test('the title carries the date and when the figures were read, in UTC', async () => {
+  const dom = await boot();
+  const slot = dom.doc.getElementById('pageSub');
+  assert.ok(slot, 'the shell has no slot under the title');
+  assert.deepEqual(wordsOf(slot, 'sub-date'), ['Sun, Nov 1, 2026']);
+  assert.deepEqual(wordsOf(slot, 'sub-updated'), ['Updated 09:41 UTC']);
+});
+
+test('the title falls back to the jobs read, and says nothing when neither read has a time', async () => {
+  const jobsOnly = await boot({ summary: boom('down') });
+  assert.deepEqual(wordsOf(dom_slot(jobsOnly), 'sub-updated'), ['Updated 09:40 UTC']);
+
+  const neither = await boot({
+    summary: summaryFixture((s) => { s.generatedAt = 'not a date'; }),
+    jobs: jobsFixture((j) => { delete j.generatedAt; }),
   });
-  const tile = tileText(dom, /Active people/i);
-  assert.match(tile, /no rate under 50 people/,
-    'a comparison against 9 people printed no reason for withholding the rate');
-  assert.doesNotMatch(tile, /%/,
-    'a share was drawn over a group too small to report one');
-  assert.match(tileText(dom, /Cloud spend/i), /%/,
-    'every rate on the pane disappeared, so this proves nothing about the floor');
+  assert.equal(dom_slot(neither).childNodes.length, 0, 'a stamp that cannot be read was printed');
 });
 
-/* ======================= status, never colour alone ===================== */
+function dom_slot(dom) {
+  return dom.doc.getElementById('pageSub');
+}
 
-/* The class names a state can be painted in, read from the stylesheets that
-   paint them rather than listed here. Two sources, because a tone reaches the
-   DOM by two routes: `aria.css` publishes the shared vocabulary as compound
-   rules (`.dot.bad`, `.pill.up`), and this pane's own sheet adds its shapes.
-   A hand-listed set of whole class names went blind to five spellings at the
-   first review, and the enumeration that replaced it went blind to `.dot.bad`
-   and `.dot.live` at the second — both times because the list was written
-   from what the pane happened to use that day.
-
-   Family prefixes stay, for classes no compound rule declares (`st-bad`,
-   `is-crit`, `tone-rose`).
-
-   Every **compound** rule in the two sheets, whatever its base: round three
-   found a base allow-list here (`dot|pill|chip|tag|st|bar|ln|seg`) that made
-   the "derived" set NARROWER than the hand list it replaced, because this
-   shell's own badge vocabulary is spelled `.nav-badge.hot`, `.nav-badge.warm`
-   and `.nav-badge.soon`. Three demonstrated false greens. There is no
-   allow-list now, and over-reading (`.card.lift`, `.kpi-val.sm`) costs a
-   false alarm on an element that already carries words.
-
-   Proof pointers: V27 reinstates a coloured marker with its words blanked at
-   the all-quiet footer and this scan goes red; V27b does the same with
-   `nav-badge hot`, which was green before the allow-list came out. The scan
-   alone does not kill a blanked hero, because the hero element contains the
-   severity chips and their words satisfy it — that is what the ribbon test
-   further down is for.
-
-   NOT COVERED: a state painted by a rule in neither of these two sheets; a
-   state painted by a SINGLE-class rule, since the derivation only reads
-   compound selectors, unless its class happens to match a family prefix
-   above; and a state painted by an inline or computed value rather than a
-   class. */
-const SHEETS = ['ops/assets/aria.css', 'ops/assets/pane-overview-v2.css'];
-const TONE_WORDS = [...new Set(SHEETS.flatMap((f) => [
-  ...readFileSync(new URL('../' + f, import.meta.url), 'utf8')
-    .matchAll(/\.[a-z][a-z0-9-]*\.([a-z][a-z0-9-]*)/g),
-].map((m) => m[1])))].sort();
-const TONE_CLASS = new RegExp(
-  '(^|\\s)(st-[a-z]+|is-[a-z]+|acc|acc-[a-z]+|tone-[a-z]+|' +
-  TONE_WORDS.join('|') + ')(\\s|$)');
-
-test('the tone vocabulary is read from the sheets, not from a list here', () => {
-  for (const want of ['bad', 'live', 'ok', 'warn', 'vio', 'up', 'down', 'info',
-    'hot', 'warm', 'soon']) {
-    assert.ok(TONE_WORDS.includes(want),
-      want + ' is declared as a tone in the sheets but the scan cannot see it');
-  }
-  for (const cls of ['dot bad', 'dot live', 'nav-badge hot', 'nav-badge warm',
-    'nav-badge soon']) {
-    assert.ok(TONE_CLASS.test(cls), 'a tone the sheets declare escaped the scan: ' + cls);
-  }
-  assert.ok(!TONE_CLASS.test('kpi-label'), 'the scan matches a class that paints no state');
-  /* `.pill.ghost` is a shape rather than a state, and the derivation picks it
-     up anyway. Kept: over-reading costs a false alarm on an element that
-     already carries words, under-reading is the defect this scan exists for. */
-  assert.ok(TONE_CLASS.test('pill ghost'), 'the derivation stopped reading the sheet');
-});
-
-test('every status on the pane is carried in words, not only in a tone class', async () => {
-  const dom = await boot({});
-  const inChart = (n) => {
-    for (let p = n.parentNode; p; p = p.parentNode) {
-      if (p.getAttribute && p.getAttribute('role') === 'img') return true;
-    }
-    return false;
+test('the Health badge is the count this pane just read, and a quiet queue leaves none', async () => {
+  const badge = (dom) => {
+    const links = findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('data-badge-key') === 'alerts');
+    return links.map((l) => withClass(l, 'nav-badge').map(allText)).flat();
   };
-  /* Shapes inside a role="img" are skipped on purpose, not overlooked:
-     role="img" is children-presentational, so nothing in there is announced at
-     all and a word placed on it would be announced to nobody. The chart's data
-     lives in its accessible NAME, which `the activity chart's accessible name
-     carries the data` binds, and which shape belongs to which app is also in
-     data-series. */
-  const toned = findAll(livePanel(dom), (n) => TONE_CLASS.test(n.className || '') && !inChart(n));
-  assert.ok(toned.length >= 3, 'the pane carries no status markers at all');
-  for (const node of toned) {
-    /* A coloured dot beside a word is fine, and is how the mock draws a
-       series key. A coloured dot that is the only thing saying which state
-       this is, is the defect. So the words have to be somewhere a reader
-       reaches: on the marker, or on the thing it is decorating. */
-    const own = allText(node).replace(/\s+/g, ' ').trim();
-    const hidden = node.getAttribute('aria-hidden') === 'true';
-    const near = allText(node.parentNode).replace(/\s+/g, ' ').trim();
-    const words = hidden ? near : own;
-    const signed = /^[+\u2212-]\s*\d/.test(own);
-    assert.ok(/[A-Za-z]{3}/.test(words) || signed,
-      'a status is conveyed by colour alone: class=' + node.className);
-    if (signed) {
-      assert.ok(/[A-Za-z]{3}/.test(near),
-        'a signed figure is toned but nothing near it says what it is measuring');
-    }
-  }
-});
-
-/* The status ribbon is the pane's largest status element and the scan above
-   cannot kill it: the hero carries the severity chips inside it, so blanking
-   its title and sub leaves letters in allText() and the scan still passes.
-   Raised in review as a demonstrated false green. This reads the title and the
-   sub directly, and requires all three states to say something DIFFERENT —
-   a constant string satisfies "has words" and says nothing. */
-const HERO = (dom, cls) =>
-  allText(findAll(livePanel(dom), (n) => (n.className || '').indexOf(cls) !== -1)[0] || {})
-    .replace(/\s+/g, ' ').trim();
-
-test('the ribbon says its own state in words, and a different one per state', async () => {
-  const cases = {
-    active: await boot({}),
-    quiet: await boot({ problems: { problems: [] } }),
-    unarmed: await boot({ rules: { rules: [], channels: [] } }),
-  };
-
-  const titles = [];
-  for (const [name, dom] of Object.entries(cases)) {
-    const title = HERO(dom, 'hero-title');
-    const sub = HERO(dom, 'hero-sub');
-    assert.match(title, /[A-Za-z]{3}/, 'the ribbon title carries no words in the ' + name + ' state');
-    /* The unarmed state deliberately has no sentence — see the test below;
-       its chip carries the only fact a sentence there could. */
-    if (name !== 'unarmed') {
-      assert.match(sub, /[A-Za-z]{3}/, 'the ribbon sub carries no words in the ' + name + ' state');
-    }
-    titles.push(title);
-  }
-  assert.equal(new Set(titles).size, titles.length,
-    'the ribbon says the same thing in every state, so it says nothing: ' + JSON.stringify(titles));
-});
-
-/* Round nine, advisory: with no alert rules at all the hero read "Nothing is
-   being checked" over "There are no alert rules at all." with a chip beside it
-   reading "0 of 0 rules checking" — one fact in three slots. The sentence went;
-   the chip keeps the count, which is the part an operator acts on. */
-test('the no-rules ribbon leaves the count to the chip', async () => {
-  const dom = await boot({ rules: { rules: [], channels: [] } });
-  const panel = livePanel(dom);
-  const sub = findAll(panel, (n) => /(^|\s)hero-sub(\s|$)/.test(n.className || ''))[0];
-  assert.equal(sub, undefined,
-    'the no-rules ribbon carries a sentence the chip beside it already says: ' +
-    JSON.stringify(sub ? allText(sub) : ''));
-
-  const chips = findAll(panel, (n) => /(^|\s)hero-chips(\s|$)/.test(n.className || ''))[0];
-  assert.ok(chips, 'the ribbon lost its chips');
-  assert.match(allText(chips).replace(/\s+/g, ' '), /0 of 0 rules checking/,
-    'the count left the ribbon entirely, so nothing on the row says no rule is armed');
-});
-
-test('a critical problem says critical in the queue row itself', async () => {
-  const dom = await boot({});
-  const row = findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-title') !== -1)[0];
-  assert.ok(row, 'the needs-attention queue has no rows on it');
-  /* On the row, not merely somewhere on the pane: the ribbon above counts
-     severities too, so whole-pane text passes while the row that an operator
-     reads carries severity as an accent colour and nothing else. */
-  assert.match(allText(row), /^Critical: /,
-    'severity reached the queue row as a colour and nothing else: ' + allText(row));
-});
-
-/* ============ a severity this pane has never heard of ================== */
-
-/* Stadiora/Aria#10393. The queue row read the severity straight out of
-   alerts-model.js's label map with nothing behind it, so a problem whose
-   severity was not one of the three the map knows rendered the literal words
-   "undefined: Plan generation failing for Aria XII" on the operator's first
-   screen. The route emits only the three today, which is why this was filed
-   rather than fixed on an approved head, and why nothing here asserts the
-   route's shape: the pane has to hold on its own.
-
-   Two different absences, because they degrade to two different words. A
-   severity the pane does not recognise is shown VERBATIM — for a plain
-   unrecognised word that is the same thing the Problems pane prints for it
-   (pane-alerts.js:741), so the two panes describe that state the same way,
-   and neither pretends to have translated a word it has never seen. The two
-   panes do NOT agree on the other two cases: Problems prints a function for
-   `constructor` and an empty pill for a severity that never arrived, which is
-   the sibling defect this pane is being fixed of. A severity that did not
-   arrive at all has no word to show, so it falls to "Unknown" rather than to
-   a blank: a row whose prefix is silently dropped tells the operator nothing
-   arrived, which is the other way to get this wrong.
-
-   The rows carry a real workPane — one of the keys alerts-model.js:89-95
-   actually holds — so the doorway beside them is drawn. Spelled anything
-   else the queue row renders no doorway at all and every assertion about the
-   links on it reads an empty row (Stadiora/Aria#10461 is the same fixture
-   bug one pane over). */
-const ODD_SEVERITY_ROWS = [
-  {
-    id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
-    title: 'Generation queue is backing up',
-    summary: 'Nothing has drained for 40 minutes.',
-    firedAt: minutesAgo(40), workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
-  },
-  {
-    id: 'p2', reference: 'PRB-105', severity: 'notice', status: 'open',
-    title: 'Plan generation failing for Aria XII',
-    summary: 'Three in a row.',
-    firedAt: minutesAgo(30), workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
-  },
-  {
-    id: 'p3', reference: 'PRB-106', status: 'open',
-    title: 'A rule fired with no severity on it',
-    summary: 'The field did not arrive.',
-    firedAt: minutesAgo(20), workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
-  },
-  /* Closed, and carrying an unrecognised severity. The chips break down what
-     is still open, so this one has to stay out of the count: counted, it
-     would put the chips back over a ribbon that disagrees with them, which is
-     the contradiction the unknown chip exists to remove. */
-  {
-    id: 'p4', reference: 'PRB-107', severity: 'notice', status: 'closed',
-    title: 'An unrecognised severity that was already closed',
-    summary: 'Closed an hour ago.',
-    firedAt: minutesAgo(90), closedAt: minutesAgo(60), closeReason: 'resolved',
-    workPane: 'jobs-live', workPaneLabel: 'Jobs running now',
-  },
-];
-
-const qTitles = (dom) =>
-  findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-title') !== -1)
-    .map((n) => allText(n));
-
-/* The links on the queue rows themselves. Read off `.q-actions` rather than
-   off the panel: the panel always carries the card-head "All problems" link
-   and four KPI doorways, so a floor over the panel is satisfied by links that
-   have nothing to do with a problem row, and a sweep that lost the rows
-   entirely would still pass it. */
-const rowHrefs = (dom) =>
-  findAll(livePanel(dom), (n) => (n.className || '').indexOf('q-actions') !== -1)
-    .flatMap((row) => findAll(row, (n) => n.tagName === 'A'))
-    .map((n) => n.getAttribute('href') || '');
-
-test('a severity this pane does not know reaches the row as the word that arrived', async () => {
-  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
-
-  /* Read off the rows, not off whole-pane text: the chips beside the ribbon
-     count severities too, so a sweep of the panel passes while the row an
-     operator actually reads is the thing that is wrong. */
-  assert.deepEqual(qTitles(dom), [
-    'Critical: Generation queue is backing up',
-    'notice: Plan generation failing for Aria XII',
-    'Unknown: A rule fired with no severity on it',
-  ], 'a severity outside the three known ones did not reach the row intact');
-
-  /* A severity the pane cannot name must not cost the row its way out. Two
-     links per row: the pane where the work happens, and the problem. */
-  assert.equal(rowHrefs(dom).length, 6,
-    'the queue rows carry ' + rowHrefs(dom).length + ' links rather than six, so a row ' +
-    'lost its doorway: ' + JSON.stringify(rowHrefs(dom)));
-});
-
-test('nothing on the pane says "undefined" when a severity is not one of the three', async () => {
-  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
-  /* The panel, not the rows: the defect is a class, and the same unguarded
-     lookup in the ribbon, a chip or a link title would land here too. */
-  const text = allText(livePanel(dom));
-  assert.match(text, /Plan generation failing for Aria XII/,
-    'the odd-severity problem never reached the page, so this sweep covers nothing');
-  assert.doesNotMatch(text, /undefined|\bnull\b|\[object/,
-    'a value the pane could not translate was printed as a JavaScript word: ' +
-    JSON.stringify(text.replace(/\s+/g, ' ').slice(0, 400)));
-});
-
-/* The other half of degrading honestly: the ribbon counts every problem that
-   is still open, and the chips under it break that same set down by severity.
-   The breakdown counted the three known severities and dropped everything
-   else on the floor, so a ribbon reading "3 problems need a person" sat over
-   chips adding up to one, and the two problems the pane did not understand
-   vanished from the count rather than from the label. */
-test('a severity this pane does not know is still counted beside the ribbon', async () => {
-  const dom = await boot({ problems: problemsFixture(ODD_SEVERITY_ROWS) });
-  const chips = HERO(dom, 'hero-chips').replace(/\s+/g, ' ');
-
-  assert.match(HERO(dom, 'hero-title'), /^3 problems need a person$/,
-    'the ribbon counted something other than the three problems it was given');
-  assert.match(chips, /(^|\s)1 critical(\s|$)/,
-    'the known severity left the chip row: ' + JSON.stringify(chips));
-  /* Two, not three: the fourth row carries an unrecognised severity and is
-     closed, and the ribbon it sits under counts only what is still open. */
-  assert.match(chips, /(^|\s)2 of unknown severity(\s|$)/,
-    'the chips do not add up to the ribbon above them: ' + JSON.stringify(chips));
-});
-
-/* The same lookup, keyed by a word every plain object in JavaScript already
-   answers to. `SEVERITY_LABEL['constructor']` is not undefined — it is
-   Object's constructor — so a guard written as a truthiness test on the map
-   hands a FUNCTION to the row, and `'' + fn` is that function's source code.
-   The same is true of the map from a problem's work pane to a file name, one
-   line below the severity, whose `if (file && ...)` guard reads as though it
-   has covered the absent case.
-
-   Not a realistic payload, and not the reachability argument: it is why the
-   two guards are written against the words the pane knows and against the
-   type it needs, rather than against "the lookup found something". */
-test('a severity that names an object built-in does not put JavaScript on the screen', async () => {
   const dom = await boot({
-    problems: problemsFixture([{
-      id: 'p9', reference: 'PRB-109', severity: 'constructor', status: 'open',
-      title: 'A severity that is a word Object answers to',
-      summary: 'Arrived from the route.',
-      firedAt: minutesAgo(10), workPane: 'constructor', workPaneLabel: 'Nowhere',
-    }]),
+    problems: problemsFixture([
+      { id: '1', severity: 'critical', status: 'open', title: 'A' },
+      { id: '2', severity: 'warning', status: 'open', title: 'B' },
+      { id: '3', severity: 'warning', status: 'acknowledged', title: 'C' },
+    ]),
   });
+  assert.ok(badge(dom).every((b) => b === '2'), 'the badge counts problems nobody is on: ' + badge(dom));
+  assert.ok(badge(dom).length >= 1, 'no badge was drawn');
 
-  assert.deepEqual(qTitles(dom),
-    ['constructor: A severity that is a word Object answers to'],
-    'a severity naming an object built-in was not shown as the word that arrived');
-
-  /* The chip row as well as the label. The tally tests a severity against the
-     three words the pane knows rather than against a lookup on a plain
-     object, and `SEVERITY_LABEL['constructor']` is not undefined — so a guard
-     written the other way counts this problem as one the pane can name, drops
-     it out of the breakdown, and leaves a ribbon reading "1 problem needs a
-     person" over chips that mention none. Nothing else in this file can see
-     the difference between the two spellings of that guard. */
-  assert.match(HERO(dom, 'hero-chips').replace(/\s+/g, ' '),
-    /(^|\s)1 of unknown severity(\s|$)/,
-    'a severity Object answers to was dropped from the chip breakdown');
-
-  const panel = livePanel(dom);
-  assert.doesNotMatch(allText(panel), /native code|function \w*\s*\(/,
-    'a function reached the page as text');
-  /* The doorway is left off rather than pointed at a function: an href is not
-     text, so no sweep of what is written on the page would see it.
-
-     `A`, not `a`: the harness stores an HTML tag name upper-cased, and the
-     lower-case spelling matched nothing, so this loop ran zero times and
-     passed while the defect it names was on the page. Caught by the mutation
-     battery, which is what a control exists for.
-
-     The count is over the links on the ROW, which is what makes it bind: a
-     floor over the panel is met by the card head and the tiles whatever the
-     row does. One link here, the problem's own, because this problem's work
-     pane is unrecognised too and that doorway is correctly left off. */
-  const hrefs = rowHrefs(dom);
-  assert.equal(hrefs.length, 1,
-    'the queue row carries ' + hrefs.length + ' links rather than the problem link alone: ' +
-    JSON.stringify(hrefs));
-  for (const href of hrefs) {
-    assert.doesNotMatch(href, /native code|function/,
-      'a link was built from a lookup that found an object built-in: ' + JSON.stringify(hrefs));
-  }
-});
-
-/* ============================== the states ============================= */
-
-test('empty needs both halves to be empty, not one quiet window', async () => {
   const quiet = await boot({ problems: problemsFixture([]) });
-  assert.doesNotMatch(liveText(quiet), /Nothing is behind this pane yet/,
-    'a quiet hour with figures behind it was drawn as an empty pane');
-  assert.match(liveText(quiet), /1,102/, 'the figures went off screen with the problems');
+  assert.deepEqual(badge(quiet), [], 'a count was drawn for a quiet system');
 
-  const nothing = await boot({
-    problems: problemsFixture([]),
-    rules: { rules: [], channels: [] },
-    summary: null,
-  });
-  const shownEmpty = dom2state(nothing, 'empty');
-  assert.match(allText(shownEmpty), /Nothing is behind this pane yet/,
-    'a pane with nothing behind either half did not reach the empty state');
+  const failed = await boot({ problems: boom('down') });
+  assert.deepEqual(badge(failed), [], 'a count was drawn for a read that failed');
 });
 
-function dom2state(dom, state) {
-  return dom.doc.getElementById('content').querySelectorAll('[data-state]')
-    .filter((n) => (n.getAttribute('data-state') || '').split(' ').indexOf(state) !== -1)[0];
-}
-
-test('a summary read that fails leaves the urgent queue on screen', async () => {
-  const dom = await boot({ summary: new Error('summary is down') });
-  const degraded = dom2state(dom, 'degraded') || livePanel(dom);
-  const text = allText(degraded);
-  assert.match(text, /Generation queue is backing up/,
-    'a spend outage took the critical problem off the screen with it');
-  assert.match(text, /could not be read/i, 'the failed half claims nothing about why');
-  assert.doesNotMatch(text, /\$0|0 runs|0 active/,
-    'an unread figure was drawn as a zero');
+test('a full page of problems makes the badge a floor', async () => {
+  const rows = Array.from({ length: 100 }, (_, i) => ({ id: 'p' + i, severity: 'warning', status: 'open', title: 'S' + i }));
+  const dom = await boot({ problems: problemsFixture(rows) });
+  const badges = findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('data-badge-key') === 'alerts')
+    .map((l) => withClass(l, 'nav-badge').map(allText)).flat();
+  assert.ok(badges.length && badges.every((b) => b === '100+'), String(badges));
 });
 
-test('an Overview failure message preserves the API copy with contact details masked', async () => {
-  const dom = await boot({ summary: new Error('Summary for admin@example.invalid timed out') });
-  const text = allText(dom2state(dom, 'degraded') || livePanel(dom));
-  assert.match(text, /Summary for \[hidden contact detail\] timed out/,
-    'the Overview caller did not show the API message with the address masked');
-  assert.doesNotMatch(text, /admin@example\.invalid/,
-    'the Overview caller rendered the raw address from the API message');
+/* ============================== structure ================================ */
+
+test('every section is a heading or sits under one, so no part of the page is jumped past', async () => {
+  const dom = await boot();
+  const content = dom.doc.getElementById('content');
+  const heads = findAll(content, (n) => /^H[1-6]$/.test(n.tagName));
+  assert.ok(heads.length >= 6);
+  for (const head of heads) assert.ok(allText(head).length >= 3, 'an empty heading');
+  const titled = (id) => withClass(section(dom, id), 'sec-title').length;
+  for (const id of ['people', 'jobs', 'ai', 'spend']) {
+    assert.ok(findAll(section(dom, id), (n) => /^H[2-3]$/.test(n.tagName)).length >= 1, id + ' has no heading');
+  }
+  assert.ok(titled('health') && titled('live') >= 0);
+  /* No heading level is skipped inside the page: an h3 belongs to an h2. */
+  const order = findAll(content, (n) => /^H[1-6]$/.test(n.tagName)).map((n) => Number(n.tagName[1]));
+  for (let i = 1; i < order.length; i += 1) {
+    assert.ok(order[i] - order[i - 1] <= 1, 'the outline jumps from h' + order[i - 1] + ' to h' + order[i]);
+  }
 });
 
-test('the pane asks for exactly the three reads it needs, and no filters', async () => {
-  const dom = await boot({});
-  const endpoints = dom.calls.map((c) => c.endpoint).sort();
-  assert.deepEqual(endpoints, [
-    '/api/ops/alerts/problems', '/api/ops/alerts/rules', '/api/ops/summary',
-  ]);
-  const summaryCall = dom.calls.filter((c) => c.endpoint === '/api/ops/summary')[0];
-  assert.equal(summaryCall.query, undefined,
-    'the summary read carried a filter this pane offers no control for');
+test('the people figure explains what it counts through a tip a keyboard can reach and dismiss', async () => {
+  const dom = await boot();
+  const [button] = withClass(section(dom, 'people'), 'tip-btn');
+  const [bubble] = withClass(section(dom, 'people'), 'tip-bubble');
+  assert.equal(button.tagName, 'BUTTON');
+  assert.equal(button.getAttribute('aria-label'), 'What this counts');
+  assert.equal(button.getAttribute('aria-describedby'), bubble.getAttribute('id'));
+  assert.equal(bubble.getAttribute('role'), 'tooltip');
+  assert.match(allText(bubble), /usage analytics/);
+  assert.equal(bubble.getAttribute('data-dismissed'), null);
+  button.dispatchEvent({ type: 'keydown', key: 'Escape' });
+  assert.notEqual(bubble.getAttribute('data-dismissed'), null, 'Escape does not put the tip away');
+  button.dispatchEvent({ type: 'blur' });
+  assert.equal(bubble.getAttribute('data-dismissed'), null, 'the tip stays dismissed after the focus has left');
 });
 
-/* ===================== the rail badge is a real read ==================== */
-
-/* "A dashboard that invents a count is worse than one that shows nothing" is
-   the rule the bootstrap's badge pass-through exists for, and until this was
-   raised in review nothing on the Overview side held it: a hard-coded label
-   and a badge that was never cleared both left the suite green. */
-const railBadge = (dom) => {
-  const items = findAll(dom.body, (n) => (n.className || '').indexOf('nav-item') !== -1);
-  const alerts = items.filter((n) => n.getAttribute('data-rail-id') === 'alerts')[0];
-  if (!alerts) return null;
-  const badge = findAll(alerts, (n) => /(^|\s)nav-badge(\s|$)/.test(n.className || ''))[0];
-  const sr = findAll(alerts, (n) => (n.className || '').indexOf('nav-badge-sr') !== -1)[0];
-  return { label: badge ? allText(badge).trim() : null, sr: sr ? allText(sr).trim() : '' };
-};
-
-test('the Problems badge is the count this pane just read, not a number in the client', async () => {
-  const two = await boot({
-    problems: {
-      problems: [
-        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: minutesAgo(40) },
-        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: minutesAgo(35) },
-      ],
-      total: 2,
-    },
-  });
-  assert.equal(railBadge(two).label, '2', 'the rail badge does not match the answer');
-  assert.match(railBadge(two).sr, /2 problems with nobody on them/,
-    'the badge is a bare number with nothing saying what it counts');
-
-  const one = await boot({});
-  assert.equal(railBadge(one).label, '1', 'a one-problem answer did not produce a badge of 1');
-});
-
-test('a quiet system leaves no count beside Problems at all', async () => {
-  const dom = await boot({ problems: { problems: [], total: 0 } });
-  assert.equal(railBadge(dom).label, null,
-    'the rail kept a count on a system with no problems on it');
-  assert.match(allText(dom.body), /Overview/, 'the rail did not render, so this proves nothing');
-});
-
-/* A first render has no badge to clear, so the clearing branch is unobservable
-   on one boot — which is how the first version of this passed with the clear
-   deleted. The page can render twice: a summary that failed leaves a Try again
-   button that re-reads everything. That is the second render, and the one
-   where a count from the first can go stale. */
-test('a count that goes away is taken off the rail on the next read', async () => {
-  const dom = await boot({ summary: new Error('summary is down') });
-  assert.equal(railBadge(dom).label, '1', 'the first read left no count to go stale');
-
-  const again = findAll(dom.body, (n) => n.tagName === 'BUTTON' && allText(n).trim() === 'Try again')[0];
-  assert.ok(again, 'the failed figures offered no way to read them again');
-
-  dom.answers['/api/ops/alerts/problems'] = { problems: [], total: 0 };
-  dom.answers['/api/ops/summary'] = summaryFixture();
-  again.dispatch('click', { type: 'click' });
-  for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
-
-  assert.equal(railBadge(dom).label, null,
-    'the rail kept a count from the previous render after the problems cleared');
-  assert.match(tileText(dom, /Active people/i), /1,102/,
-    'the second read did not happen at all, so this proves nothing');
-});
-
-/* ================== a change pill points where it moved ================= */
-
-/* Direction and valence are different facts and the tiles disagree about
-   them: more people is good news, more spend is not, so the cost tile paints
-   a rise in the falling tone. The chevron has to read the figure's own sign
-   or a rising bill gets a falling arrow beside `+6.4%`, which is what this
-   pane shipped until it was found in review. */
-const UP_PATH = 'M7 14l5-5 5 5';
-const DOWN_PATH = 'M7 10l5 5 5-5';
-
-const pillsOf = (dom, heading) => {
-  const card = findAll(livePanel(dom), (n) => (n.className || '').indexOf('kpi') !== -1)
-    .filter((n) => heading.test(allText(n)))[0];
-  return findAll(card || {}, (n) => /(^|\s)pill(\s|$)/.test(n.className || ''))
-    .map((p) => ({
-      className: p.className,
-      text: allText(p).replace(/\s+/g, ' ').trim(),
-      d: (findAll(p, (n) => n.tagName === 'path')[0] || { getAttribute: () => null }).getAttribute('d'),
-    }));
-};
-
-for (const [name, heading, bp, wantTone] of [
-  ['people', /Active people/i, 1240, 'up'],
-  ['cost', /Cloud spend/i, 640, 'down'],
-]) {
-  test('a rising ' + name + ' figure draws a rising chevron, whatever its tone', async () => {
-    const dom = await boot({
-      summary: summaryFixture((s) => {
-        s.people.platform.previousActive = 500;
-        s.cost.comparison.changeBasisPoints = bp;
-      }),
-    });
-    const pill = pillsOf(dom, heading)[0];
-    assert.ok(pill, 'the ' + name + ' tile drew no change pill at all');
-    assert.match(pill.text, /^\+/, 'the ' + name + ' figure did not rise in this fixture');
-    assert.equal(pill.d, UP_PATH,
-      'a rising figure drew ' + (pill.d === DOWN_PATH ? 'a falling' : 'no') +
-      ' chevron: class=' + pill.className + ' text=' + pill.text);
-    assert.match(pill.className, new RegExp('(^|\\s)' + wantTone + '(\\s|$)'),
-      'the ' + name + ' tile lost the tone that says whether the rise is good news');
-  });
-}
-
-test('a falling figure draws a falling chevron', async () => {
+test('nothing on the page says undefined, null or NaN when most of every answer is missing', async () => {
   const dom = await boot({
-    summary: summaryFixture((s) => {
-      s.cost.comparison.changeBasisPoints = -320;
-    }),
+    summary: { people: { availability: { state: 'ready' }, platform: {}, apps: [{}, null, { active: 'x' }], window: {} }, aiRuns: {} },
+    usage: { availability: { state: 'ready' }, window: {}, apps: [{ trend: { values: [null, 'a', undefined] } }, null] },
+    growth: {},
+    problems: { problems: [{}, { status: 'open' }, { status: 'open', severity: 'critical', title: null }] },
+    rules: {},
+    jobs: { queue: { byState: [null, {}] }, attention: {} },
+    runs: {},
+    costs: { availability: { state: 'ready' }, period: {}, daily: { series: [{}] } },
   });
-  const pill = pillsOf(dom, /Cloud spend/i)[0];
-  assert.ok(pill, 'the cost tile drew no change pill at all');
-  assert.match(pill.text, /^\u2212|^-/, 'the cost figure did not fall in this fixture');
-  assert.equal(pill.d, DOWN_PATH, 'a falling figure drew the wrong chevron: ' + pill.d);
-});
-
-/* ============== one app, one colour, everywhere on the screen ============ */
-
-/* The tile's dots and the chart's legend key the same two apps forty pixels
-   apart. They reach the DOM by different routes — `people.apps[].tone` and
-   `activity.series[].color` — so nothing but a test stops them disagreeing.
-   Until round three this pane carried a `tone === 'coaches'` test ported from
-   the v1 Mobile/Coaches world, which no value in the current contract can
-   satisfy, so both dots fell through to the default and Aria XII was violet
-   in the chart and cyan in the tile. */
-test('each app keys the same colour in the tile as in the chart legend', async () => {
-  const dom = await boot({});
-  const panel = livePanel(dom);
-
-  const legend = findAll(panel, (n) => (n.className || '') === 'legend')[0];
-  assert.ok(legend, 'the chart drew no legend to compare against');
-  const chart = new Map(findAll(legend, (n) => /^tone-/.test(n.className || ''))
-    .map((k) => [allText(k).trim(), k.className.trim()]));
-  assert.ok(chart.size >= 2, 'the legend named fewer than two apps: ' + [...chart.keys()]);
-
-  const tile = findAll(panel, (n) => (n.className || '').indexOf('kpi') !== -1)
-    .filter((n) => /Active people/i.test(allText(n)))[0];
-  const dots = findAll(tile, (n) => /(^|\s)dot(\s|$)/.test(n.className || ''))
-    .map((d) => ({
-      tone: (d.className.match(/tone-[a-z]+/) || [null])[0],
-      label: allText(d.parentNode).replace(/[\d,\s]+$/, '').trim(),
-    }));
-  assert.equal(dots.length, chart.size, 'the tile and the legend name different app counts');
-
-  for (const dot of dots) {
-    assert.ok(dot.tone, 'an app dot carries no series tone at all: ' + dot.label);
-    assert.equal('dot ' + dot.tone, 'dot ' + (chart.get(dot.label) || '?'),
-      dot.label + ' is ' + dot.tone + ' in the tile and ' +
-      (chart.get(dot.label) || 'absent') + ' in the chart legend');
-  }
-
-  /* The other direction: matching is not enough if everything matches by
-     collapsing to one colour. Two apps, two colours. */
-  assert.equal(new Set(dots.map((d) => d.tone)).size, dots.length,
-    'two apps were drawn in one colour: ' + dots.map((d) => d.label + '=' + d.tone).join(', '));
-});
-
-/* =============== the count is not said twice on one screen ============== */
-
-/* The ribbon title, the severity chips and the queue rows are three views of
-   the same count within about eighty pixels of each other. The queue card's
-   own head used to add a fourth ("2 problems with nobody on them" under a
-   ribbon reading "2 problems need a person"), which is the density the
-   editorial rule exists to stop. The empty case keeps its sentence because
-   it says something the rows cannot. */
-test('the needs-attention head does not restate the count the ribbon just gave', async () => {
-  const dom = await boot({
-    problems: {
-      problems: [
-        { id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open', title: 'A', firedAt: minutesAgo(40) },
-        { id: 'p2', reference: 'PRB-105', severity: 'warning', status: 'open', title: 'B', firedAt: minutesAgo(35) },
-      ],
-      total: 2,
-    },
-  });
-  const panel = livePanel(dom);
-
-  const heroTitle = allText(findAll(panel, (n) => /(^|\s)hero-title(\s|$)/
-    .test(n.className || ''))[0] || {}).trim();
-  assert.match(heroTitle, /\d/, 'this fixture did not put a count in the ribbon');
-
-  const head = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
-    .filter((n) => /Needs attention/i.test(allText(n)))[0];
-  assert.ok(head, 'the needs-attention card lost its title');
-  const note = findAll(head.parentNode,
-    (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
-
-  assert.equal(note, undefined,
-    'the queue head restates the count the ribbon already gave: ' +
-    JSON.stringify(allText(note)) + ' under ' + JSON.stringify(heroTitle));
-});
-
-test('the needs-attention head keeps its sentence when nothing needs a person', async () => {
-  const dom = await boot({ problems: { problems: [], total: 0 } });
-  const panel = livePanel(dom);
-  const head = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
-    .filter((n) => /Needs attention/i.test(allText(n)))[0];
-  assert.ok(head, 'the needs-attention card vanished when nothing needed a person');
-  const note = findAll(head.parentNode,
-    (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
-  assert.ok(note && /Nobody is being asked/.test(allText(note)),
-    'the empty case lost the one sentence the rows cannot carry');
-  assert.ok(findAll(head.parentNode.parentNode,
-    (n) => /All problems/.test(allText(n)) && n.tagName === 'A')[0],
-    'the empty case lost the way through to the pane that owns the detail');
-});
-
-/* The capped arm of the same branch. A full page where every problem has been
-   taken on is reachable, and the code's own comment says it is the case that
-   most needs qualifying: "nobody is being asked to do anything" is a much
-   weaker claim when it is only true of the hundred rows that could be read. */
-test('the empty sentence says so when it is only true of the page that was read', async () => {
-  const rows = [];
-  for (let i = 0; i < 100; i += 1) {
-    rows.push({
-      id: 'p' + i, reference: 'PRB-' + (200 + i), severity: 'warning', status: 'acknowledged',
-      title: 'Taken on ' + i, firedAt: minutesAgo(40),
-      acknowledgedBy: 'ops', acknowledgedAt: minutesAgo(30),
-    });
-  }
-  const dom = await boot({ problems: { problems: rows, total: 480 } });
-  const head = findAll(livePanel(dom), (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''))
-    .filter((n) => /Needs attention/i.test(allText(n)))[0];
-  assert.ok(head, 'the needs-attention card vanished on a capped read');
-  const note = findAll(head.parentNode,
-    (n) => /(^|\s)card-note(\s|$)/.test(n.className || ''))[0];
-  assert.ok(note, 'a capped read lost the empty sentence entirely');
-  assert.match(allText(note), /could be read/,
-    'the sentence claims nobody is being asked to do anything across the whole ' +
-    'system, when only one page of it was read: ' + JSON.stringify(allText(note)));
-});
-
-/* ========== the ribbon and its chips do not say the same thing ========== */
-
-/* Round five found the all-quiet hero reading "2 of 2 rules checking, last 14
-   minutes ago" beside a chip reading "2 of 2 rules checking" — the same words
-   twice on one row, which is the density the remodel exists to remove. The
-   sub keeps only what the chip cannot carry. */
-test('the all-quiet ribbon does not repeat the chip beside it', async () => {
-  const dom = await boot({ problems: { problems: [], total: 0 } });
-  const panel = livePanel(dom);
-  const sub = allText(findAll(panel, (n) => /(^|\s)hero-sub(\s|$)/.test(n.className || ''))[0] || {})
-    .replace(/\s+/g, ' ').trim();
-  assert.ok(sub, 'the all-quiet ribbon lost its sentence');
-
-  const chips = findAll(panel, (n) => /(^|\s)hero-chips(\s|$)/.test(n.className || ''))[0];
-  assert.ok(chips, 'the ribbon lost its chips');
-  const chipWords = findAll(chips, (n) => !n.childNodes || !n.childNodes.length)
-    .map((n) => allText(n).replace(/\s+/g, ' ').trim()).filter(Boolean);
-
-  for (const words of chipWords) {
-    if (words.length < 6) continue;
-    assert.ok(sub.indexOf(words) === -1,
-      'the ribbon sentence repeats a chip verbatim: ' + JSON.stringify(words) +
-      ' inside ' + JSON.stringify(sub));
-  }
-
-  assert.match(sub, /verdict/,
-    'the sentence lost the one fact the chips cannot carry, when the rules last ran');
-});
-
-/* ========== one fact per slot, across the whole pane ========== */
-
-/* Rounds five and six each found the same defect in a different state: a
-   sentence printed twice on one screen, ~200px apart, under two headings
-   arguing the same point. The earlier guard read the ribbon and its chips,
-   so it could only see one of the three sites. This reads every leaf run of
-   text on the rendered page and refuses an exact repeat, in any state, at any
-   site, whether or not anybody thought to write a test for that pair.
-
-   Short runs are exempt: a label, a unit and a status word are data, and
-   'Critical' appearing on four rows is the pane working. The floor is a
-   sentence's worth of words, not a phrase's. Re-spelled duplication of the
-   same fact is NOT COVERED here and nothing in this file covers it; only a
-   verbatim repeat is caught. */
-const FACT_FLOOR = 24;
-
-function leafRuns(root) {
-  return findAll(root, () => true)
-    .map((n) => String(n.textContent || '').replace(/\s+/g, ' ').trim())
-    .filter((t) => t.length >= FACT_FLOOR);
-}
-
-/* The first draft of this read `c.text`, which the DOM stub does not have, so
-   it collected nothing and could never fail. The floor below is what makes
-   that visible: an empty sweep is now a failure, not a pass. */
-function assertNoRepeat(panel, state, floor) {
-  const runs = leafRuns(panel);
-  assert.ok(runs.length >= floor,
-    'the ' + state + ' sweep found only ' + runs.length + ' runs of ' + FACT_FLOOR +
-    '+ characters, so it is not reading the page it claims to read');
-  const seen = new Map();
-  for (const run of runs) {
-    if (seen.has(run)) {
-      assert.fail('the ' + state + ' pane prints the same sentence in two slots: ' +
-        JSON.stringify(run));
-    }
-    seen.set(run, true);
-  }
-}
-
-const NEVER_RUN_RULES = {
-  rules: [
-    { key: 'queue', label: 'Queue depth', enabled: true, lastEvaluatedAt: null, lastEvaluationStatus: null, lastFiredAt: null },
-    { key: 'errors', label: 'Error rate', enabled: true, lastEvaluatedAt: null, lastEvaluationStatus: null, lastFiredAt: null },
-  ],
-  channels: [{ key: 'teams', label: 'Teams', configured: true, status: 'ok' }],
-};
-
-test('no state prints the same sentence in two slots', async () => {
-  /* Each render asserts the state it claims to be in first. A fixture that
-     quietly falls back to the live payload would make the rest of this
-     vacuous, and the first draft of this test did exactly that: it passed
-     `rules` inside `problems`, where nothing reads it. */
-  const quiet = livePanel(await boot({ problems: { problems: [], total: 0 } }));
-  assert.match(allText(quiet), /Nothing needs attention/,
-    'the all-quiet fixture did not reach the all-quiet state');
-  assertNoRepeat(quiet, 'all-quiet', 13);
-
-  const unarmed = livePanel(await boot({
-    problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES,
-  }));
-  assert.match(allText(unarmed), /The checks are not running/,
-    'the unarmed fixture did not reach the unarmed state');
-  assert.match(allText(unarmed), /none has run yet/,
-    'the unarmed fixture reached a different unarmed branch than the one under test');
-  assertNoRepeat(unarmed, 'unarmed', 14);
-
-  const live = livePanel(await boot({}));
-  assert.ok(findAll(live, (n) => /(^|\s)q-row(\s|$)/.test(n.className || '')).length,
-    'the live fixture drew no queue rows, so it is not the state under test');
-  assert.ok(findAll(live, (n) => /(^|\s)card-foot(\s|$)/.test(n.className || '')).length,
-    'the live fixture drew no card footer, so the footer is not under test here');
-  assertNoRepeat(live, 'live', 15);
-});
-
-/* The page-wide guard above catches a sentence repeated character for
-   character. Round six's queue findings were not that shape: the chip said
-   "3 of 5 rules checking" and the footer said "3 rules watching", which is the
-   same fact in two spellings and walks straight past a verbatim test. This
-   binds the two slots the chip already answers for, by refusing a rule COUNT
-   in either of them rather than a particular sentence. */
-test('the queue card never counts rules, because the chip already does', async () => {
-  const COUNTS_RULES = /\d[^.]{0,24}\brules?\b/i;
-
-  const quiet = livePanel(await boot({ problems: { problems: [], total: 0 } }));
-  const block = findAll(quiet, (n) => /(^|\s)state-block(\s|$)/.test(n.className || ''))[0];
-  assert.ok(block, 'the all-quiet queue drew no state block, so nothing here is under test');
-  assert.doesNotMatch(allText(block).replace(/\s+/g, ' '), COUNTS_RULES,
-    'the quiet queue block counts rules, which the chip beside the ribbon already did');
-
-  const live = livePanel(await boot({}));
-  const foot = findAll(live, (n) => /(^|\s)card-foot(\s|$)/.test(n.className || ''))[0];
-  assert.ok(foot, 'the live queue drew no footer, so nothing here is under test');
-  assert.doesNotMatch(allText(foot).replace(/\s+/g, ' '), COUNTS_RULES,
-    'the queue footer counts rules, which the chip beside the ribbon already did');
-});
-
-/* Round seven: cardHead rendered its title as a div, so "Needs attention",
-   "People active each day" and "Not drawn here, and why" were absent from the
-   heading outline while the omission items inside one of those cards were
-   headings. A reader navigating by heading landed inside a card without its
-   title. The bootstrap is shared, so the three panes queued behind it inherit
-   whichever way this lands. */
-test('every card title is a heading, so no card is jumped past', async () => {
-  const panel = livePanel(await boot({}));
-  const titles = findAll(panel, (n) => /(^|\s)card-title(\s|$)/.test(n.className || ''));
-  assert.ok(titles.length >= 3,
-    'only ' + titles.length + ' card titles were drawn, so this is not reading the page');
-  for (const t of titles) {
-    assert.match(String(t.tagName || ''), /^H[1-6]$/,
-      'a card title is a ' + t.tagName + ', so it is outside the heading outline: ' +
-      JSON.stringify(allText(t)));
-  }
-});
-
-/* Round eight: making card titles h3 in round seven inverted the outline where
-   it had only been flat before — stateBlock defaults to h2, so "Nothing needs
-   attention" and "There is no line to draw for this window" became h2s nested
-   inside h3-titled cards. A reader navigating by heading was told the block was
-   a sibling of the band above it.
-
-   This binds the CLASS rather than those four call sites: any heading inside a
-   titled card or band has to be deeper than the title of the thing that
-   contains it, whatever the pane later puts there. */
-const HEADING = (n) => (/^H([1-6])$/.test(String(n.tagName || '')) ? Number(RegExp.$1) : 0);
-
-function ownTitle(node) {
-  for (const kid of node.childNodes || []) {
-    if (!kid.tagName) continue;
-    if (!/(^|\s)(card-head|band-head)(\s|$)/.test(kid.className || '')) continue;
-    const found = findAll(kid, (n) => /(^|\s)(card-title|band-title)(\s|$)/.test(n.className || ''))[0];
-    if (found) return found;
-  }
-  return null;
-}
-
-function outlineFaults(node, floor, faults, titles) {
-  const level = HEADING(node);
-  if (level) {
-    /* A container's own title was already measured against what contains the
-       container, so it is not measured against itself here. */
-    if (!titles.has(node) && level <= floor) {
-      faults.push('h' + level + ' "' + allText(node) + '" sits inside a container titled h' + floor);
-    }
-    return faults;
-  }
-  let next = floor;
-  if (/(^|\s)(card|band)(\s|$)/.test(node.className || '')) {
-    const mine = ownTitle(node);
-    if (mine) {
-      titles.add(mine);
-      if (HEADING(mine) <= floor) {
-        faults.push('h' + HEADING(mine) + ' "' + allText(mine) +
-          '" titles a container inside one titled h' + floor);
-      }
-      next = HEADING(mine);
-    }
-  }
-  for (const kid of node.childNodes || []) {
-    if (kid.tagName) outlineFaults(kid, next, faults, titles);
-  }
-  return faults;
-}
-
-for (const [name, mk] of [
-  ['live', async () => livePanel(await boot({}))],
-  ['all quiet', async () => livePanel(await boot({ problems: { problems: [], total: 0 } }))],
-  ['unarmed', async () => livePanel(await boot({
-    problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES,
-  }))],
-  ['no line to draw', async () => livePanel(await boot({
-    summary: summaryFixture((s) => { s.activity.series = []; }),
-  }))],
-]) {
-  test('the heading outline never inverts inside a card — ' + name, async () => {
-    const panel = await mk();
-    const headings = findAll(panel, (n) => HEADING(n) > 0);
-    assert.ok(headings.length >= 3,
-      'only ' + headings.length + ' headings in the ' + name + ' render, so this is not reading the page');
-    const titled = findAll(panel, (n) => /(^|\s)(card|band)(\s|$)/.test(n.className || '') && ownTitle(n));
-    assert.ok(titled.length >= 1, 'no titled container in the ' + name + ' render');
-    const faults = outlineFaults(panel, 1, [], new Set());
-    assert.deepEqual(faults, [], faults.join(' | '));
-  });
-}
-
-/* Round nine, advisory: the ribbon read "Oldest started 06:00:00 UTC, 46 hours
-   ago" — a bare clock on an incident two days old, which reads as six this
-   morning. A UTC stamp exists so two operators in two time zones can quote the
-   same instant, and a clock with no date is not one.
-
-   Written as a sweep rather than as an assertion about that one sentence,
-   because the defect is a class: any slot on this pane that prints an absolute
-   time can print it undated, in any wording. Every match has to carry its day.
-
-   NOT COVERED: a time printed in a format this pattern does not recognise
-   (it reads `HH:MM` and `HH:MM:SS` followed by UTC), and a time rendered as an
-   attribute rather than as text. */
-test('no absolute time is printed without the day it belongs to', async () => {
-  const CLOCK = /\b\d{1,2}:\d{2}(?::\d{2})?\s*UTC\b/g;
-  const MONTH = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)';
-  const DATED = new RegExp('\\b\\d{1,2} ' + MONTH + ' \\d{4} $');
-
-  const states = {
-    live: livePanel(await boot({})),
-    'all-quiet': livePanel(await boot({ problems: { problems: [], total: 0 } })),
-    unarmed: livePanel(await boot({ problems: { problems: [], total: 0 }, rules: NEVER_RUN_RULES })),
-  };
-
-  /* The ribbon's oldest sentence is the slot this came from, so the sweep is
-     vacuous unless that branch actually ran in one of the states above. */
-  assert.match(allText(states.live).replace(/\s+/g, ' '), /Oldest started /,
-    'no fixture reached the sentence that prints the oldest problem, so this sweep tests nothing');
-
-  let seen = 0;
-  for (const [name, panel] of Object.entries(states)) {
-    for (const node of findAll(panel, (n) => !n.childNodes || !n.childNodes.length)) {
-      const words = allText(node).replace(/\s+/g, ' ');
-      for (const hit of words.matchAll(CLOCK)) {
-        seen += 1;
-        assert.match(words.slice(0, hit.index), DATED,
-          'the ' + name + ' state prints a clock with no day in front of it: ' +
-          JSON.stringify(words));
-      }
-    }
-  }
-  assert.ok(seen >= 2, 'only ' + seen + ' absolute times were found across three states, ' +
-    'so this pattern is not reading what the pane prints');
+  const page = allDomTextAndAttrs(dom.doc.getElementById('content'));
+  assert.ok(!/undefined|\bnull\b|NaN|\[object|Invalid Date/.test(page), page);
 });
