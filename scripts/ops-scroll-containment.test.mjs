@@ -232,9 +232,12 @@ const ABSOLUTE_DESCENDANT_FLOOR = 2;
    it judges a different population: distinct wrapper SITES, after the
    out-of-scope hatch has run. Without it, widening that hatch or excusing
    every site would leave the claim nothing to judge, and a claim with nothing
-   to judge passes. 15 distinct sites are observed; this sits under that so a
-   pane legitimately dropping a table does not fail it. */
-const WRAPPER_FLOOR = 10;
+   to judge passes. 9 distinct sites are observed: the floor was 10 until the
+   Money pane stopped drawing a table that scrolls sideways (the service rows
+   are a list now), which took one site out of the sweep legitimately. It
+   sits at the observed count, so one more site leaving is a decision this
+   floor asks somebody to make rather than one it absorbs. */
+const WRAPPER_FLOOR = 9;
 
 /* Claim 7's floor, on its own population again: state applications that showed
    at least one element. 160 applications are made (10 panes x 2 themes x 2
