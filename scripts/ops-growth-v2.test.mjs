@@ -24,8 +24,11 @@
        "Not reported", never guessed;
      - every read is its own: one that is down takes only its own sections, and
        its Try again asks only for it;
-     - the pane asks for exactly four reads, none of them /growth, and draws no
-       Momentum card, because that route is not in the backend yet;
+     - the pane asks for exactly five reads, and the fifth, /growth, is the only
+       one that is optional: Momentum draws what the route sent and nothing it
+       did not, a week before it did not send is "No comparison yet" and never
+       no change, and a route that is down or not deployed yet leaves out
+       Momentum and nothing else, with no error and no degraded page;
      - the old address with a query on it is Usage detail's, and is sent there.
 
    Plus the things that are easy to re-break by accident: the registry gives
@@ -57,7 +60,9 @@ const TOKENS = {
   '--line-2': '#1F2A36', '--ink': '#F5F5F7',
 };
 
-const ENDPOINTS = { summary: '/api/ops/summary', usage: '/api/ops/usage', releases: '/api/ops/releases' };
+const ENDPOINTS = {
+  summary: '/api/ops/summary', usage: '/api/ops/usage', releases: '/api/ops/releases', growth: '/api/ops/growth',
+};
 
 /* ------------------------------------------------------------- fixtures */
 
@@ -181,6 +186,39 @@ function releasesFixture(over) {
 
 const boom = (message) => Object.assign(new Error(message || 'The server did not answer.'), { code: 'http_500' });
 
+/* Eight weeks of new accounts and 57 days of paying subscribers, as
+   GET /api/ops/growth sends them: 9 new accounts this week against 6, and 37
+   paying today against 33 a week ago. */
+const ACCOUNTS = [4, 5, 3, 6, 5, 7, 6, 9];
+const PAYING = Array.from({ length: 57 }, (_, i) => (i < 49 ? 22 + Math.floor((i * 10) / 48) : [33, 33, 34, 34, 35, 36, 36, 37][i - 49]));
+const payingDay = (i, count) => {
+  const day = new Date(Date.UTC(2026, 8, 6 + i)).toISOString().slice(0, 10);
+  return { day, count, capturedAt: count === null ? null : day + 'T00:05:00.000Z' };
+};
+
+function growthFixture(over) {
+  return edit(() => {
+    const weeks = ACCOUNTS.map((count, k) => ({
+      start: new Date(Date.UTC(2026, 8, 6 + 7 * k)).toISOString().slice(0, 10),
+      endExclusive: new Date(Date.UTC(2026, 8, 13 + 7 * k)).toISOString().slice(0, 10),
+      count,
+    }));
+    return {
+      asOf: '2026-11-01T09:00:00.000Z',
+      timezone: 'UTC',
+      newAccounts: { current: weeks[7], previous: weeks[6], weeks, source: 'users.createdAt', coverage: 'surviving_accounts' },
+      payingSubscribers: {
+        current: { count: 37, asOf: '2026-11-01T09:00:00.000Z' },
+        previous: payingDay(49, PAYING[49]),
+        weeks: [0, 7, 14, 21, 28, 35, 42, 49].map((i) => payingDay(i, PAYING[i])),
+        daily: PAYING.map((count, i) => payingDay(i, count)),
+        historyBeginsAt: '2026-09-06T00:05:00.000Z',
+        source: 'subscriptions', historySource: 'telemetry_metric_rollups.paying_subscribers',
+      },
+    };
+  }, over);
+}
+
 /* -------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
@@ -210,6 +248,7 @@ async function boot(options) {
   const answers = {
     [ENDPOINTS.summary]: opts.summary === undefined ? summaryFixture() : opts.summary,
     [ENDPOINTS.releases]: opts.releases === undefined ? releasesFixture() : opts.releases,
+    [ENDPOINTS.growth]: opts.growth === undefined ? growthFixture() : opts.growth,
     week: opts.week === undefined ? weekFixture() : opts.week,
     month: opts.month === undefined ? monthFixture() : opts.month,
   };
@@ -272,20 +311,88 @@ const retryButtons = (root) => findAll(root, (n) => n.getAttribute && n.getAttri
 
 /* =============================== the reads ============================== */
 
-test('the pane asks for four reads, with the questions it means to ask, and never for /growth', async () => {
+test('the pane asks for five reads, with the questions it means to ask, growth being the only optional one', async () => {
   const dom = await boot();
   const asked = dom.calls.map((c) => c.endpoint + ' ' + JSON.stringify(c.query || null)).sort();
   assert.deepEqual(asked, [
+    '/api/ops/growth null',
     '/api/ops/releases null',
     '/api/ops/summary null',
     '/api/ops/usage {"scope":"all","range":"30d","env":"production"}',
     '/api/ops/usage {"scope":"all","range":"7d","env":"production"}',
-  ].sort(), 'Growth should ask for exactly these four reads, once each');
+  ].sort(), 'Growth should ask for exactly these five reads, once each');
+});
 
-  const text = all(dom);
-  for (const word of ['Momentum', 'New accounts', 'Paying']) {
-    assert.doesNotMatch(text, new RegExp(word), word + ' was drawn with no route behind it');
+/* The card's two tiles by name: what is counted, over what span, the count and
+   the sentence about the change. */
+const tiles = (dom) => withClass(section(dom, 'momentum'), 'g-mom').map((t) => ({
+  name: wordsOf(t, 'g-mom-name')[0],
+  span: wordsOf(t, 'g-mom-span')[0],
+  count: wordsOf(t, 'g-mom-num')[0],
+  change: wordsOf(t, 'delta')[0],
+}));
+
+test('Momentum is new accounts and paying subscribers, each against the week before, drawn as the route sent them', async () => {
+  const dom = await boot();
+  assert.deepEqual(wordsOf(section(dom, 'momentum'), 'g-title'), ['Momentum']);
+  assert.deepEqual(tiles(dom), [
+    { name: 'New accounts', span: '7 days', count: '9', change: '+3 vs last week' },
+    { name: 'Paying', span: 'Now', count: '37', change: '+4 vs last week' },
+  ]);
+
+  const fewer = await boot({
+    growth: growthFixture((g) => { g.newAccounts.current.count = 6; g.payingSubscribers.current.count = 31; }),
+  });
+  assert.deepEqual(tiles(fewer).map((t) => t.change), ['No change vs last week', '\u22122 vs last week']);
+});
+
+test('a week before that the route could not count is "No comparison yet", never no change and never zero', async () => {
+  const dom = await boot({
+    growth: growthFixture((g) => {
+      g.newAccounts.previous = { ...g.newAccounts.previous, count: null };
+      g.payingSubscribers.previous = { ...g.payingSubscribers.previous, count: null, capturedAt: null };
+    }),
+  });
+  assert.deepEqual(tiles(dom).map((t) => [t.count, t.change]), [['9', 'No comparison yet'], ['37', 'No comparison yet']]);
+
+  const onlyPaying = await boot({
+    growth: growthFixture((g) => { g.newAccounts.previous = null; }),
+  });
+  assert.deepEqual(tiles(onlyPaying).map((t) => t.change), ['No comparison yet', '+4 vs last week']);
+});
+
+test('a count the route did not send is no tile, and with neither the card is not drawn at all', async () => {
+  const one = await boot({ growth: growthFixture((g) => { g.newAccounts.current = { ...g.newAccounts.current, count: null }; }) });
+  assert.deepEqual(tiles(one).map((t) => t.name), ['Paying']);
+
+  const none = await boot({ growth: growthFixture((g) => { delete g.newAccounts; delete g.payingSubscribers; }) });
+  assert.deepEqual(tiles(none), []);
+  assert.equal(section(none, 'momentum').childNodes.length, 0, 'a card was drawn around nothing');
+  assert.ok(!classesOf(section(none, 'momentum').parentNode).includes('has-momentum'),
+    'the row kept its room for a card that is empty');
+  assert.ok(classesOf(section(await boot(), 'momentum').parentNode).includes('has-momentum'));
+});
+
+test('a growth read that is down or not deployed yet leaves out Momentum and nothing else', async () => {
+  const healthy = await boot();
+  for (const growth of [
+    boom('Growth is unavailable.'),
+    Object.assign(new Error('Not found.'), { code: 'http_404' }),
+    {},
+  ]) {
+    const dom = await boot({ growth });
+    assert.deepEqual(tiles(dom), []);
+    assert.equal(section(dom, 'momentum').childNodes.length, 0, 'a card was drawn with no growth behind it');
+    assert.equal(retryButtons(dom.doc.body).length, 0, 'a missing growth read offered a Try again');
+    assert.doesNotMatch(all(dom), /could not be read|Growth is unavailable|Not found/, 'the page told a reader about a read they did not ask for');
+    assert.deepEqual(wordsOf(section(dom, 'people'), 'big'), wordsOf(section(healthy, 'people'), 'big'),
+      'the headline moved with a read it does not use');
   }
+});
+
+test('a growth answer with no daily series still draws Momentum, because Momentum never reads it', async () => {
+  const dom = await boot({ growth: growthFixture((g) => { delete g.payingSubscribers.daily; }) });
+  assert.deepEqual(tiles(dom).map((t) => t.count), ['9', '37']);
 });
 
 test('the old address with a query on it is sent to Usage detail, and reads nothing', async () => {
@@ -296,7 +403,7 @@ test('the old address with a query on it is sent to Usage detail, and reads noth
 
   const plain = await boot({ href: 'https://ops.example.invalid/ops/analytics.html?fixture=x' });
   assert.notEqual(plain.window.location.href, 'usage.html?fixture=x');
-  assert.equal(plain.calls.length, 4, 'a query nobody moved was treated as one that is');
+  assert.equal(plain.calls.length, 5, 'a query nobody moved was treated as one that is');
 });
 
 test('Growth has no filter bar and Usage detail has all three, and both live under Growth', async () => {
@@ -760,9 +867,11 @@ test('the signup weeks and the stores are their own reads, and each failure stay
 });
 
 test('with every read down the page is one failure and a Try again, and no card at all', async () => {
+  // Growth answers here: it is not one of the reads the page stands on, so its answer cannot keep the page up.
   const dom = await boot({
     summary: boom('a'), week: boom('b'), month: boom('c'), releases: boom('d'),
   });
+  assert.equal(section(dom, 'momentum'), null, 'Momentum was drawn on a page that failed');
   assert.equal(section(dom, 'people'), null, 'a card was drawn with nothing behind it');
   const tries = findAll(dom.doc.body, (n) => n.tagName === 'BUTTON' && allText(n) === 'Try again');
   assert.equal(tries.length, 1, 'a page with every read down should offer one Try again');
@@ -792,7 +901,7 @@ test('every class the pane writes is one a loaded sheet styles', async () => {
     await boot({ summary: summaryFixture((s) => { s.people.availability = { state: 'not_reporting', detail: 'x' }; }), week: weekFixture((w) => { w.availability = { state: 'not_reporting' }; w.features = null; }), month: monthFixture((m) => { m.cohorts = []; }) }),
     await boot({ week: weekFixture((w) => { w.window.daysCovered = 4; w.window.reportingStart = '2026-10-28'; }) }),
   ];
-  for (const dom of states) walk(section(dom, 'people') ? section(dom, 'people').parentNode.parentNode.parentNode : dom.doc.body);
+  for (const dom of states) walk(withClass(dom.doc.body, 'growth')[0] || dom.doc.body);
 
   const styled = new Set([...classesIn(PANE_CSS), ...classesIn(SHELL_CSS), ...classesIn(ARIA_CSS)]);
   const bare = [...written].filter((cls) => !styled.has(cls) && /^(g-|tc-|growth)/.test(cls));

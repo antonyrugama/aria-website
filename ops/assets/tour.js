@@ -719,6 +719,34 @@
         }
       },
       {
+        id: 'analytics-momentum', kind: 'metric', title: 'Momentum',
+        anchor: { selector: '#growth-momentum' },
+        body: 'Two counts, each against the week before: the accounts created in the last ' +
+          'seven days and the people paying now. The change is how many more or fewer than ' +
+          'a week ago, not a percentage, and a week that could not be counted says "No ' +
+          'comparison yet" rather than no change. The card is left out until the numbers ' +
+          'are available.',
+        live: function (ctx) {
+          var names = ctx.readAll('.g-mom-name');
+          var counts = ctx.readAll('.g-mom-num');
+          return names.length ? 'Right now: ' + names.map(function (name, i) {
+            return name + ' ' + counts[i];
+          }).join(', ') + '.' : '';
+        },
+        metric: {
+          counts: 'New accounts: accounts created in the last seven whole UTC days that still ' +
+            'exist, so one that was deleted is not counted. Paying: the subscribers paying ' +
+            'today.',
+          grain: 'New accounts over the last seven whole UTC days against the seven before. ' +
+            'Paying now against the same count a week ago.',
+          source: 'Account creation dates and subscriptions, counted by the server.',
+          healthy: 'More new accounts than the week before, and a paying count that holds ' +
+            'or rises.',
+          worrying: 'New accounts falling away for several weeks, or a paying count that ' +
+            'drops.'
+        }
+      },
+      {
         id: 'analytics-features', kind: 'metric', title: 'Feature use',
         anchor: { selector: '#growth-features' },
         body: 'The features people opened, grouped by app, each as a number of that app\'s ' +

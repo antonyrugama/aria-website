@@ -269,7 +269,9 @@ const PAGES = Object.keys(DECLARED).map((key) => ({
   url: '/ops/' + DECLARED[key].file,
   /* The title the top bar draws: the registry's heading where a pane has one. */
   label: DECLARED[key].heading || DECLARED[key].label,
-  question: DECLARED[key].question
+  /* A pane with `plainHead` draws no line under its title, so the line it is
+     held to is no line at all, not its registry question. */
+  question: DECLARED[key].plainHead ? '' : DECLARED[key].question
 }));
 
 /* Both of these stop the run before a browser is started, because either one

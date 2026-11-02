@@ -61,6 +61,30 @@
    body text floor is 14px. */
 .growth .hp-note, .growth .tip-bubble { font-size: 14px; }
 
+/* The hero and, beside it, Momentum. Momentum is left out when the route has
+   nothing to say, and the hero then takes the whole row. */
+.g-top { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.g-top.has-momentum { grid-template-columns: minmax(0, 1fr) minmax(250px, 30%); }
+
+/* ----------------------------------------------------------- momentum */
+
+.g-top .g-momentum { min-height: 0; padding: 24px 26px 26px; }
+.g-momentum .g-head { margin-bottom: 14px; }
+.g-mom-grid { display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.g-mom {
+  flex: 1; display: flex; flex-direction: column; min-width: 0;
+  padding: 18px 20px 20px;
+  border-radius: var(--r);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.g-mom-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.g-mom-name { font-size: 19px; font-weight: 600; letter-spacing: -.012em; color: var(--ink); }
+.g-mom-span { font-size: 14px; color: var(--ink-3); white-space: nowrap; }
+.g-mom .g-mom-num { margin-top: 10px; font-size: 56px; line-height: 1; letter-spacing: -.04em; }
+.g-mom .delta { margin-top: auto; padding-top: 12px; font-size: 18px; }
+.g-mom .delta.is-none { font-size: 15px; }
+
 /* ----------------------------------------------------------- the app rows */
 
 .g-apps {
@@ -170,6 +194,8 @@
 /* -------------------------------------------------------------- narrower */
 
 @media (max-width: 1180px) {
+  .g-top.has-momentum { grid-template-columns: minmax(0, 1fr); }
+  .g-mom-grid { flex-direction: row; }
   .g-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .g-row > :last-child { grid-column: 1 / -1; min-height: 0; }
 }
@@ -203,6 +229,16 @@
   .g-figs { grid-area: figs; display: flex; flex-wrap: wrap; gap: 2px 14px; }
   .g-fig { font-size: 15px; }
 
+  .g-top { gap: 14px; }
+  .g-top .g-momentum { padding: 18px 18px 20px; }
+  .g-mom-grid { gap: 12px; }
+  .g-mom { padding: 14px 14px 16px; }
+  .g-mom-name { font-size: 17px; }
+  .g-mom .g-mom-num { font-size: 44px; }
+  .g-mom .delta { font-size: 15px; }
+  .g-mom .delta svg { display: none; }
+  .g-mom .delta.is-none { font-size: 14px; }
+
   .g-row { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .g-row > :last-child { grid-column: auto; }
   .g-card { min-height: 0; padding: 18px 18px 20px; }
@@ -211,6 +247,7 @@
 
 @media (max-width: 380px) {
   .g-main .big.num { font-size: 56px; }
+  .g-mom-grid { flex-direction: column; }
   .g-rel { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
   .g-rel-state { grid-column: 1 / -1; }
 }

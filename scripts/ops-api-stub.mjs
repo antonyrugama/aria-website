@@ -805,34 +805,44 @@ const COHORT_ROWS = (weeks) => {
   return weeks.map((label, i) => Object.assign({ label }, cells[i]));
 };
 
-const APP_MOBILE = (week) => ({
+/* `big` is the same two apps over a population that clears the reporting
+   floor, which Aria does not have today. Every count moves with it, so a
+   rate, its numerator and its denominator still agree. */
+const APP_MOBILE = (week, big) => ({
   app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
   coverageBasisPoints: week ? 9400 : 9200,
   metrics: [
-    { label: 'Active people', kind: 'count', value: 39 },
-    { label: 'Sessions', kind: 'count', value: week ? 86 : 308 },
-    { label: 'Sessions per person', kind: 'decimal', digits: 1, value: week ? 2.2 : 7.9,
-      numerator: week ? 86 : 308, denominator: 39 },
-    { label: 'Opened a feature', kind: 'rate', value: 6410, numerator: 25, denominator: 39 }
+    { label: 'Active people', kind: 'count', value: big ? 120 : 39 },
+    { label: 'Sessions', kind: 'count', value: big ? (week ? 260 : 940) : (week ? 86 : 308) },
+    { label: 'Sessions per person', kind: 'decimal', digits: 1,
+      value: big ? (week ? 2.2 : 7.8) : (week ? 2.2 : 7.9),
+      numerator: big ? (week ? 260 : 940) : (week ? 86 : 308), denominator: big ? 120 : 39 },
+    { label: 'Opened a feature', kind: 'rate', value: big ? 6500 : 6410,
+      numerator: big ? 78 : 25, denominator: big ? 120 : 39 }
   ],
   trend: { label: 'Active people per day, Mobile', color: 's1',
     values: week ? MOBILE_WEEK : MOBILE_DAILY }
 });
-const APP_COACHES = (week) => ({
+const APP_COACHES = (week, big) => ({
   app: 'coaches', label: 'Coaches Web', tone: 'coaches', subtitle: 'Coach workspace',
   coverageBasisPoints: 10000,
   metrics: [
-    { label: 'Active people', kind: 'count', value: 9 },
-    { label: 'Sessions', kind: 'count', value: week ? 21 : 36 },
-    { label: 'Sessions per person', kind: 'decimal', digits: 1, value: week ? 2.3 : 4,
-      numerator: week ? 21 : 36, denominator: 9 },
-    { label: 'Opened a feature', kind: 'rate', value: 7778, numerator: 7, denominator: 9 }
+    { label: 'Active people', kind: 'count', value: big ? 64 : 9 },
+    { label: 'Sessions', kind: 'count', value: big ? (week ? 150 : 410) : (week ? 21 : 36) },
+    { label: 'Sessions per person', kind: 'decimal', digits: 1,
+      value: big ? (week ? 2.3 : 6.4) : (week ? 2.3 : 4),
+      numerator: big ? (week ? 150 : 410) : (week ? 21 : 36), denominator: big ? 64 : 9 },
+    { label: 'Opened a feature', kind: 'rate', value: big ? 6875 : 7778,
+      numerator: big ? 44 : 7, denominator: big ? 64 : 9 }
   ],
   trend: { label: 'Active people per day, Coaches Web', color: 's2',
     values: week ? COACHES_WEEK : COACHES_DAILY }
 });
 
-/* Each count is of that app's own people: 39 on Mobile and 9 on Coaches Web. */
+/* Each count is of that app's own people: 39 on Mobile and 9 on Coaches Web,
+   both under the reporting floor, so the page draws the counts and withholds
+   the shares. FEATURES_READY is the same rows over 120 and 64 people, which is
+   what draws a meter. */
 const FEATURES = {
   hint: 'Only people who opened a feature are counted.',
   rows: [
@@ -844,6 +854,15 @@ const FEATURES = {
   ],
   note: 'People who opened each feature in the window.'
 };
+const FEATURES_READY = Object.assign({}, FEATURES, {
+  rows: [
+    { label: 'Training plan', app: 'Mobile', color: 's1', basisPoints: 5500, users: 66, denominator: 120 },
+    { label: 'Aria chat', app: 'Mobile', color: 's1', basisPoints: 4083, users: 49, denominator: 120 },
+    { label: 'Workout logging', app: 'Mobile', color: 's1', basisPoints: 3333, users: 40, denominator: 120 },
+    { label: 'Program builder', app: 'Coaches Web', color: 's2', basisPoints: 6875, users: 44, denominator: 64 },
+    { label: 'Athlete roster', app: 'Coaches Web', color: 's2', basisPoints: 5938, users: 38, denominator: 64 }
+  ]
+});
 
 const usageWindow = (range, days) => ({
   range, start: dayStartIso(days * DAY), endExclusive: dayStartIso(0),
@@ -872,11 +891,13 @@ const USAGE_BASE = {
   notReporting: []
 };
 
-/* The thirty day answer: the signup weeks and who came back to them. */
+/* The thirty day answer: the signup weeks and who came back to them, and the
+   features opened. Usage detail reads this one by default. */
 const USAGE = Object.assign({}, USAGE_BASE, {
   availability: insufficientAnswer(47, 30),
   window: usageWindow('30d', 30),
   apps: [APP_MOBILE(false), APP_COACHES(false)],
+  features: FEATURES,
   cohorts: [
     { app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2'], rows: COHORT_ROWS(cohortWeeks()) },
     { app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2'], rows: [] }
@@ -884,9 +905,7 @@ const USAGE = Object.assign({}, USAGE_BASE, {
 });
 
 /* The seven day answer: the daily lines, the people and sessions in the week,
-   and the features opened. Served when the range asked for is 7d. The thirty
-   day answer carries no features, as it never did: Usage detail's own feature
-   meters are not what any sweep fed by this stub is measuring. */
+   and the features opened. Served when the range asked for is 7d. */
 const USAGE_WEEK = Object.assign({}, USAGE_BASE, {
   features: FEATURES,
   window: usageWindow('7d', 7),
@@ -894,32 +913,69 @@ const USAGE_WEEK = Object.assign({}, USAGE_BASE, {
   cohorts: []
 });
 
-/* The same two answers over a population that clears the floor, which Aria
-   does not have today. Usage detail withholds everything but a card for
-   `insufficient`, so a sweep that has to lay out that page's tables asks for
-   these with options.usage = 'ready'. Growth draws the same counts from either,
-   and scripts/ops-growth-v2.test.mjs holds that at 49 against 50 people. */
-const ready = (answer) => Object.assign({}, answer, {
-  availability: { state: 'ready', detail: '' }
+/* The same two answers over a population that clears the reporting floor,
+   which Aria does not have today. Under the floor Usage detail draws every
+   count and withholds every share, so no feature meter is drawn; a sweep that
+   has to lay out the shares and the meters asks for these with
+   options.usage = 'ready'. Growth draws counts, so it draws the same page from
+   either, and scripts/ops-growth-v2.test.mjs holds that at 49 against 50
+   people. */
+const ready = (answer, week) => Object.assign({}, answer, {
+  availability: { state: 'ready', detail: '' },
+  apps: [APP_MOBILE(week, true), APP_COACHES(week, true)],
+  features: FEATURES_READY
 });
-const USAGE_READY = ready(USAGE);
-const USAGE_WEEK_READY = ready(USAGE_WEEK);
+const USAGE_READY = ready(USAGE, false);
+const USAGE_WEEK_READY = ready(USAGE_WEEK, true);
 
-/* The subscriber history, as GET /api/ops/growth sends it: this reading, the
-   one a week before it, and eight weekly readings behind that. Thirty-one is
-   above every weekly reading, which is the one thing Today needs to call it a
-   record. */
+/* GET /api/ops/growth as the backend sends it (Stadiora/Aria#16456, with the
+   `daily` list from #16497): eight oldest-first weekly windows of new
+   accounts, the paying count now and the weekly and daily snapshots behind it.
+   The window ends at today's 00:00 UTC, so the last daily day is today.
+
+   New accounts are 9 against 6 the week before and paying subscribers 37
+   against 33, so Growth reads "+3" and "+4". Thirty-seven is above all 56
+   earlier daily counts, which is what Today needs to call it the most in 8
+   weeks. */
+const PAYING_DAILY = Array.from({ length: 57 }, (_, i) => (i < 49
+  ? 22 + Math.floor((i * 10) / 48)
+  : [33, 33, 34, 34, 35, 36, 36, 37][i - 49]));
+const payingDay = (i, count) => {
+  const day = utcDay((56 - i) * DAY);
+  return { day, count, capturedAt: `${day}T00:05:00.000Z` };
+};
+const ACCOUNT_WEEKS = [4, 5, 3, 6, 5, 7, 6, 9].map((count, k) => ({
+  start: utcDay((56 - 7 * k) * DAY), endExclusive: utcDay((49 - 7 * k) * DAY), count
+}));
 const GROWTH = {
   asOf: ago(HOUR), timezone: 'UTC',
+  newAccounts: {
+    current: ACCOUNT_WEEKS[7], previous: ACCOUNT_WEEKS[6], weeks: ACCOUNT_WEEKS,
+    source: 'users.createdAt', coverage: 'surviving_accounts'
+  },
   payingSubscribers: {
-    current: { count: 31, asOf: ago(HOUR) },
-    previous: { day: utcDay(7 * DAY), count: 29, capturedAt: ago(7 * DAY) },
-    weeks: [8, 7, 6, 5, 4, 3, 2, 1].map((n, i) => ({
-      day: utcDay(n * 7 * DAY), count: 20 + i * 1.25 | 0, capturedAt: ago(n * 7 * DAY)
-    })),
-    historyBeginsAt: utcDay(70 * DAY),
-    source: 'subscription_records', historySource: 'snapshots'
+    current: { count: 37, asOf: ago(HOUR) },
+    previous: payingDay(49, PAYING_DAILY[49]),
+    weeks: Array.from({ length: 8 }, (_, k) => payingDay(7 * k, PAYING_DAILY[7 * k])),
+    daily: PAYING_DAILY.map((count, i) => payingDay(i, count)),
+    historyBeginsAt: `${utcDay(56 * DAY)}T00:05:00.000Z`,
+    source: 'subscriptions', historySource: 'telemetry_metric_rollups.paying_subscribers'
   }
+};
+
+/* The answers a backend that is not yet this one gives, for the pages that
+   have to leave a tile out rather than invent it. `gap` is a day nobody
+   counted among the 56 before today, `older` is a backend that predates
+   `daily`, and `no-history` is a week with nothing captured to compare to. */
+const growthAnswer = (kind) => {
+  const answer = JSON.parse(JSON.stringify(GROWTH));
+  if (kind === 'gap') answer.payingSubscribers.daily[30] = { ...payingDay(30, null), capturedAt: null };
+  if (kind === 'older') delete answer.payingSubscribers.daily;
+  if (kind === 'no-history') {
+    answer.payingSubscribers.previous = { ...answer.payingSubscribers.previous, count: null, capturedAt: null };
+    answer.newAccounts.previous = { ...answer.newAccounts.previous, count: null };
+  }
+  return answer;
 };
 
 /* One window of run history, for What happened. Stadiora/Aria#5563 moved that
@@ -1286,7 +1342,10 @@ const MODERATION_REPORTS = [
 /* `search` is optional. Only /api/ops/costs reads it: `?stub=not_published`
    answers with the period that has not published yet instead of the billed
    month. `options.usage = 'ready'` answers /api/ops/usage over a population
-   above the reporting floor; the default is the small one Aria really has. */
+   above the reporting floor; the default is the small one Aria really has.
+   `options.growth` ('gap', 'older' or 'no-history') answers /api/ops/growth
+   as a backend with a hole in its history, without `daily`, or with no week
+   to compare to would; the default is the full answer. */
 function stub(pathname, search, options = {}) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -1371,7 +1430,9 @@ function stub(pathname, search, options = {}) {
     if (range === '7d') return { data: populated ? USAGE_WEEK_READY : USAGE_WEEK };
     return { data: populated ? USAGE_READY : USAGE };
   }
-  if (pathname.startsWith('/api/ops/growth')) return { data: GROWTH };
+  if (pathname.startsWith('/api/ops/growth')) {
+    return { data: options.growth ? growthAnswer(options.growth) : GROWTH };
+  }
   if (pathname.startsWith('/api/ops/costs')) {
     const flag = new URLSearchParams(search || '').get('stub');
     return { data: flag === 'not_published' ? COSTS_NOT_PUBLISHED : COSTS };
@@ -1413,5 +1474,5 @@ function stub(pathname, search, options = {}) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-    ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, RULES_HEALTH, JOBS_HEALTH, RUNS_HEALTH, REVIEW_QUEUE, USAGE, USAGE_WEEK, USAGE_READY, USAGE_WEEK_READY, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+    ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, RULES_HEALTH, JOBS_HEALTH, RUNS_HEALTH, REVIEW_QUEUE, USAGE, USAGE_WEEK, USAGE_READY, USAGE_WEEK_READY, GROWTH, growthAnswer, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

@@ -17,12 +17,19 @@
      GET /api/ops/jobs              what is running, queued and stuck
      GET /api/ops/runs              how the last 24 hours of runs went
      GET /api/ops/costs             the latest billed day and the daily average
+     GET /api/ops/growth            the daily paying counts, for one earned
+                                    moment and nothing else
 
    Every read is carried as a value, { data } or { error }, and every section
    draws from the reads it needs. A read that is down takes only its own
    section off the screen and gives it a Try again that re-reads only that
    read. The halves of this page come from different tables, and an operator
    who cannot see spend can still act on a critical problem.
+
+   The growth read is the one exception to that, and is not in CORE: it feeds
+   a single tile in "This week", and a backend that does not have the route
+   (404), has not yet added `daily`, or fails to answer must leave Today
+   exactly as it is without that tile, with no error and no Try again.
 
    The rules that are rules about NOT drawing something:
 
@@ -53,13 +60,18 @@
   var ENDPOINT = {
     summary: '/api/ops/summary',
     usage: '/api/ops/usage',
-    costs: '/api/ops/costs'
+    costs: '/api/ops/costs',
+    growth: '/api/ops/growth'
   };
 
-  /* Reads whose failure leaves the pane degraded. */
+  /* Reads whose failure leaves the pane degraded. `growth` is not one: its
+     only tile is optional by design. */
   var CORE = ['summary', 'usage', 'problems', 'rules', 'jobs', 'runs', 'costs'];
 
   var WEEK = 7;
+  /* "Most paying in 8 weeks" compares today with the 56 days before it: the
+     57 daily snapshots the growth route returns, today's included. */
+  var PAYING_DAYS = 57;
   /* The days a usage window must cover before "best day in N days" says
      anything. A fortnight is two of the weeks the chart compares. */
   var BEST_DAY_MIN_DAYS = 14;
@@ -127,7 +139,8 @@
     rules: St.READS.rules,
     jobs: St.READS.jobs,
     runs: St.READS.runs,
-    costs: costs
+    costs: costs,
+    growth: function () { return get(ENDPOINT.growth); }
   };
 
   /* ----------------------------------------------------------------- pane */
@@ -203,7 +216,7 @@
       { id: 'live', reads: ['jobs'], draw: st.drawLive },
       { id: 'people', reads: ['summary'], draw: drawPeople },
       { id: 'charts', reads: ['usage'], draw: drawCharts },
-      { id: 'moments', reads: ['usage', 'summary'], draw: drawMoments },
+      { id: 'moments', reads: ['usage', 'summary', 'growth'], draw: drawMoments },
       { id: 'problems', reads: ['problems'], draw: st.drawProblems },
       { id: 'jobs', reads: ['jobs'], draw: drawJobs },
       { id: 'ai', reads: ['summary', 'runs'], draw: drawAi },
@@ -406,6 +419,11 @@
          best day    the latest finished UTC day is the strict maximum of
                      every reading the mobile line has, over at least a
                      fortnight with no missing rollup. N is the days covered.
+         paying      the latest daily paying count is strictly above each of
+                     the 56 daily counts before it, and every one of the 56
+                     was captured. A tie, a single day with no snapshot, a
+                     route with no `daily` and a failed read all draw nothing:
+                     a day nobody counted could have been higher.
          AI runs     more runs than the week before, both weeks fully
                      reconciled. The number is the difference. */
     function bestMobileDay() {
@@ -429,6 +447,19 @@
       };
     }
 
+    function mostPaying() {
+      var growth = data('growth');
+      var daily = growth && growth.payingSubscribers && growth.payingSubscribers.daily;
+      if (!Array.isArray(daily) || daily.length < PAYING_DAYS) return null;
+      var counts = daily.slice(-PAYING_DAYS).map(function (day) {
+        return day ? num(day.count) : null;
+      });
+      var latest = counts[counts.length - 1];
+      if (counts.indexOf(null) !== -1) return null;
+      if (counts.slice(0, -1).some(function (count) { return count >= latest; })) return null;
+      return { tone: 'cyan', icon: 'trophy', value: fmt.int(latest), label: 'Most paying in 8 weeks' };
+    }
+
     function moreAiRuns() {
       var ai = data('summary') && data('summary').aiRuns;
       if (!ai || stateOf(ai) !== 'ready') return null;
@@ -446,7 +477,7 @@
     }
 
     function drawMoments(node) {
-      var earned = [bestMobileDay(), moreAiRuns()].filter(Boolean);
+      var earned = [bestMobileDay(), mostPaying(), moreAiRuns()].filter(Boolean);
       if (!earned.length) return;
       node.appendChild(h('h2', { className: 'sec-label', text: 'This week' }));
       var row = h('div', { className: 'moment-row' });
@@ -455,9 +486,8 @@
           h('span', { className: 'moment-ico' }, [icon(m.icon)]),
           h('span', { className: 'moment-value num', text: m.value }),
           h('span', { className: 'moment-words' }, [
-            h('span', { className: 'moment-label', text: m.label }),
-            h('span', { className: 'moment-sub', text: m.sub })
-          ])
+            h('span', { className: 'moment-label', text: m.label })
+          ].concat(m.sub ? [h('span', { className: 'moment-sub', text: m.sub })] : []))
         ]));
       });
       node.appendChild(row);

@@ -992,6 +992,19 @@ svg { display: block; }
 .tone-rose    { --c: var(--rose); }
 .tone-blue    { --c: var(--blue); }
 
+/* A meter's fill is a graphic held to 3:1 against its track, and the bright
+   tokens above are for dots, legends and ribbons, which carry their own text.
+   A meter given a tone took the bright token straight from the utility and
+   measured 2.44:1 (cyan) and 2.50:1 (violet) in the light theme, so a meter
+   takes the same tone's -ink token, the one the severity classes above
+   already use. */
+.meter.tone-cyan    { --c: var(--cyan-ink); }
+.meter.tone-violet  { --c: var(--violet-ink); }
+.meter.tone-emerald { --c: var(--emerald-ink); }
+.meter.tone-amber   { --c: var(--amber-ink); }
+.meter.tone-rose    { --c: var(--rose-ink); }
+.meter.tone-blue    { --c: var(--blue-ink); }
+
 /* Skip link. The navigation comes first in the document, so without this the
    keyboard path to the content is every nav item. Not in the mocks, which had
    no keyboard story. */

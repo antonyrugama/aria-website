@@ -835,6 +835,39 @@ test('a pane with no module on the page says it is not built, and names the wave
   ));
 });
 
+/* The line under the title is the pane's question, a dated line the pane writes
+   for itself (`datedHead`), or nothing (`plainHead`). R54 dropped the question
+   from Human review and Problems because the title and the tabs already say
+   where you are; the question stays in the registry for the card a pane with
+   no module draws and for the tour. */
+test('a plain-headed pane draws its title and no line under it, and every other still draws its question', async () => {
+  const registry = registryOnly();
+  const plain = Object.keys(registry.PANES).filter((id) => registry.PANES[id].plainHead);
+  assert.deepEqual(plain.sort(), ['problems', 'review'],
+    'the panes that stand without a line under the title changed; say which ones should');
+
+  for (const id of plain) {
+    const { doc } = await bootPane(id, { file: registry.PANES[id].file, definePane: () => {} });
+    const p = registry.PANES[id];
+    assert.deepEqual(doc.querySelectorAll('h1').map((e) => e.textContent), [p.heading || p.label]);
+    assert.equal(doc.getElementById('pageSub'), null, id + ' drew a line under its title');
+    assert.deepEqual(doc.querySelectorAll('.page-sub'), [],
+      id + ' drew a subtitle that is not the dated slot either');
+    assert.ok(p.question, id + ' lost its question, which the not-built card and the tour print');
+  }
+
+  /* A pane that declares neither flag keeps the one-line question. */
+  const { doc } = await bootPane('releases', { file: 'releases.html', definePane: () => {} });
+  assert.deepEqual(doc.querySelectorAll('.page-sub').map((e) => e.textContent),
+    [registry.PANES.releases.question]);
+});
+
+test('no pane asks for both a dated line and none at all', () => {
+  const both = Object.entries(registryOnly().PANES)
+    .filter(([, p]) => p.datedHead && p.plainHead).map(([id]) => id);
+  assert.deepEqual(both, [], 'datedHead draws a line and plainHead draws none; a pane cannot be both');
+});
+
 test('a pane module that loads after the bootstrap still draws, because parsing is waited for', async () => {
   /* The <script> that registers a pane comes after the one that boots the
      shell, so on a slow document the shell can reach "which pane is this" with

@@ -17,6 +17,8 @@
      GET /api/ops/usage?range=30d&scope=all&...   the signup weeks and who came
                                                   back to them
      GET /api/ops/releases                        what each store has live
+     GET /api/ops/growth                          new accounts this week and
+                                                  the paying count now
 
    The two usage reads are separate and each is named where it is drawn,
    because they are different windows: the weekly figures say which seven days
@@ -24,9 +26,13 @@
    answer. A read that is down takes only its own sections off the screen and
    gives them a Try again that re-reads only that read.
 
-   New accounts and paying subscribers are not here. They need
-   GET /api/ops/growth, which is not in the backend yet, so this page does not
-   call it and holds no place for it.
+   Momentum, the card beside the hero, is the growth read and nothing else. It
+   is not one of the page's CORE reads: a backend that does not have the route
+   yet (404), an answer that fails, and an answer without a count all leave the
+   card out, with no error line, no Try again and no placeholder, and the rest
+   of the page is neither degraded nor failed on its account. A tile whose
+   count is there but whose comparison is not says "No comparison yet" rather
+   than a zero change. Aria's counts are not estimated, so a null stays null.
 
    The rules, most of them about NOT drawing something:
 
@@ -72,7 +78,8 @@
   var ENDPOINT = {
     summary: '/api/ops/summary',
     usage: '/api/ops/usage',
-    releases: '/api/ops/releases'
+    releases: '/api/ops/releases',
+    growth: '/api/ops/growth'
   };
 
   var WEEK = 7;
@@ -180,10 +187,14 @@
     month: function () {
       return get(ENDPOINT.usage, { scope: 'all', range: '30d', env: 'production' });
     },
-    releases: function () { return get(ENDPOINT.releases); }
+    releases: function () { return get(ENDPOINT.releases); },
+    growth: function () { return get(ENDPOINT.growth); }
   };
 
-  var CORE = Object.keys(READ);
+  /* What the page cannot be drawn without. Growth is read with them but is
+     not one of them: see the docblock. */
+  var CORE = ['summary', 'week', 'month', 'releases'];
+  var ALL = Object.keys(READ);
 
   /* ------------------------------------------------------------- the moves */
 
@@ -200,6 +211,7 @@
     var region = S.region(content);
     var loadToken = 0;
     var wrap = null;
+    var topRow = null;
     var hosts = {};
 
     var moved = movedQuery();
@@ -239,7 +251,7 @@
         { type: 'block', height: 380 },
         { type: 'block', height: 280 }
       ]);
-      return ask(CORE).then(function (answers) {
+      return ask(ALL).then(function (answers) {
         if (mine !== loadToken) return false;
         answers.forEach(function (a) { results[a.key] = a.one; });
         render();
@@ -259,6 +271,7 @@
 
     var SECTIONS = [
       { id: 'people', reads: ['summary'], draw: drawPeople },
+      { id: 'momentum', reads: ['growth'], draw: drawMomentum },
       { id: 'chart', reads: ['week'], draw: drawChart },
       { id: 'apps', reads: ['week'], draw: drawApps },
       { id: 'features', reads: ['week'], draw: drawFeatures },
@@ -283,14 +296,18 @@
       ]));
       hero.appendChild(host('apps', 'div', 'g-apps'));
 
-      wrap.appendChild(hero);
+      topRow = h('div', { className: 'g-top' }, [
+        hero,
+        host('momentum', 'section', 'card g-card g-momentum')
+      ]);
+      wrap.appendChild(topRow);
       wrap.appendChild(h('div', { className: 'g-row' }, [
         host('features', 'section', 'card g-card'),
         host('back', 'section', 'card g-card'),
         host('releases', 'section', 'card g-card')
       ]));
 
-      redraw(CORE);
+      redraw(ALL);
 
       if (CORE.every(function (key) { return results[key].error; })) {
         region.failed(results.summary.error, wholeRetry);
@@ -357,6 +374,48 @@
       }
       node.appendChild(h('p', { className: 'big num', text: fmt.int(active) }));
       node.appendChild(S.delta(active, num(people.platform.previousActive), people.comparison));
+    }
+
+    /* ----------------------------------------------------- momentum */
+
+    /* One tile: what is counted, the span it is counted over, the count, and
+       the change against the week before. A count the route did not send is no
+       tile, and a week before it did not send is "No comparison yet". */
+    function momentumTile(name, span, now, before) {
+      var count = num(now);
+      if (count === null) return null;
+      return h('div', { className: 'g-mom' }, [
+        h('div', { className: 'g-mom-head' }, [
+          h('h3', { className: 'g-mom-name', text: name }),
+          h('span', { className: 'g-mom-span', text: span })
+        ]),
+        h('p', { className: 'big num g-mom-num', text: fmt.int(count) }),
+        S.delta(count, num(before), { days: WEEK })
+      ]);
+    }
+
+    function drawMomentum(node) {
+      var growth = results.growth.error ? null : data('growth');
+      var accounts = growth && growth.newAccounts;
+      var paying = growth && growth.payingSubscribers;
+      var tiles = [
+        accounts && momentumTile('New accounts', '7 days',
+          accounts.current && accounts.current.count,
+          accounts.previous && accounts.previous.count),
+        paying && momentumTile('Paying', 'Now',
+          paying.current && paying.current.count,
+          paying.previous && paying.previous.count)
+      ].filter(Boolean);
+      topRow.className = 'g-top' + (tiles.length ? ' has-momentum' : '');
+      if (!tiles.length) return;
+
+      node.appendChild(h('div', { className: 'g-head g-card-head' }, [
+        h('h2', { className: 'sec-title g-title', text: 'Momentum' }),
+        S.tip('growth-momentum-scope',
+          'New accounts are accounts created in the last seven days that still exist, so one that was ' +
+          'deleted is not counted. Paying is the subscriber count today, against the same count a week ago.')
+      ]));
+      node.appendChild(h('div', { className: 'g-mom-grid' }, tiles));
     }
 
     /* The apps that have a seven day line, in the order the answer sends them.

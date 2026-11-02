@@ -12,8 +12,9 @@
      - "No critical issues" is a claim, printed only after a complete, readable
        problems result, and only when something was in a position to notice;
      - a moment in "This week" is earned by its own rule or it is not drawn,
-       the strip draws only the tiles that were earned, and there is no paying
-       tile at all;
+       the strip draws only the tiles that were earned, and the paying tile is
+       earned only by a record over the eight weeks before it, from 57 whole
+       days of the growth read, which Today never needs to draw anything else;
      - the person on a problem is never named, because the session layer
        withholds the address and the pane must not rebuild a name from one.
 
@@ -116,6 +117,42 @@ function usageFixture(over) {
   }), over);
 }
 
+/* 57 days, oldest first, the last of them 2026-11-01: a small paying base that
+   has grown by about a third over the eight weeks, never faster than a
+   couple a week, and 37 on the day, one more than the best of the 56 before
+   it. The only shape that earns the moment, so every refusal below is one
+   thing taken away from it. */
+const PAYING_DAILY = Array.from({ length: 57 }, (_, i) => (i < 56 ? 22 + Math.floor((i * 14) / 55) : 37));
+const payingDay = (i, count) => {
+  const day = new Date(Date.UTC(2026, 8, 6 + i)).toISOString().slice(0, 10);
+  return { day, count, capturedAt: count === null ? null : day + 'T00:05:00.000Z' };
+};
+
+const accountWeek = (k, count) => ({
+  start: new Date(Date.UTC(2026, 8, 6 + 7 * k)).toISOString().slice(0, 10),
+  endExclusive: new Date(Date.UTC(2026, 8, 13 + 7 * k)).toISOString().slice(0, 10),
+  count,
+});
+
+function growthFixture(over) {
+  return edit(() => {
+    const weeks = [4, 5, 3, 6, 5, 7, 6, 9].map((count, k) => accountWeek(k, count));
+    return {
+      asOf: '2026-11-01T09:00:00.000Z',
+      timezone: 'UTC',
+      newAccounts: { current: weeks[7], previous: weeks[6], weeks, source: 'users.createdAt', coverage: 'surviving_accounts' },
+      payingSubscribers: {
+        current: { count: 37, asOf: '2026-11-01T09:00:00.000Z' },
+        previous: payingDay(49, PAYING_DAILY[49]),
+        weeks: [0, 7, 14, 21, 28, 35, 42, 49].map((i) => payingDay(i, PAYING_DAILY[i])),
+        daily: PAYING_DAILY.map((count, i) => payingDay(i, count)),
+        historyBeginsAt: '2026-09-06T00:05:00.000Z',
+        source: 'subscriptions', historySource: 'telemetry_metric_rollups.paying_subscribers',
+      },
+    };
+  }, over);
+}
+
 function problemsFixture(rows) {
   const list = rows === undefined ? [{
     id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
@@ -179,6 +216,7 @@ const ENDPOINTS = {
   jobs: '/api/ops/jobs',
   runs: '/api/ops/runs',
   costs: '/api/ops/costs',
+  growth: '/api/ops/growth',
 };
 
 const boom = (message) => Object.assign(new Error(message || 'The server did not answer.'), { code: 'http_500' });
@@ -217,6 +255,7 @@ async function boot(options) {
     [ENDPOINTS.jobs]: opts.jobs === undefined ? jobsFixture() : opts.jobs,
     [ENDPOINTS.runs]: opts.runs === undefined ? runsFixture() : opts.runs,
     [ENDPOINTS.costs]: opts.costs === undefined ? costsFixture() : opts.costs,
+    [ENDPOINTS.growth]: opts.growth === undefined ? growthFixture() : opts.growth,
   };
 
   const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/index.html' });
@@ -277,11 +316,12 @@ const healthTone = (dom) => {
   return dot ? classesOf(dot).find((c) => c.startsWith('is-')) : null;
 };
 
-/* The two lines under the title of a moment, by label. */
+/* The lines under the title of a moment, by label. The paying moment has no
+   second line, so its `sub` is null and not an empty string. */
 const moments = (dom) => withClass(section(dom, 'moments'), 'moment').map((m) => ({
   value: allText(one(m, 'moment-value')),
   label: allText(one(m, 'moment-label')),
-  sub: allText(one(m, 'moment-sub')),
+  sub: withClass(m, 'moment-sub').length ? allText(one(m, 'moment-sub')) : null,
   tone: classesOf(m).find((c) => c.startsWith('is-')),
 }));
 
@@ -289,12 +329,12 @@ const lines = (dom) => withClass(section(dom, 'charts'), 'tc-line');
 
 /* =========================== the problems read ========================== */
 
-test('the pane asks for the seven reads it draws from, with the questions it means to ask', async () => {
+test('the pane asks for the eight reads it draws from, with the questions it means to ask', async () => {
   const dom = await boot();
   const asked = (endpoint) => dom.calls.filter((c) => c.endpoint === endpoint);
 
   assert.deepEqual(Object.values(ENDPOINTS).sort(), [...new Set(dom.calls.map((c) => c.endpoint))].sort(),
-    'Today should ask for exactly these seven reads and no others');
+    'Today should ask for exactly these eight reads and no others');
   for (const endpoint of Object.values(ENDPOINTS)) {
     assert.equal(asked(endpoint).length, 1, endpoint + ' should be asked once on load');
   }
@@ -304,6 +344,7 @@ test('the pane asks for the seven reads it draws from, with the questions it mea
   assert.deepEqual({ ...q(ENDPOINTS.problems) }, { status: 'open', limit: dom.window.OpsAlertsModel.PAGE });
   assert.deepEqual({ ...q(ENDPOINTS.runs) }, { range: '24h' });
   assert.deepEqual({ ...q(ENDPOINTS.costs) }, { range: 'month' });
+  assert.deepEqual({ ...q(ENDPOINTS.growth) }, {}, 'the growth read takes no window; it answers for the last 8 weeks');
 });
 
 test('the first of a month falls back to the month before, and only then', async () => {
@@ -546,8 +587,12 @@ for (const state of ['not_reporting', 'insufficient', 'unconfigured', 'not_somet
 
 /* ============================== the moments ============================= */
 
+/* The growth read answering with nothing, so the two moments that do not use
+   it are the ones under test. */
+const NO_PAYING = { growth: boom('Growth could not be read.') };
+
 test('the best mobile day is earned by a strict maximum over a fortnight with no missing rollup', async () => {
-  const dom = await boot({ summary: summaryFixture((s) => { s.aiRuns.runs = 1; }) });
+  const dom = await boot({ summary: summaryFixture((s) => { s.aiRuns.runs = 1; }), ...NO_PAYING });
   assert.deepEqual(moments(dom), [
     { value: '37', label: 'Best Mobile day', sub: 'in 30 days', tone: 'is-cyan' },
   ]);
@@ -556,6 +601,7 @@ test('the best mobile day is earned by a strict maximum over a fortnight with no
     const d = await boot({
       summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
       usage: usageFixture(mutate),
+      ...NO_PAYING,
     });
     assert.deepEqual(moments(d), [], why);
     assert.equal(withClass(section(d, 'moments'), 'sec-label').length, 0, 'the label is drawn over nothing: ' + why);
@@ -575,6 +621,7 @@ test('a null day among the earlier ones does not stop the best day being earned'
   const dom = await boot({
     summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
     usage: usageFixture((u) => { u.apps[0].trend.values[5] = null; }),
+    ...NO_PAYING,
   });
   assert.equal(moments(dom).length, 1, 'a gap was read as a day that beat the latest');
 });
@@ -588,7 +635,7 @@ test('the best day is named for the line that earned it', async () => {
 });
 
 test('more AI runs is earned only when both weeks are fully reported and the count rose', async () => {
-  const lone = { usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
+  const lone = { usage: usageFixture((u) => { u.window.daysCovered = 3; }), ...NO_PAYING };
   const dom = await boot({ ...lone });
   assert.deepEqual(moments(dom), [{ value: '+410', label: 'More AI runs', sub: 'vs last week', tone: 'is-violet' }]);
 
@@ -608,28 +655,78 @@ test('more AI runs is earned only when both weeks are fully reported and the cou
   await none((s) => { delete s.aiRuns.daysMissing; }, 'no list of the days that are missing');
 });
 
+/* One moment shown by the growth read alone: the other two are refused. */
+const NO_BEST_OR_AI = {
+  usage: usageFixture((u) => { u.window.daysCovered = 3; }),
+  summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }),
+};
+
+test('the paying moment is earned by a strict record over the 56 days before it, and each shortfall hides it', async () => {
+  const dom = await boot({ ...NO_BEST_OR_AI });
+  assert.deepEqual(moments(dom), [
+    { value: '37', label: 'Most paying in 8 weeks', sub: null, tone: 'is-cyan' },
+  ]);
+
+  const none = async (growth, why) => {
+    const d = await boot({ ...NO_BEST_OR_AI, growth });
+    assert.deepEqual(moments(d), [], why);
+    assert.equal(section(d, 'moments').childNodes.length, 0, 'the label is drawn over nothing: ' + why);
+  };
+  const days = (mutate) => growthFixture((g) => { mutate(g.payingSubscribers.daily); });
+  await none(days((d) => { d[10].count = 37; }), 'a tie with a day inside the window is not a record');
+  await none(days((d) => { d[0].count = 40; }), 'the oldest day of the window was higher');
+  await none(days((d) => { d[20].count = null; }), 'one day with no reading could have been higher');
+  await none(days((d) => { d[56].count = null; }), 'a latest day with no reading is not a record');
+  await none(days((d) => { d.splice(0, 1); }), 'a window of 56 days is one short');
+  await none(days((d) => { d.length = 0; }), 'no days at all');
+  await none(growthFixture((g) => { delete g.payingSubscribers.daily; }), 'an older backend that sends no daily series');
+  await none(growthFixture((g) => { g.payingSubscribers.daily = { length: 57 }; }), 'a daily series that is not a list');
+  await none(growthFixture((g) => { delete g.payingSubscribers; }), 'a growth answer with no paying block');
+  await none({}, 'a growth answer with nothing in it');
+  await none(Object.assign(new Error('Not found.'), { code: 'http_404' }), 'the route does not exist yet');
+  await none(boom('Growth is unavailable.'), 'the route failed');
+});
+
+test('the paying moment looks only at the last 57 days, however many the route sends', async () => {
+  /* A longer series whose oldest entries are higher than today's count: they
+     are outside the eight weeks and must not take the record away. */
+  const dom = await boot({
+    ...NO_BEST_OR_AI,
+    growth: growthFixture((g) => {
+      g.payingSubscribers.daily = [payingDay(-2, 90), payingDay(-1, 80)].concat(g.payingSubscribers.daily);
+    }),
+  });
+  assert.deepEqual(moments(dom).map((m) => m.label), ['Most paying in 8 weeks']);
+});
+
+test('a failed growth read hides one moment and says nothing else about itself', async () => {
+  const dom = await boot({ growth: boom('Growth is unavailable.') });
+  assert.deepEqual(moments(dom).map((m) => m.label), ['Best Mobile day', 'More AI runs']);
+  assert.ok(!/growth|paying/i.test(allText(dom.doc.getElementById('content'))),
+    'the page says something about a read the reader never asked for');
+  assert.equal(allText(one(section(dom, 'people'), 'big')), '1,102', 'the rest of the page was drawn');
+});
+
 test('the strip draws only the moments that were earned, under one label, in order', async () => {
   const dom = await boot();
   assert.deepEqual(wordsOf(section(dom, 'moments'), 'sec-label'), ['This week']);
-  assert.deepEqual(moments(dom).map((m) => m.label), ['Best Mobile day', 'More AI runs']);
+  assert.deepEqual(moments(dom).map((m) => m.label),
+    ['Best Mobile day', 'Most paying in 8 weeks', 'More AI runs']);
   assert.equal(withClass(section(dom, 'moments'), 'moment-row').length, 1);
-  assert.ok(!/paying/i.test(allText(dom.doc.getElementById('content'))), 'a paying tile is on the page');
+  assert.equal(withClass(one(section(dom, 'moments'), 'moment-row'), 'moment').length, 3);
 
-  /* One earned moment is a strip of one: its label and no gap where the other
+  /* One earned moment is a strip of one: its label and no gap where the others
      would have been. */
-  const aiOnly = await boot({ usage: usageFixture((u) => { u.window.daysCovered = 3; }) });
+  const aiOnly = await boot({ usage: usageFixture((u) => { u.window.daysCovered = 3; }), ...NO_PAYING });
   assert.deepEqual(moments(aiOnly).map((m) => m.label), ['More AI runs']);
   assert.equal(withClass(one(section(aiOnly, 'moments'), 'moment-row'), 'moment').length, 1);
   assert.deepEqual(wordsOf(section(aiOnly, 'moments'), 'sec-label'), ['This week']);
 
-  const bestOnly = await boot({ summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }) });
+  const bestOnly = await boot({ summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }), ...NO_PAYING });
   assert.deepEqual(moments(bestOnly).map((m) => m.label), ['Best Mobile day']);
   assert.equal(withClass(one(section(bestOnly, 'moments'), 'moment-row'), 'moment').length, 1);
 
-  const empty = await boot({
-    usage: usageFixture((u) => { u.window.daysCovered = 3; }),
-    summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }),
-  });
+  const empty = await boot({ ...NO_BEST_OR_AI, ...NO_PAYING });
   assert.equal(section(empty, 'moments').childNodes.length, 0, 'a strip was drawn with nothing earned');
 });
 
