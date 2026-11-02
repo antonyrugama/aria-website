@@ -1,5 +1,6 @@
-/* Guards the dashboard's confirmation dialogs, and the phone navigation
-   drawer, against the one failure that leaves them fully present in the DOM
+/* Guards the dashboard's confirmation dialogs, at desktop and at phone width
+   where a fixed bottom bar sits beside them, against the one failure that
+   leaves them fully present in the DOM
    and unusable on screen: painting behind the scrim that is meant to sit
    behind THEM.
 
@@ -64,18 +65,19 @@ const DIALOGS = [
     dialog: 'form.modal',
     confirm: 'button.btn-danger',
   },
-  /* Not a confirmation dialog, but the same failure: below 980px the rail is a
-     modal drawer over its own scrim, and a scrim that paints above the drawer
-     leaves every pane link present, focusable and unreachable by a finger
-     (Stadiora/Aria#12909). It needs the phone width to exist at all, and the
-     drawer slides in, so it is measured once the slide has finished. */
+  /* The phone has no drawer any more: the five destinations are a fixed bar
+     along the bottom edge. The same failure now has a different shape. A fixed
+     bar that paints above the dialog covers its lowest buttons at exactly the
+     width where a finger is the pointer, and the dialog's confirm and cancel
+     row sits at the bottom of the card. It needs the phone width to exist at
+     all. */
   {
-    name: 'Phone navigation drawer',
-    page: '/ops/index.html',
+    name: 'Settings / revoke access under the phone bar',
+    page: '/ops/settings.html',
     viewport: { width: 375, height: 812, mobile: true },
-    open: '#railToggle',
-    dialog: '#rail.is-open',
-    settleMs: 400,
+    open: 'button[aria-label^="Revoke access for"]',
+    dialog: 'form.modal',
+    confirm: 'button.btn-danger',
   },
 ];
 
@@ -378,7 +380,6 @@ async function measure(cdp, origin, spec, theme) {
     return;
   }
   dialogsOpened += 1;
-  if (spec.settleMs) await new Promise((r) => setTimeout(r, spec.settleMs));
   let broke = false;
 
   /* ---- 1. pointer ---- */
@@ -396,7 +397,7 @@ async function measure(cdp, origin, spec, theme) {
     const bad = [];
     let points = 0;
     controls.forEach((el) => {
-      /* A drawer scrolls; a control below its fold is not covered, only out of
+      /* A dialog on a phone can scroll; a control below its fold is not covered, only out of
          view, and elementFromPoint off screen answers null. A dialog that does
          not scroll is unaffected. */
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -557,5 +558,5 @@ if (failures.length) {
   console.error('\n' + failures.map((f) => 'FAIL  ' + f).join('\n'));
   process.exit(1);
 }
-console.log('\nEvery confirmation dialog this dashboard opens, and the phone navigation drawer, '
+console.log('\nEvery confirmation dialog this dashboard opens, at desktop and at phone width, '
   + 'receives the pointer over its own controls, and its scrim paints behind it, in both themes.');
