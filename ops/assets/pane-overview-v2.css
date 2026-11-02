@@ -47,6 +47,10 @@
   min-width: 0;
 }
 .status-line .sec-title { font-size: 15.5px; font-weight: 500; color: var(--ink); }
+/* The line can say a long thing ("At least 100 open problems", "No alert
+   destination set") on a 360px phone beside a dot, so it wraps rather than
+   pushing the row wider than the screen. */
+.health-text, .live-text { min-width: 0; overflow-wrap: anywhere; }
 
 .today .dot {
   width: 9px; height: 9px;

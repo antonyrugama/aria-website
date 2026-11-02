@@ -1630,14 +1630,18 @@
     var p = loadProgress();
     while (tourBlock.firstChild) tourBlock.removeChild(tourBlock.firstChild);
     var inProgress = p.tour.pane && !p.tour.finished;
+    var label = inProgress ? 'Resume the tour' : p.tour.finished ? 'Take the tour again' : 'Take the tour';
     var main = h('button', {
-      className: 'menu-item tour-start', type: 'button', role: 'menuitem',
-      text: inProgress ? 'Resume the tour' : p.tour.finished ? 'Take the tour again' : 'Take the tour'
+      className: 'menu-item tour-start', type: 'button', role: 'menuitem', text: label
     });
+    main.insertBefore(S.icon('arrow'), main.firstChild);
     main.addEventListener('click', function () { startTour(false, main); });
     tourBlock.appendChild(main);
     if (inProgress) {
-      var over = h('button', { className: 'menu-item', type: 'button', role: 'menuitem', text: 'Start over' });
+      var over = h('button', {
+        className: 'menu-item', type: 'button', role: 'menuitem', text: 'Start over'
+      });
+      over.insertBefore(S.icon('refresh'), over.firstChild);
       over.addEventListener('click', function () { startTour(true, over); });
       tourBlock.appendChild(over);
       /* Said only when there is a place to be reminded of. The menu is not the

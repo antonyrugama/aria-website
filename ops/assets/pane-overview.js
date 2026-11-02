@@ -736,7 +736,7 @@
       var py = function (v) { return 100 - ((v - floor) / span) * 100; };
 
       var chart = h('div', {
-        className: 'tchart' + (opts.axes ? ' has-axes' : ' is-spark') + (opts.area ? ' is-area' : ''),
+        className: 'tchart' + (opts.axes ? '' : ' is-spark') + (opts.area ? ' is-area' : ''),
         role: 'img',
         'aria-label': chartName(opts)
       });
@@ -1053,7 +1053,10 @@
 
       var rows = h('div', { className: 'job-rows' });
       var row = function (kind, value, label, ticks) {
-        var item = h('div', { className: 'job-row is-' + kind }, [
+        /* Queued is the base: its ticks are the default grey, so it carries no
+           marker of its own. A marker with no paint behind it is a class that
+           draws nothing. */
+        var item = h('div', { className: 'job-row' + (kind === 'queued' ? '' : ' is-' + kind) }, [
           h('span', { className: 'job-n num', text: value }),
           h('span', { className: 'job-l', text: label })
         ]);
