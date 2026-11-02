@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import { makeDom, allDomTextAndAttrs } from './ops-dom-harness.mjs';
 import {
   ADMIN, SUMMARY, RELEASES, RULES, PROBLEM, JOBS, RUNS, ADMINS, SESSIONS,
-  AUDIT, INTEGRATIONS, USER_LOOKUP, USER_DETAIL, ago, DAY, stub,
+  AUDIT, INTEGRATIONS, USER_LOOKUP_MANY, USER_DETAIL, USER_REF, ago, DAY, stub,
 } from './ops-api-stub.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
@@ -194,16 +194,33 @@ function usagePayload() {
   };
 }
 
+/* Two matches, so the picker draws and the masked email it carries is on the
+   page to be checked; one match is opened for you and shows no list. */
 function usersLookupPayload() {
-  return clone(USER_LOOKUP);
+  const data = clone(USER_LOOKUP_MANY);
+  data.matches[0].maskedEmail = 'ath*****@example.invalid';
+  return data;
 }
 
+/* The account the people surface is judged on: two identity values the
+   boundary must leave alone, a field the API says is never shown and one it
+   says cannot be revealed yet, each carrying prose the boundary must mask. */
 function usersDetailPayload() {
   const data = clone(USER_DETAIL);
-  data.summary.fields[1].neverShownNote = DIAGNOSTIC;
-  data.summary.fields[2].unavailableNote = DIAGNOSTIC;
-  data.record.fields[1].neverShownNote = DIAGNOSTIC;
-  data.record.fields[2].unavailableNote = DIAGNOSTIC;
+  const fields = [
+    { key: 'contactEmail', label: 'Contact email', masked: false,
+      value: ATHLETE_EMAIL, reveal: 'unavailable' },
+    { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
+      reveal: 'never', neverShownNote: DIAGNOSTIC },
+    { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
+      reveal: 'unavailable', unavailableNote: DIAGNOSTIC },
+  ];
+  data.summary.fields = clone(fields);
+  data.record.fields = clone(fields);
+  data.billing.fields = [
+    { key: 'billingEmail', label: 'Billing email', masked: false,
+      value: BILLING_EMAIL, reveal: 'unavailable' },
+  ];
   return data;
 }
 
@@ -240,7 +257,7 @@ function diagnosticResponses() {
     '/api/ops/releases': { data: releasesPayload() },
     '/api/ops/usage': { data: usagePayload() },
     '/api/ops/users/lookup': { data: usersLookupPayload() },
-    '/api/ops/users/ath_123': { data: usersDetailPayload() },
+    [`/api/ops/users/${USER_REF}`]: { data: usersDetailPayload() },
     '/api/ops/admins': { data: clone(ADMINS) },
     '/api/ops/sessions': { data: clone(SESSIONS) },
     '/api/ops/audit': { data: clone(AUDIT) },
@@ -300,9 +317,9 @@ async function bootPane(pane, paneSources, options = {}) {
       const bare = path.replace(/\?.*$/, '');
       const answer = responses[path] || responses[bare] ||
         (/^\/api\/ops\/users\/[^/]+\/reveal$/.test(bare)
-          ? responses['/api/ops/users/ath_123/reveal']
+          ? responses[`/api/ops/users/${USER_REF}/reveal`]
           : /^\/api\/ops\/users\/[^/]+$/.test(bare)
-            ? responses['/api/ops/users/ath_123']
+            ? responses[`/api/ops/users/${USER_REF}`]
             : null);
       if (!answer) return Promise.resolve({ data: {} });
       return Promise.resolve(clone(answer));
@@ -361,9 +378,9 @@ function cleanResponses() {
     '/api/ops/costs': { data: spendPayload() },
     '/api/ops/releases': { data: clone(RELEASES) },
     '/api/ops/usage': { data: usagePayload() },
-    '/api/ops/users/lookup': { data: clone(USER_LOOKUP) },
-    '/api/ops/users/ath_123': { data: clone(USER_DETAIL) },
-    '/api/ops/users/ath_123/reveal': {
+    '/api/ops/users/lookup': { data: usersLookupPayload() },
+    [`/api/ops/users/${USER_REF}`]: { data: usersDetailPayload() },
+    [`/api/ops/users/${USER_REF}/reveal`]: {
       data: { field: 'backupEmail', value: REVEALED_EMAIL, expiresAt: ago(-60_000), recorded: true },
     },
     '/api/ops/admins': { data: clone(ADMINS) },
@@ -378,9 +395,14 @@ async function lookUpUser(dom) {
      document, so the pane's form is found through the field it owns. */
   const identifier = dom.doc.getElementById('lookupIdentifier');
   const reason = dom.doc.getElementById('lookupReason');
-  identifier.value = 'ath_123';
+  identifier.value = USER_REF;
   reason.value = 'support';
   identifier.closest('form').dispatch('submit');
+  await settle();
+  /* Several matches are offered, not opened, so the account is picked. */
+  const pick = dom.doc.querySelector('.match-row-btn');
+  assert.ok(pick, 'the lookup offered no match to open');
+  pick.dispatch('click');
   await settle();
 }
 
@@ -397,7 +419,7 @@ test('allowlisted identity paths still render intended email values', async () =
   assert.match(settingsSurface, /nobody@ops\.invalid/, 'audit actor email was masked');
 
   const responses = cleanResponses();
-  const detail = clone(USER_DETAIL);
+  const detail = usersDetailPayload();
   detail.record.fields.push({
     key: 'backupEmail',
     label: 'Backup email',
@@ -412,7 +434,7 @@ test('allowlisted identity paths still render intended email values', async () =
     reason: 'support',
     revealed: true,
   }];
-  responses['/api/ops/users/ath_123'] = { data: detail };
+  responses[`/api/ops/users/${USER_REF}`] = { data: detail };
   const people = await bootPane('users', ['users'], { file: 'users.html', responses });
   await lookUpUser(people);
 
@@ -437,7 +459,7 @@ test('allowlisted identity paths still render intended email values', async () =
   assert.ok(reveal, 'expected a live reveal button for the allowlisted reveal value');
   reveal.dispatch('click');
   const reason = [...people.doc.querySelectorAll('input')]
-    .find((input) => input.getAttribute('placeholder') === 'Reason, recorded by field name');
+    .find((input) => input.getAttribute('placeholder') === 'Reason');
   assert.ok(reason, 'expected the reveal reason input');
   reason.value = 'support';
   reason.closest('form').dispatch('submit');
@@ -461,6 +483,13 @@ test('People masks diagnostic notes but leaves intended email values alone', asy
     'People masked an intended unmasked identity email value');
   assert.match(surface, /billing\.identity@example\.invalid/,
     'People masked an intended unmasked billing email value');
+
+  /* The boundary masks every string that is not an identity value, the dt
+     labels included, so the row that carries a note is the one with two
+     masked sentences in it: its label and its note. */
+  const masked = (row) => allDomTextAndAttrs(row).split(MASKED_TEXT).length - 1;
+  assert.ok([...dom.doc.querySelectorAll('.u-row')].some((row) => masked(row) === 2),
+    'no row carried the masked note of a field that cannot be revealed');
 });
 
 test('round-2 reviewed diagnostic rows are covered by the boundary sweep', async () => {

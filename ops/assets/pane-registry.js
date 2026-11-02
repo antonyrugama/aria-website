@@ -43,6 +43,13 @@
      subnav     false on a destination's home that links to its other pages from
                 its own cards, so no row of siblings is drawn above them. The
                 destination's other pages still draw the row, home first
+     scopeInPane the pane draws the App control itself, inside its own form, so
+                the shell draws no App segment for it. The shell still does
+                everything else `scope` means: it reads the querystring, writes
+                a change back, carries the selection on links to the pane, and
+                fires ops:filters. Where the control is drawn is the pane's
+                business; whether a deep link or a hand-off from another pane
+                keeps its App selection is not.
 
      A pane that has been built declares only the filters its own reads can act
      on. A control that changes nothing is worse than no control: picking
@@ -216,9 +223,9 @@
     },
     users: {
       file: 'users.html', icon: 'users', label: 'Look up a user', group: 'Apps and people',
-      destination: null,
+      destination: null, datedHead: true,
       question: 'What is going on with this one account?',
-      wave: 'W4', scope: true, range: false, env: false
+      wave: 'W4', scope: true, scopeInPane: true, range: false, env: false
     },
     settings: {
       file: 'settings.html', icon: 'settings', label: 'Settings', group: 'Apps and people',
