@@ -66,7 +66,8 @@ const PANES = [
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
   { pane: 'alerts', url: '/ops/alerts.html', title: 'Health' },
   { pane: 'problems', url: '/ops/problems.html', title: 'Problems' },
-  { pane: 'analytics', url: '/ops/analytics.html', title: 'Analytics' },
+  { pane: 'analytics', url: '/ops/analytics.html', title: 'Growth' },
+  { pane: 'usage', url: '/ops/usage.html', title: 'Usage detail' },
   { pane: 'spend', url: '/ops/spend.html', title: 'Money' },
   { pane: 'evals', url: '/ops/evaluations.html', title: 'Evaluations' },
   { pane: 'releases', url: '/ops/releases.html', title: 'Releases' },
@@ -96,7 +97,10 @@ const server = http.createServer(async (req, res) => {
       body = JSON.parse(text);
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname, url.search, { body })));
+    /* usage: 'ready' keeps Usage detail's tables and charts in the walk. The
+       stub's default is Aria's real small population, which that page answers
+       with a card. Growth draws the same controls from either. */
+    res.end(JSON.stringify(stub(url.pathname, url.search, { body, usage: 'ready' })));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -986,10 +990,10 @@ for (const p of PANES) {
    base walk never opens anything: it presses Tab and Enter is reserved for
    the skip link, since pressing it on a rail item NAVIGATES.
 
-   Across the ten panes exactly one dialog is reachable from the keyboard --
+   Across the eleven panes exactly one dialog is reachable from the keyboard --
    the Settings revoke confirmation, three instances of it, built by
    op.confirmAction in ops/assets/operate.js. There is also a drawer in the
-   same file, but nothing in the ten panes opens one. Enumerating the openers
+   same file, but nothing in the eleven panes opens one. Enumerating the openers
    rather than hunting for them is deliberate: a prober that clicks buttons
    looking for a dialog navigates away the moment it guesses wrong, and a
    walk that navigated away reports the next page's stops as this page's.

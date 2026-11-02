@@ -162,7 +162,7 @@ const SUMMARY = {
     ],
     window: WEEK_WINDOW,
     comparison: PREVIOUS_WEEK,
-    reportingFloor: 5,
+    reportingFloor: 50,
     environment: 'production'
   },
   aiRuns: {
@@ -774,58 +774,136 @@ const MOBILE_DAILY = [12, 15, 14, 17, 16, 19, 18, 17, 20, 22, 19, 21, 23, 20, 22
 const COACHES_DAILY = [4, 5, 4, 6, 5, 7, 6, 5, 7, 8, 6, 7, 8, 6, 7,
   9, 8, 7, 8, 9, 7, 6, 8, 9, 7, 8, 9, 8, 7, 9];
 
-const USAGE = {
+/* Growth reads the last seven of these, so the two ends are the same figures
+   the page prints: Mobile climbs to a week high on the newest day, Coaches Web
+   stays low and flat. */
+const MOBILE_WEEK = [17, 19, 16, 22, 24, 27, 31];
+const COACHES_WEEK = [4, 5, 5, 6, 5, 7, 8];
+
+/* The Mondays a window holds whole weeks of, as the route labels them
+   ("5 Oct"): a signup week counts only when all seven of its days are inside
+   the window. The window is thirty days ending yesterday, so the first of
+   these is the first Monday on or after its start and the last is the last
+   one that ends before it does. */
+const cohortWeeks = () => {
+  const start = Date.parse(dayStartIso(30 * DAY));
+  const end = Date.parse(dayStartIso(0));
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const weeks = [];
+  for (let t = start; t + 7 * DAY <= end; t += DAY) {
+    const d = new Date(t);
+    if (d.getUTCDay() === 1) weeks.push(`${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`);
+  }
+  return weeks.slice(0, 3);
+};
+const COHORT_ROWS = (weeks) => {
+  const cells = [
+    { size: 10, cells: [{ basisPoints: 6000, returned: 6 }, { basisPoints: 5000, returned: 5 }] },
+    { size: 12, cells: [{ basisPoints: 5833, returned: 7 }, { state: 'not_aged' }] },
+    { size: 6, cells: [{ state: 'not_aged' }, { state: 'not_aged' }] }
+  ];
+  return weeks.map((label, i) => Object.assign({ label }, cells[i]));
+};
+
+const APP_MOBILE = (week) => ({
+  app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
+  coverageBasisPoints: week ? 9400 : 9200,
+  metrics: [
+    { label: 'Active people', kind: 'count', value: 39 },
+    { label: 'Sessions', kind: 'count', value: week ? 86 : 308 },
+    { label: 'Sessions per person', kind: 'decimal', digits: 1, value: week ? 2.2 : 7.9,
+      numerator: week ? 86 : 308, denominator: 39 },
+    { label: 'Opened a feature', kind: 'rate', value: 6410, numerator: 25, denominator: 39 }
+  ],
+  trend: { label: 'Active people per day, Mobile', color: 's1',
+    values: week ? MOBILE_WEEK : MOBILE_DAILY }
+});
+const APP_COACHES = (week) => ({
+  app: 'coaches', label: 'Coaches Web', tone: 'coaches', subtitle: 'Coach workspace',
+  coverageBasisPoints: 10000,
+  metrics: [
+    { label: 'Active people', kind: 'count', value: 9 },
+    { label: 'Sessions', kind: 'count', value: week ? 21 : 36 },
+    { label: 'Sessions per person', kind: 'decimal', digits: 1, value: week ? 2.3 : 4,
+      numerator: week ? 21 : 36, denominator: 9 },
+    { label: 'Opened a feature', kind: 'rate', value: 7778, numerator: 7, denominator: 9 }
+  ],
+  trend: { label: 'Active people per day, Coaches Web', color: 's2',
+    values: week ? COACHES_WEEK : COACHES_DAILY }
+});
+
+/* Each count is of that app's own people: 39 on Mobile and 9 on Coaches Web. */
+const FEATURES = {
+  hint: 'Only people who opened a feature are counted.',
+  rows: [
+    { label: 'Training plan', app: 'Mobile', color: 's1', basisPoints: 5385, users: 21, denominator: 39 },
+    { label: 'Aria chat', app: 'Mobile', color: 's1', basisPoints: 4103, users: 16, denominator: 39 },
+    { label: 'Workout logging', app: 'Mobile', color: 's1', basisPoints: 3333, users: 13, denominator: 39 },
+    { label: 'Program builder', app: 'Coaches Web', color: 's2', basisPoints: 7778, users: 7, denominator: 9 },
+    { label: 'Athlete roster', app: 'Coaches Web', color: 's2', basisPoints: 6667, users: 6, denominator: 9 }
+  ],
+  note: 'People who opened each feature in the window.'
+};
+
+const usageWindow = (range, days) => ({
+  range, start: dayStartIso(days * DAY), endExclusive: dayStartIso(0),
+  days, grain: 'day', timezone: 'UTC',
+  rollupsComputedAt: ago(5 * HOUR), reportingStart: utcDay(days * DAY),
+  daysCovered: days, daysMissingRollups: []
+});
+
+/* The real small-population shape. The route answers `insufficient` under
+   fifty active people, the sentence is the route's own, and every count still
+   arrives beside it: the floor is about rates, not counts. Aria has fewer than
+   fifty active people, so this is the state every pane meets in practice. */
+const USAGE_FLOOR = 50;
+const insufficientAnswer = (people, days) => ({
+  state: 'insufficient',
+  detail: `${people} people were active in the last ${days} days, which is under the ${USAGE_FLOOR} we report rates from.`
+});
+
+const USAGE_BASE = {
   asOf: ago(HOUR),
-  window: {
-    range: '30d', start: dayStartIso(30 * DAY), endExclusive: dayStartIso(0),
-    days: 30, grain: 'day', timezone: 'UTC',
-    rollupsComputedAt: ago(5 * HOUR), reportingStart: utcDay(30 * DAY),
-    daysCovered: 30, daysMissingRollups: []
-  },
   filters: { app: 'all', env: 'production' },
-  reportingFloor: 5,
+  reportingFloor: USAGE_FLOOR,
   consent: { enforcedAt: 'ingest',
     detail: 'Only accounts that turned usage analytics on are counted.' },
-  availability: { state: 'ready', detail: '' },
-  apps: [
-    { app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
-      coverageBasisPoints: 9200,
-      metrics: [
-        { label: 'Active people', kind: 'count', value: 39 },
-        { label: 'Sessions', kind: 'count', value: 308 },
-        { label: 'Sessions per person', kind: 'decimal', digits: 1, value: 7.9,
-          numerator: 308, denominator: 39 },
-        { label: 'Opened a feature', kind: 'rate', value: 6410, numerator: 25, denominator: 39 }
-      ],
-      trend: { label: 'Active people per day, Mobile', color: 's1', values: MOBILE_DAILY } },
-    { app: 'coaches', label: 'Coaches Web', tone: 'coaches', subtitle: 'Coach workspace',
-      coverageBasisPoints: 10000,
-      metrics: [
-        { label: 'Active people', kind: 'count', value: 9 },
-        { label: 'Sessions', kind: 'count', value: 36 },
-        { label: 'Sessions per person', kind: 'decimal', digits: 1, value: 4,
-          numerator: 36, denominator: 9 },
-        { label: 'Opened a feature', kind: 'rate', value: 7778, numerator: 7, denominator: 9 }
-      ],
-      trend: { label: 'Active people per day, Coaches Web', color: 's2', values: COACHES_DAILY } }
-  ],
-  cohorts: [
-    { app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2'],
-      rows: [
-        { label: '24 Aug', size: 14,
-          cells: [{ basisPoints: 7143, returned: 10 }, { basisPoints: 5000, returned: 7 }] },
-        { label: '31 Aug', size: 9,
-          cells: [{ basisPoints: 6667, returned: 6 }, { state: 'not_aged' }] }
-      ] },
-    { app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2'],
-      rows: [
-        { label: '24 Aug', size: 6,
-          cells: [{ basisPoints: 8333, returned: 5 }, { basisPoints: 6667, returned: 4 }] },
-        { label: '31 Aug', size: 5,
-          cells: [{ basisPoints: 8000, returned: 4 }, { state: 'not_aged' }] }
-      ] }
-  ]
+  availability: insufficientAnswer(44, 7),
+  notReporting: []
 };
+
+/* The thirty day answer: the signup weeks and who came back to them. */
+const USAGE = Object.assign({}, USAGE_BASE, {
+  availability: insufficientAnswer(47, 30),
+  window: usageWindow('30d', 30),
+  apps: [APP_MOBILE(false), APP_COACHES(false)],
+  cohorts: [
+    { app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2'], rows: COHORT_ROWS(cohortWeeks()) },
+    { app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2'], rows: [] }
+  ]
+});
+
+/* The seven day answer: the daily lines, the people and sessions in the week,
+   and the features opened. Served when the range asked for is 7d. The thirty
+   day answer carries no features, as it never did: Usage detail's own feature
+   meters are not what any sweep fed by this stub is measuring. */
+const USAGE_WEEK = Object.assign({}, USAGE_BASE, {
+  features: FEATURES,
+  window: usageWindow('7d', 7),
+  apps: [APP_MOBILE(true), APP_COACHES(true)],
+  cohorts: []
+});
+
+/* The same two answers over a population that clears the floor, which Aria
+   does not have today. Usage detail withholds everything but a card for
+   `insufficient`, so a sweep that has to lay out that page's tables asks for
+   these with options.usage = 'ready'. Growth draws the same counts from either,
+   and scripts/ops-growth-v2.test.mjs holds that at 49 against 50 people. */
+const ready = (answer) => Object.assign({}, answer, {
+  availability: { state: 'ready', detail: '' }
+});
+const USAGE_READY = ready(USAGE);
+const USAGE_WEEK_READY = ready(USAGE_WEEK);
 
 /* The subscriber history, as GET /api/ops/growth sends it: this reading, the
    one a week before it, and eight weekly readings behind that. Thirty-one is
@@ -1074,9 +1152,12 @@ const PROOF = {
      reference, both in the action row the narrow-viewport sweep measures. */
   alerts: [PROBLEM.title, 'checks reporting'],
   problems: [PROBLEM.workPaneLabel, PROBLEM.reference],
-  /* Mobile's sessions over the window and the second app's name, neither of
+  /* Mobile's sessions over the week and the second app's name, neither of
      which is on the empty state or the failure card. */
-  analytics: ['308', USAGE.apps[1].label],
+  analytics: ['86', USAGE_WEEK.apps[1].label],
+  /* Mobile's sessions over the thirty days and the second app's name, which
+     only the usage rows print. */
+  usage: ['308', USAGE.apps[1].label],
   /* Two rows of the category cut, which neither the pane's empty cards nor its
      failure card name. The pane prints the five known categories under the
      short names the approved layout uses (AI and models is "AI & models",
@@ -1133,7 +1214,8 @@ const MODERATION_REPORTS = [
 
 /* `search` is optional. Only /api/ops/costs reads it: `?stub=not_published`
    answers with the period that has not published yet instead of the billed
-   month. */
+   month. `options.usage = 'ready'` answers /api/ops/usage over a population
+   above the reporting floor; the default is the small one Aria really has. */
 function stub(pathname, search, options = {}) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -1212,7 +1294,12 @@ function stub(pathname, search, options = {}) {
     if (range === '24h') return { data: options.scene === 'health' ? RUNS_HEALTH : RUNS_DAY };
     return { data: RUNS };
   }
-  if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
+  if (pathname.startsWith('/api/ops/usage')) {
+    const range = new URLSearchParams(search || '').get('range');
+    const populated = options.usage === 'ready';
+    if (range === '7d') return { data: populated ? USAGE_WEEK_READY : USAGE_WEEK };
+    return { data: populated ? USAGE_READY : USAGE };
+  }
   if (pathname.startsWith('/api/ops/growth')) return { data: GROWTH };
   if (pathname.startsWith('/api/ops/costs')) {
     const flag = new URLSearchParams(search || '').get('stub');
@@ -1255,5 +1342,5 @@ function stub(pathname, search, options = {}) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, RULES_HEALTH, JOBS_HEALTH, RUNS_HEALTH, USAGE, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, RULES_HEALTH, JOBS_HEALTH, RUNS_HEALTH, USAGE, USAGE_WEEK, USAGE_READY, USAGE_WEEK_READY, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

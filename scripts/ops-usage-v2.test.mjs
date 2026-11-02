@@ -1,4 +1,4 @@
-/* Unit tests for ops/assets/pane-analytics.js — People and usage on the v2
+/* Unit tests for ops/assets/pane-usage.js — Usage detail (formerly People and usage) on the v2
    design system.
 
    What is worth testing here is the five rules in that file's docblock, four
@@ -43,8 +43,8 @@ const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
 const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
-const PANE_SRC = read('assets/pane-analytics.js');
-const PAGE_HTML = read('analytics.html');
+const PANE_SRC = read('assets/pane-usage.js');
+const PAGE_HTML = read('usage.html');
 
 /* The sheets the page loads, read off the page rather than listed, so a sheet
    added or dropped moves every check that reads them. */
@@ -658,7 +658,7 @@ function buildPage(dom, body) {
     parent.appendChild(node);
     return node;
   };
-  body.setAttribute('data-pane', 'analytics');
+  body.setAttribute('data-pane', 'usage');
   body.className = 'is-booting';
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
@@ -667,7 +667,7 @@ function buildPage(dom, body) {
   el(appGate, 'div', { id: 'app' });
 }
 
-/* Loads the page the way ops/analytics.html loads it: registry, aria.js, the
+/* Loads the page the way ops/usage.html loads it: registry, aria.js, the
    bootstrap, then the pane module. */
 async function boot(options) {
   const opts = options || {};
@@ -677,7 +677,7 @@ async function boot(options) {
 
   const dom = makeDom({
     tokens: TOKENS,
-    href: 'https://ops.example.invalid/ops/analytics.html' + search,
+    href: 'https://ops.example.invalid/ops/usage.html' + search,
   });
   const body = dom.element('body');
   dom.root.appendChild(body);
@@ -710,7 +710,7 @@ async function boot(options) {
   if (opts.patchRegistry) opts.patchRegistry(dom.window.OpsPaneRegistry);
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
-  vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-analytics.js' });
+  vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-usage.js' });
 
   for (let i = 0; i < 8; i += 1) await new Promise((r) => setImmediate(r));
 
@@ -967,7 +967,7 @@ test('the reason leaves the bar the day the window is offered', async () => {
      silently match nothing. */
   const offered = await boot({
     patchRegistry: (registry) => {
-      registry.PANES.analytics.range = registry.PANES.analytics.range.concat('custom');
+      registry.PANES.usage.range = registry.PANES.usage.range.concat('custom');
     },
   });
 
@@ -1487,13 +1487,13 @@ test('every app figure is in the split, withheld ones with their reason', async 
      that happens to be first.
 
      NOT COVERED, on purpose: the withheld branch of this slot
-     (`pane-analytics.js:870-876`, `leadReason ? sentence(leadReason) : …`) is
+     (`pane-usage.js:870-876`, `leadReason ? sentence(leadReason) : …`) is
      unreachable from any answer the route can send, so no fixture here binds
      it and none should pretend to. The lead metric is `metrics[0]`, which the
      route always builds as `countMetric('Active people', …)`
      (`opsUsageView.ts:643`). `withheld()` has exactly two ways to fire: a
      stored-day gap, which needs the label to be `Sessions` or `Sessions per
-     person` (`pane-analytics.js:210-218`), and the floor, which needs
+     person` (`pane-usage.js:210-218`), and the floor, which needs
      `kind === 'rate'` or a denominator (`:105-107`) -- and a count carries
      neither. Binding it would take the same impossible payload
      Stadiora/Aria#10667 exists to remove. Reported on Stadiora/Aria#10666.
@@ -2021,7 +2021,7 @@ test('the retention grid is sized by its content and scrolls, at every width', a
      is here because the rendering proof does not live in this file: the
      measured matrix is in the pull request, 320px to 1680px in both themes,
      with a control that puts `table-layout: fixed` back at
-     `pane-analytics-v2.css:179`. That control reproduces 67 / 20 / 69 / 64
+     `pane-usage-v2.css:179`. That control reproduces 67 / 20 / 69 / 64
      overlapping cell pairs at 320 / 768 / 1024 / 1440 on an eleven-week answer,
      with 0px of page overflow at every one of them.
 
@@ -2036,7 +2036,7 @@ test('the retention grid is sized by its content and scrolls, at every width', a
      one refactor, and the most ordinary way anyone would consolidate the two
      table rules that live 50 lines apart in this file -- swept zero rules and
      passed. */
-  const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
+  const css = readFileSync(new URL('assets/pane-usage-v2.css', OPS), 'utf8');
   const cohortRules = cssRules(css).filter((rule) => rule.targets(/\.u-cohort(?![\w-])/));
   /* A sweep that judged nothing is the failure shape this whole guard was
      rewritten for, so it is red rather than silent -- and the site the defect
@@ -2081,7 +2081,7 @@ test('a card in a single-column grid is allowed to shrink under its table', asyn
      single cohort to `g2`, would make the declaration inert; a change that
      dropped the declaration while the branch still emits plain `grid` puts
      194px back. */
-  const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
+  const css = readFileSync(new URL('assets/pane-usage-v2.css', OPS), 'utf8');
   const shrink = cssRules(css)
     .filter((rule) => rule.targets(/\.grid\s*>\s*\.card(?![\w-])/)
       && /min-width\s*:\s*0/.test(rule.body));
@@ -2127,7 +2127,7 @@ test('a version label with no space in it can still break', async () => {
      text and leaves the table's intrinsic width where it was, so the page
      still goes sideways. A test that accepted either would pass over the
      defect. */
-  const css = readFileSync(new URL('assets/pane-analytics-v2.css', OPS), 'utf8');
+  const css = readFileSync(new URL('assets/pane-usage-v2.css', OPS), 'utf8');
   /* Both row-heading tables, not only the versions one. A feature row's label
      is `FEATURE_LABELS[row.featureKey] ?? row.featureKey` (opsUsageView.ts:691)
      and the fallback is the raw telemetry key -- an unbroken `snake_case`
@@ -2472,18 +2472,18 @@ test('the floor comes from the answer, and 50 is only the fallback', async () =>
 
 test('the page loads the v2 system and not the v1 one', () => {
   for (const asset of ['assets/aria.css', 'assets/shell-pane-v2.css',
-    'assets/pane-analytics-v2.css', 'assets/pane-registry.js', 'assets/aria.js',
-    'assets/shell-pane-v2.js', 'assets/pane-analytics.js']) {
-    assert.ok(PAGE_HTML.indexOf(asset) !== -1, 'analytics.html no longer loads ' + asset);
+    'assets/pane-usage-v2.css', 'assets/pane-registry.js', 'assets/aria.js',
+    'assets/shell-pane-v2.js', 'assets/pane-usage.js']) {
+    assert.ok(PAGE_HTML.indexOf(asset) !== -1, 'usage.html no longer loads ' + asset);
   }
   /* Both systems define .card, .rail, .topbar, .btn, .seg, .pill and .tbl from
      different token sets, so a page that loads both is wrong in a way no
      screenshot of one card will show. */
   for (const asset of ['assets/ops.css', 'assets/operate.css', 'assets/shell.js',
     'assets/pane-data.js', 'assets/icons.js']) {
-    assert.equal(PAGE_HTML.indexOf(asset), -1, 'analytics.html loads the v1 asset ' + asset);
+    assert.equal(PAGE_HTML.indexOf(asset), -1, 'usage.html loads the v1 asset ' + asset);
   }
-  assert.ok(PAGE_HTML.indexOf('data-pane="analytics"') !== -1,
+  assert.ok(PAGE_HTML.indexOf('data-pane="usage"') !== -1,
     'the page no longer names the pane the bootstrap looks for');
   assert.ok(PAGE_HTML.indexOf('Content-Security-Policy') !== -1,
     'the page lost its content security policy');
@@ -2501,7 +2501,7 @@ test('the page loads the v2 system and not the v1 one', () => {
  * independent review of PR #81 defeated that twice, with `u-when` put back on
  * the cohort heading (Stadiora/Aria#10678, item 1):
  *
- *   - `.ops-v1 .u-when { color: red }` at the top of `pane-analytics-v2.css`.
+ *   - `.ops-v1 .u-when { color: red }` at the top of `pane-usage-v2.css`.
  *     An ancestor no ops page can have. The sweep stayed green.
  *   - `.u-when { }`. An empty body. The sweep stayed green.
  *
@@ -2513,7 +2513,7 @@ test('the page loads the v2 system and not the v1 one', () => {
  * The pane is driven through its seven answer shapes in the fake DOM, exactly
  * as before, and the tree it draws is serialised — tag, namespace, every
  * attribute, every text node, in order. Real Chrome then loads
- * `/ops/analytics.html` over HTTP, and each serialised tree is rebuilt inside
+ * `/ops/usage.html` over HTTP, and each serialised tree is rebuilt inside
  * the page's own `#app`, so every element sits under its real ancestors with
  * the page's real stylesheets and real `:root` tokens.
  *
@@ -2570,7 +2570,7 @@ test('the page loads the v2 system and not the v1 one', () => {
  *     what is unread is the source text, not the paint.
  *   - Print and forced-colours. `@media print` and
  *     `(forced-colors: active)` rules are never entered.
- *   - Panes other than this one. The sweep is over `pane-analytics.js`.
+ *   - Panes other than this one. The sweep is over `pane-usage.js`.
  *     `scripts/ops-painted-classes.test.mjs` covers releases and evaluations
  *     the same way.
  */
@@ -2896,7 +2896,7 @@ async function launchPainter(opened, unwind) {
   opened.push(() => server.close());
   const origin = 'http://127.0.0.1:' + server.address().port;
 
-  const profile = mkdtempSync(join(tmpdir(), 'ops-analytics-paint-'));
+  const profile = mkdtempSync(join(tmpdir(), 'ops-usage-paint-'));
   /* Read at the instant the removal runs, from Node's own bookkeeping rather
      than from anything this function claims about itself: a child with a null
      exitCode and a null signalCode has not been reaped, so it may still be
@@ -3030,7 +3030,7 @@ async function launchPainter(opened, unwind) {
       ' localStorage.setItem("ops-api-base", ' + JSON.stringify(origin) + ');' +
       ' sessionStorage.setItem("ops-refresh", JSON.stringify({ t: "stub", s: "adm_1" })); } catch (e) {}',
   });
-  await send('Page.navigate', { url: origin + '/ops/analytics.html' });
+  await send('Page.navigate', { url: origin + '/ops/usage.html' });
   for (let i = 0; i < 300; i += 1) {
     const ready = await evaluate('(() => { try { return !!document.getElementById("app") && ' +
       'document.body.classList.contains("is-ready"); } catch (e) { return false; } })()');
@@ -3052,7 +3052,7 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
      nobody sees. Read off the page rather than listed here. */
   const hrefs = SHEETS;
   assert.deepEqual(hrefs,
-    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-analytics-v2.css',
+    ['assets/aria.css', 'assets/shell-pane-v2.css', 'assets/pane-usage-v2.css',
       'assets/tour-v2.css'],
     'the page stopped loading the sheets this check reads: ' + JSON.stringify(hrefs));
 
@@ -3198,10 +3198,10 @@ test('every class this pane draws is one a loaded sheet moves a value with', asy
     assert.ok(toggles > 250, 'only ' + toggles + ' classes were actually removed and ' +
       'the page laid out again, so most of this sweep asserted nothing');
 
-    console.log('  analytics paint: ' + trees.length + ' states, ' + judged +
+    console.log('  usage paint: ' + trees.length + ' states, ' + judged +
       ' class placements, ' + toggles + ' toggles, ' + declared.names.length +
       ' declared properties read');
-    console.log('  analytics floor: thinnest states ' +
+    console.log('  usage floor: thinnest states ' +
       thinnest.slice().sort((a, b) => a[1] - b[1]).slice(0, 3)
         .map(([n, c]) => n + ' ' + c).join(', ') + ' against a floor of ' + CONTENT_FLOOR);
 
@@ -3322,7 +3322,7 @@ test('the reporting floor sits under the thinnest answer this pane can draw', as
     'above the floor of ' + CONTENT_FLOOR + ', so the floor would pass a pane that ' +
     'never drew anything');
 
-  console.log('  analytics floor: thinnest drawn state ' + thinnestName + ' at ' + thinnest +
+  console.log('  usage floor: thinnest drawn state ' + thinnestName + ' at ' + thinnest +
     ', unmounted at ' + unmounted + ', floor ' + CONTENT_FLOOR +
     ' — ' + (thinnest - CONTENT_FLOOR) + ' of headroom above, ' +
     (CONTENT_FLOOR - unmounted) + ' below');
@@ -3343,7 +3343,7 @@ test('the reporting floor sits under the thinnest answer this pane can draw', as
    never judged looked accounted for. Instead every SITE is found first, and
    a site that yields no literal has to be named below or this fails. */
 const COMPUTED_SITES = new Map([
-  ['toneClass(one.color)', 'pane-analytics.js:82 builds "tone-" + a value from ' +
+  ['toneClass(one.color)', 'pane-usage.js:82 builds "tone-" + a value from ' +
     'SERIES_TONE, so the class is concatenated rather than written. The tones ARE ' +
     'drawn by the sweep above, which judges them; they are unreadable here, not unjudged.'],
 ]);
@@ -3353,12 +3353,12 @@ const NEVER_REACHED = new Map([
      by everyone, and the line this said (505) had already drifted six lines
      into a .kpi-val rule. A pointer into a file this pane does not own rots on
      someone else's commit. The two below name files this pane does own. */
-  ['kpi-foot', 'pane-analytics.js:716 draws a KPI footnote only for a tile that ' +
+  ['kpi-foot', 'pane-usage.js:716 draws a KPI footnote only for a tile that ' +
     'carries one, and no tile in any of the seven answers does. The .kpi-foot ' +
     'rule in aria.css defines it.'],
-  ['ln-pt', 'pane-analytics.js:399 marks a single isolated reading -- one day with ' +
+  ['ln-pt', 'pane-usage.js:399 marks a single isolated reading -- one day with ' +
     'figures between two days without -- and no fixture here produces one. ' +
-    'pane-analytics-v2.css:48 defines it.'],
+    'pane-usage-v2.css:48 defines it.'],
 ]);
 
 test('the classes this pane can write are the ones the sweep judged, plus a named few', async () => {
@@ -3396,7 +3396,7 @@ test('the classes this pane can write are the ones the sweep judged, plus a name
     sites.push({ line, value: value.trim(), literals });
   }
   assert.ok(sites.length > 60,
-    'only ' + sites.length + ' class-writing sites were found in pane-analytics.js, ' +
+    'only ' + sites.length + ' class-writing sites were found in pane-usage.js, ' +
     'so the site scan is finding a fraction of what is there');
 
   const literals = new Set();
@@ -3418,7 +3418,7 @@ test('the classes this pane can write are the ones the sweep judged, plus a name
   }
 
   assert.deepEqual([...new Set(unread)].sort(), [...COMPUTED_SITES.keys()].sort(),
-    'a class-writing site in pane-analytics.js produces no literal this scan can read ' +
+    'a class-writing site in pane-usage.js produces no literal this scan can read ' +
     'and is not named as computed, so the classes it writes are unaccounted for: ' +
     JSON.stringify([...new Set(unread)]));
 
@@ -3447,7 +3447,7 @@ test('the classes this pane can write are the ones the sweep judged, plus a name
       'sheet the page loads names it either -- which is exactly the shape of #10456');
   }
 
-  console.log('  analytics literals: ' + drawn.size + ' classes drawn and judged, ' +
+  console.log('  usage literals: ' + drawn.size + ' classes drawn and judged, ' +
     sites.length + ' class-writing sites in the pane source, ' + literals.size +
     ' readable classes, ' + (literals.size - missing.length) + ' of ' + literals.size +
     ' reached by the seven answers, ' + COMPUTED_SITES.size + ' computed site(s) named');

@@ -56,10 +56,6 @@
 
   var ROWS_LISTED = 3;
 
-  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
   /* ------------------------------------------------------------ readings */
 
   /* A number the answer actually sent, or null. Never a substituted zero. */
@@ -83,32 +79,15 @@
 
   /* ----------------------------------------------------------------- dates */
 
-  function parseDay(iso) {
-    if (typeof iso !== 'string' || !iso) return null;
-    var t = new Date(iso);
-    return isFinite(t.getTime()) ? t : null;
-  }
+  var parseDay = S.dates.parse;
+  var monthDay = S.dates.monthDay;
+  var headDate = S.dates.headDate;
+  var updatedAt = S.dates.updatedAt;
 
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
-  function monthDay(date) {
-    return MONTHS[date.getUTCMonth()] + ' ' + date.getUTCDate();
-  }
-
   function clock(date) {
     return pad2(date.getUTCHours()) + ':' + pad2(date.getUTCMinutes());
-  }
-
-  function headDate(iso) {
-    var t = parseDay(iso);
-    if (!t) return null;
-    return WEEKDAYS[t.getUTCDay()] + ', ' + monthDay(t) + ', ' + t.getUTCFullYear();
-  }
-
-  function updatedAt(iso) {
-    var t = parseDay(iso);
-    if (!t) return null;
-    return 'Updated ' + clock(t) + ' UTC';
   }
 
   /* ------------------------------------------------------------- figures */
@@ -210,146 +189,31 @@
        redraw    function (keys): draw the sections that read these
        syncState function (): settle the page's degraded/shown state */
   function create(opts) {
-    var prefix = opts.prefix;
     var anchor = opts.anchor || 'health';
-    var content = opts.content;
-    var reads = opts.reads;
-    var names = opts.names || {};
-    /* One counter per read. Asking for a read advances its counter, and an
-       answer may be used only while its counter is still the one it was asked
-       under, so the newest ask of a read wins whatever order the answers come
-       back in, and a read nobody asked again is never disturbed. */
-    var generation = {};
-    var results = {};
-    var retryN = 0;
 
-    function data(key) {
-      var one = results[key];
-      return one && !one.error ? one.data : null;
-    }
-
-    /* A read as a value, never a rejection. A synchronous throw is a failed
-       read too. */
-    function settled(key) {
-      return new Promise(function (resolve) { resolve(reads[key]()); }).then(
-        function (value) { return { data: value }; },
-        function (err) { return { error: err }; }
-      );
-    }
-
-    function first(root, selector) {
-      var found = root.querySelectorAll(selector);
-      return found.length ? found[0] : null;
-    }
-
-    function shownPanel() { return first(content, '[data-shown]'); }
-
-    /* ------------------------------------------------- failure and retry */
-
-    /* The name a screen reader gives a Try again is composed from the button
-       and the heading beside it, so two of them on one screen are told apart
-       in a list of controls. data-retry carries the same heading for the
-       sentence spoken once the read comes back. */
-    function retryButton(titleNode, keys, sectionId) {
-      retryN += 1;
-      var headingId = titleNode.getAttribute('id');
-      if (!headingId) {
-        headingId = prefix + '-failed-' + retryN;
-        titleNode.setAttribute('id', headingId);
-      }
-      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
-      var buttonId = prefix + '-retry-' + retryN;
-      again.setAttribute('id', buttonId);
-      again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
-      again.setAttribute('data-retry', String(titleNode.textContent || ''));
-      again.addEventListener('click', function () {
-        retry(keys).then(function (landed) {
-          if (landed) landOn(sectionId);
-        });
-      });
-      return again;
-    }
-
-    function failure(headline, err, keys, sectionId) {
-      var block = S.stateBlock('warn', headline, [S.failureMessage(err)], 3);
-      var title = first(block, '.state-title');
-      block.appendChild(h('div', { className: 'row mt-sm' }, [retryButton(title, keys, sectionId)]));
-      return block;
-    }
-
-    /* A read that failed inside a figure that has other things to say. */
-    function failedLine(headline, err, keys, sectionId) {
-      var line = h('div', { className: 'fail-line' });
-      var title = h('span', { className: 'sec-title fail-title', text: headline });
-      line.appendChild(title);
-      line.appendChild(h('span', { className: 'fail-why', text: S.failureMessage(err) }));
-      line.appendChild(retryButton(title, keys, sectionId));
-      return line;
-    }
-
-    /* Pressing Try again redraws the section, which destroys the button.
-       Focus falls to <body> unless it is put somewhere on purpose, and the
-       section's own heading is the node that exists whether the retry worked
-       or not. What is spoken is the outcome: the section came back, or the
-       same failure is still there. */
-    function landOn(sectionId) {
-      var panel = shownPanel();
-      if (!panel) return;
-      var host = sectionId ? first(panel, '[id="' + prefix + '-' + sectionId + '"]') : null;
-      /* A section that came back with nothing to draw (a row that appears only
-         while something is waiting) has no heading left, so focus goes to the
-         first heading on the screen rather than to <body>. */
-      var head = first(host || panel, '.sec-title, .state-title') || first(panel, '.sec-title, .state-title');
-      if (!head) return;
-      head.setAttribute('tabindex', '-1');
-      head.focus();
-      var stuck = (host || panel).querySelectorAll('[data-retry]');
-      var message;
-      if (!host && !first(panel, '[id="' + prefix + '-' + anchor + '"]')) {
-        message = String(head.textContent || '') + ' again.';
-      } else if (!stuck.length) {
-        message = (host ? names[sectionId] : opts.title) + ' was read again.';
-      } else if (host) {
-        message = String(stuck[0].getAttribute('data-retry') || '') + ' again.';
-      } else {
-        message = opts.title + ' was read again. ' + fmt.plural(stuck.length, 'part') + ' could not be read.';
-      }
-      S.announce(message);
-    }
-
-    /* Ask for these reads. Each answer says whether its read has been asked
-       for again since, judged when the last of them is in. */
-    function ask(keys) {
-      var stamp = {};
-      keys.forEach(function (key) {
-        generation[key] = (generation[key] || 0) + 1;
-        stamp[key] = generation[key];
-      });
-      return Promise.all(keys.map(function (key) {
-        return settled(key).then(function (one) { return { key: key, one: one }; });
-      })).then(function (answers) {
-        answers.forEach(function (a) { a.current = generation[a.key] === stamp[a.key]; });
-        return answers;
-      });
-    }
-
-    /* Re-read these reads and nothing else, then redraw the sections that
-       draw from them. Only an answer nobody has since asked for again is
-       used: an older answer that arrives late draws nothing and moves nothing,
-       and the retry that replaced it is the one that lands. Resolves to
-       whether this retry drew, which is the only one that may move focus or
-       speak. Every Try again asks for one read, so an answer is either the
-       newest of its read or it is not. */
-    function retry(keys) {
-      return ask(keys).then(function (answers) {
-        var used = answers.filter(function (a) { return a.current; });
-        if (!used.length) return false;
-        used.forEach(function (a) { results[a.key] = a.one; });
-        opts.redraw(used.map(function (a) { return a.key; }));
+    /* The reads, the newest-ask-wins counters and the Try again are the
+       shell's, shared with every pane that reads in sections; this adds what
+       Today and Health draw from them. */
+    var kit = S.sections({
+      prefix: opts.prefix,
+      reads: opts.reads,
+      content: opts.content,
+      marker: anchor,
+      whole: opts.title,
+      names: opts.names || {},
+      drawn: function (keys) {
+        opts.redraw(keys);
         opts.syncState();
-        return true;
-      });
-    }
+      }
+    });
+    var results = kit.results;
+    var data = kit.data;
+    var ask = kit.ask;
+    var retry = kit.retry;
+    var retryButton = kit.retryButton;
+    var failure = kit.failure;
+    var failedLine = kit.failedLine;
+    var landOn = kit.landOn;
 
     /* The Health count beside the rail item: a real read or nothing. */
     function badgeProblems() {
@@ -582,7 +446,6 @@
     return {
       results: results,
       data: data,
-      first: first,
       ask: ask,
       retry: retry,
       retryButton: retryButton,
@@ -618,8 +481,6 @@
     clock: clock,
     headDate: headDate,
     updatedAt: updatedAt,
-    MONTHS: MONTHS,
-    WEEKDAYS: WEEKDAYS,
     problemHref: problemHref,
     tileHead: tileHead,
     workedBar: workedBar

@@ -115,7 +115,7 @@ const HONOURED = {
      check 4. */
   history: { range: 'read' },
   problems: { range: 'answer' },
-  analytics: { scope: 'read', range: 'read', env: 'read' },
+  usage: { scope: 'read', range: 'read', env: 'read' },
   /* The App control is the pane's own, drawn in its search form (the registry's
      `scopeInPane`), so the shell has no segment for the sweep to click. What
      this proves is the part that is not about where a control is drawn: a link
@@ -353,9 +353,9 @@ const PAGES = {
       return undefined;
     },
   },
-  analytics: {
-    file: 'analytics.html',
-    scripts: ['assets/pane-analytics.js'],
+  usage: {
+    file: 'usage.html',
+    scripts: ['assets/pane-usage.js'],
     answer: (endpoint) => (endpoint === '/api/ops/usage' ? usage() : undefined),
   },
   users: {

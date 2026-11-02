@@ -27,12 +27,6 @@
 .status-pane p { margin: 0; }
 .status-pane a { text-decoration: none; }
 
-/* ------------------------------------------------------------- the head */
-
-#pageSub { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-.sub-date { color: var(--ink-2); font-size: 15px; }
-.sub-updated { color: var(--ink-3); font-size: 13.5px; }
-
 /* ---------------------------------------------------------- status line */
 
 .status-line {
@@ -149,20 +143,10 @@
 /* ------------------------------------------------------------ failure */
 
 .status-pane .state-block { padding: 24px 12px; }
-.fail-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 4px; }
-.fail-title { font-size: 14.5px; font-weight: 520; color: var(--ink); }
-.fail-why { font-size: 13px; color: var(--ink-3); }
 
 /* -------------------------------------------------------------- phone */
 
 @media (max-width: 980px) {
-  /* The date and its time stack at the right of the title. */
-  .page-sub { margin-left: auto; text-align: right; }
-  #pageSub { display: block; }
-  .sub-date, .sub-updated { display: block; }
-  .sub-date { font-size: 15px; font-weight: 520; color: var(--ink); }
-  .sub-updated { margin-top: 2px; font-size: 13px; }
-
   .status-line .sec-title { font-size: 16px; }
 
   .prob-row {

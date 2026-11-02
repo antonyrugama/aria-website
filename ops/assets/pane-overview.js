@@ -64,8 +64,8 @@
      anything. A fortnight is two of the weeks the chart compares. */
   var BEST_DAY_MIN_DAYS = 14;
 
-  var MONTHS = St.MONTHS;
-  var DAY_MS = 86400000;
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   var UNAVAILABLE_WORDS = {
     not_reporting: 'No reading',
@@ -78,24 +78,12 @@
     disabled: 'Switched off'
   };
 
-  var SVG_NS = 'http://www.w3.org/2000/svg';
-
-  function svgEl(name, attrs) {
-    var el = document.createElementNS(SVG_NS, name);
-    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, String(attrs[k])); });
-    return el;
-  }
-
   /* ------------------------------------------------------------ readings */
 
   var num = St.num;
   var list = St.list;
   var textOf = St.textOf;
   var stateOf = St.stateOf;
-  var parseDay = St.parseDay;
-  var monthDay = St.monthDay;
-  var headDate = St.headDate;
-  var updatedAt = St.updatedAt;
 
   function detailOf(block) {
     return textOf(block && block.availability && block.availability.detail);
@@ -107,18 +95,11 @@
 
   /* ----------------------------------------------------------------- dates */
 
-  /* "Oct 25–31", or "Oct 28–Nov 3" across a month. The end is exclusive in the
-     answer, and the label names the last whole day. */
-  function dayRange(startIso, endExclusiveIso) {
-    var start = parseDay(startIso);
-    var end = parseDay(endExclusiveIso);
-    if (!start || !end || end.getTime() <= start.getTime()) return null;
-    var last = new Date(end.getTime() - DAY_MS);
-    if (last.getUTCMonth() === start.getUTCMonth()) {
-      return monthDay(start) + '\u2013' + last.getUTCDate();
-    }
-    return monthDay(start) + '\u2013' + monthDay(last);
-  }
+  var parseDay = S.dates.parse;
+  var monthDay = S.dates.monthDay;
+  var dayRange = S.dates.dayRange;
+  var headDate = S.dates.headDate;
+  var updatedAt = S.dates.updatedAt;
 
   /* ----------------------------------------------------------------- reads */
 
@@ -164,8 +145,10 @@
       spend: 'Cloud spend'
     };
 
-    /* The retry engine, the status line and the problem rows are shared with
-       Health (assets/pane-status.js), so there is one of each. */
+    /* The reads, the newest-ask-wins counters and the Try again are the
+       shell's S.sections, reached through assets/pane-status.js, which also
+       gives Today the status line and the problem rows it shares with Health,
+       so there is one of each. */
     var st = St.create({
       prefix: 'today', title: 'Today', anchor: 'health', names: NAMES,
       content: content, reads: READ,
@@ -315,7 +298,8 @@
       var main = h('div', { className: 'hp-main' });
       main.appendChild(h('div', { className: 'hp-head' }, [
         h('h2', { className: 'sec-title', text: 'Active people' }),
-        scopeTip()
+        S.tip('today-people-scope',
+          'Only people who turned on usage analytics are counted. Someone who uses both apps counts once.')
       ]));
 
       if (stateOf(people) !== 'ready' || active === null) {
@@ -327,7 +311,7 @@
       }
 
       main.appendChild(h('p', { className: 'big num', text: fmt.int(active) }));
-      main.appendChild(delta(people, active));
+      main.appendChild(S.delta(active, num(people.platform && people.platform.previousActive), people.comparison));
       var span = dayRange(people.window && people.window.start, people.window && people.window.endExclusive);
       var days = num(people.window && people.window.days);
       var range = span || (days === null ? null : 'Last ' + fmt.plural(days, 'day'));
@@ -348,47 +332,6 @@
         });
         node.appendChild(split);
       }
-    }
-
-    /* The change against the window before, as a difference in people. Never a
-       rate: a share over a group this small moves several points on one
-       person, and the reporting floor withholds exactly that. An absent
-       comparison is shown as absent, never as no change. */
-    function delta(people, active) {
-      var before = num(people.platform && people.platform.previousActive);
-      var span = num(people.comparison && people.comparison.days);
-      if (before === null || !people.comparison) {
-        return h('p', { className: 'delta is-none', text: 'No comparison yet' });
-      }
-      var diff = active - before;
-      var against = span === null || span === WEEK ? 'last week' : 'the ' + fmt.plural(span, 'day') + ' before';
-      if (diff === 0) return h('p', { className: 'delta is-flat', text: 'No change vs ' + against });
-      var word = (diff > 0 ? '+' : '\u2212') + fmt.int(Math.abs(diff)) + ' vs ' + against;
-      return h('p', { className: 'delta ' + (diff > 0 ? 'is-up' : 'is-down') }, [
-        icon('arrow'),
-        h('span', { text: word })
-      ]);
-    }
-
-    /* The scope of the figure, carried by an info icon rather than a label.
-       Hover and keyboard focus show it; Escape puts it away again. */
-    function scopeTip() {
-      var bubble = h('span', {
-        className: 'tip-bubble', role: 'tooltip', id: 'today-people-scope',
-        text: 'Only people who turned on usage analytics are counted. Someone who uses both apps counts once.'
-      });
-      var button = h('button', {
-        className: 'tip-btn', type: 'button',
-        'aria-label': 'What this counts', 'aria-describedby': 'today-people-scope'
-      }, [icon('info')]);
-      var tip = h('span', { className: 'tip' }, [button, bubble]);
-      button.addEventListener('keydown', function (event) {
-        if (event.key === 'Escape') bubble.setAttribute('data-dismissed', '');
-      });
-      ['mouseleave', 'blur'].forEach(function (name) {
-        button.addEventListener(name, function () { bubble.removeAttribute('data-dismissed'); });
-      });
-      return tip;
     }
 
     function usageApps() {
@@ -445,169 +388,13 @@
           head.appendChild(legend);
         }
         block.appendChild(head);
-        block.appendChild(trendChart({
+        block.appendChild(S.trendChart({
           values: thisWeek, ghost: ghost, area: lead, axes: true, end: end,
           label: label + ' daily active people'
         }));
         node.appendChild(block);
         lead = false;
       });
-    }
-
-    /* --------------------------------------------------- the charts */
-
-    /* A line over the days it has a reading for, drawn as an SVG whose shape
-       is the data and HTML marks for everything with text in it, so the type
-       keeps its size when the chart narrows. The path breaks at a day with no
-       reading and never drops to the floor through one. */
-    function trendChart(opts) {
-      var values = opts.values;
-      var ghost = opts.ghost;
-      var all = values.concat(ghost || []).filter(function (v) { return v !== null; });
-      var floor = 0;
-      var ceiling;
-      if (opts.axes) {
-        /* Data driven: an even ceiling just over the highest reading, so the
-           peak never touches the top of the plot. */
-        var top = all.length ? Math.max.apply(null, all) : 0;
-        ceiling = Math.max(4, top + 1 + ((top + 1) % 2));
-      } else {
-        /* A sparkline has no axis to mislead, so it uses its own range. */
-        floor = all.length ? Math.min.apply(null, all) : 0;
-        ceiling = all.length ? Math.max.apply(null, all) : 1;
-        if (ceiling === floor) ceiling = floor + 1;
-      }
-      var span = ceiling - floor;
-      var count = values.length;
-      var px = function (i) { return count > 1 ? (i / (count - 1)) * 100 : 50; };
-      var py = function (v) { return 100 - ((v - floor) / span) * 100; };
-
-      var chart = h('div', {
-        className: 'tchart' + (opts.axes ? '' : ' is-spark') + (opts.area ? ' is-area' : ''),
-        role: 'img',
-        'aria-label': chartName(opts)
-      });
-      var plot = h('div', { className: 'tc-plot' });
-      var inner = h('div', { className: 'tc-inner' });
-
-      if (opts.axes) {
-        [0, 50, 100].forEach(function (at) {
-          var line = h('i', { className: 'tc-grid' + (at === 100 ? ' is-base' : '') });
-          line.style.setProperty('top', at + '%');
-          plot.appendChild(line);
-          var tick = h('span', {
-            className: 'tc-y',
-            text: fmt.int(ceiling - (at / 100) * ceiling)
-          });
-          tick.style.setProperty('top', at + '%');
-          plot.appendChild(tick);
-        });
-      }
-
-      var svg = svgEl('svg', { 'class': 'tc-svg', viewBox: '0 0 100 100', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
-      var gradient = 'tc-fill-' + (++gradientN);
-      if (opts.area) {
-        var defs = svgEl('defs');
-        var stops = svgEl('linearGradient', { id: gradient, x1: 0, y1: 0, x2: 0, y2: 1 });
-        stops.appendChild(svgEl('stop', { offset: '0', 'class': 'tc-stop-top' }));
-        stops.appendChild(svgEl('stop', { offset: '1', 'class': 'tc-stop-base' }));
-        defs.appendChild(stops);
-        svg.appendChild(defs);
-      }
-
-      var runsOf = function (series) {
-        var runs = [];
-        var run = [];
-        series.forEach(function (v, i) {
-          if (v === null) {
-            if (run.length) runs.push(run);
-            run = [];
-            return;
-          }
-          run.push([px(i), py(v)]);
-        });
-        if (run.length) runs.push(run);
-        return runs;
-      };
-      var trace = function (run) {
-        return run.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(2) + ' ' + p[1].toFixed(2); }).join(' ');
-      };
-
-      if (ghost) {
-        runsOf(ghost).forEach(function (run) {
-          if (run.length > 1) svg.appendChild(svgEl('path', { 'class': 'tc-ghost', d: trace(run) }));
-        });
-      }
-      runsOf(values).forEach(function (run) {
-        if (run.length < 2) return;
-        if (opts.area) {
-          var last = run[run.length - 1];
-          svg.appendChild(svgEl('path', {
-            'class': 'tc-area', fill: 'url(#' + gradient + ')',
-            d: trace(run) + ' L' + last[0].toFixed(2) + ' 100 L' + run[0][0].toFixed(2) + ' 100 Z'
-          }));
-        }
-        svg.appendChild(svgEl('path', { 'class': 'tc-line', d: trace(run) }));
-      });
-      inner.appendChild(svg);
-
-      var lastIndex = -1;
-      values.forEach(function (v, i) { if (v !== null) lastIndex = i; });
-      values.forEach(function (v, i) {
-        if (v === null) return;
-        if (!opts.axes && i !== lastIndex) return;
-        var dot = h('i', { className: 'tc-dot' + (i === lastIndex ? ' is-end' : '') });
-        dot.style.setProperty('left', px(i).toFixed(2) + '%');
-        dot.style.setProperty('top', py(v).toFixed(2) + '%');
-        inner.appendChild(dot);
-        if (opts.axes) {
-          var tag = h('span', { className: 'tc-val' + (i === lastIndex ? ' is-end' : ''), text: fmt.int(v) });
-          tag.style.setProperty('left', px(i).toFixed(2) + '%');
-          tag.style.setProperty('top', py(v).toFixed(2) + '%');
-          inner.appendChild(tag);
-        }
-      });
-
-      if (opts.axes && opts.end) {
-        [0, Math.floor((count - 1) / 2), count - 1].forEach(function (i, slot) {
-          if (slot === 1 && (count - 1) % 2 !== 0) return;
-          if (slot === 1 && count < 3) return;
-          var day = new Date(opts.end.getTime() - (count - i) * DAY_MS);
-          var tick = h('span', { className: 'tc-x' + (slot === 1 ? ' is-mid' : ''), text: monthDay(day) });
-          tick.style.setProperty('left', px(i).toFixed(2) + '%');
-          inner.appendChild(tick);
-        });
-      }
-
-      plot.appendChild(inner);
-      chart.appendChild(plot);
-      return chart;
-    }
-
-    var gradientN = 0;
-
-    /* The chart's accessible name, and the only place its data is spoken: a
-       role="img" subtree is presentational. */
-    function chartName(opts) {
-      /* `back` is how many days earlier than the plotted week the series
-         ends, so the dashed week names its own last day and not this week's. */
-      var sentence = function (series, who, back) {
-        var seen = series.filter(function (v) { return v !== null; });
-        if (!seen.length) return who + ': no reading on any of ' + fmt.plural(series.length, 'day') + '.';
-        var lo = Math.min.apply(null, seen);
-        var high = Math.max.apply(null, seen);
-        var lastAt = -1;
-        series.forEach(function (v, i) { if (v !== null) lastAt = i; });
-        var day = opts.end
-          ? ' on ' + monthDay(new Date(opts.end.getTime() - (series.length - lastAt + back) * DAY_MS))
-          : '';
-        return who + ': ' + fmt.int(seen.length) + ' of ' + fmt.plural(series.length, 'day') +
-          ' with a reading, ' + (lo === high ? 'flat at ' + fmt.int(lo) : 'low ' + fmt.int(lo) + ', high ' + fmt.int(high)) +
-          ', ending ' + fmt.int(series[lastAt]) + day + '.';
-      };
-      var name = opts.label + ', ' + sentence(opts.values, 'this week', 0);
-      if (opts.ghost) name += ' ' + sentence(opts.ghost, 'the week before, dashed', opts.values.length);
-      return name;
     }
 
     /* ------------------------------------------------------ the moments */
@@ -783,7 +570,7 @@
       node.appendChild(h('p', { className: 'spend-day', text: through ? monthDay(through) : '' }));
 
       var line = values.slice(0, billed).map(num);
-      node.appendChild(trendChart({
+      node.appendChild(S.trendChart({
         values: line, ghost: null, area: true, axes: false,
         label: 'Daily cloud spend over ' + fmt.plural(billed, 'billed day')
       }));
