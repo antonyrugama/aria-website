@@ -656,7 +656,7 @@ test('the health line says no critical issues only when it has earned the claim'
 
 test('the health line never says no critical issues over a read it could not trust', async () => {
   const cases = [
-    ['a failed problems read', { problems: boom('down') }, 'Problems unread', 'is-warn'],
+    ['a failed problems read', { problems: boom('down') }, "Couldn't load problems", 'is-warn'],
     ['a rules read that failed', { problems: problemsFixture([]), rules: boom('down') }, 'Checks unread', 'is-warn'],
     ['checks that are not running', {
       problems: problemsFixture([]),
@@ -746,51 +746,99 @@ test('checks that are not reporting are counted beside the claim, never inside i
   }
 });
 
-test('verdicts older than the evaluator would leave them are dated beside the claim', async () => {
+test('verdicts older than the evaluator would leave them are counted as stale beside the claim', async () => {
   const ranAt = (stamp) => rulesFixture((r) => { r.rules.forEach((x) => { x.lastEvaluatedAt = stamp; }); });
 
   const fresh = await boot({ ...calm, rules: ranAt(minutesAgo(14)) });
   assert.deepEqual(notesOf(fresh), [], 'fourteen minutes is inside the cadence');
 
   const late = await boot({ ...calm, rules: ranAt(minutesAgo(16)) });
-  assert.deepEqual(notesOf(late), ['Checks last ran 16 minutes ago']);
+  assert.deepEqual(notesOf(late), ['2 checks stale']);
   assert.equal(healthText(late), OK);
 
   const hours = await boot({ ...calm, rules: ranAt(minutesAgo(3 * 60)) });
-  assert.deepEqual(notesOf(hours), ['Checks last ran 3 hours ago']);
+  assert.deepEqual(notesOf(hours), ['2 checks stale']);
 
   const years = await boot({ ...calm, rules: ranAt(oldStamp) });
   assert.equal(healthText(years), OK);
-  assert.equal(notesOf(years).length, 1);
-  assert.match(notesOf(years)[0], /^Checks last ran \d+ days ago$/);
+  assert.deepEqual(notesOf(years), ['2 checks stale']);
+
+  const future = await boot({ ...calm, rules: ranAt(minutesAgo(-60)) });
+  assert.deepEqual(notesOf(future), [], 'a stamp from a skewed clock is not old');
 });
 
-test('the age is the newest verdict, not the newest run that reached none', async () => {
-  const rules = rulesFixture((r) => {
-    r.rules[0].lastEvaluatedAt = oldStamp;
-    r.rules[1].lastEvaluationStatus = 'insufficient_data';
-  });
-  const dom = await boot({ ...calm, rules });
-  const notes = notesOf(dom);
-  assert.equal(notes.length, 2, notes.join(' | '));
-  assert.equal(notes[0], '1 check not reporting');
-  assert.match(notes[1], /^Checks last ran \d+ days ago$/, 'a run that reached no verdict made the verdicts look current');
+/* The reviewer's counterexample: one current verdict beside an obsolete one. */
+test('a current check does not vouch for a stale one', async () => {
+  const mixed = await boot({ ...calm, rules: rulesFixture((r) => {
+    r.rules[0].lastEvaluatedAt = minutesAgo(5);
+    r.rules[1].lastEvaluatedAt = oldStamp;
+  }) });
+  assert.equal(healthText(mixed), OK, 'the problems claim changed');
+  assert.equal(healthTone(mixed), 'is-ok');
+  assert.deepEqual(notesOf(mixed), ['1 check stale'], 'a current verdict hid an obsolete one');
+
+  /* The same two rules both current are the control: nothing beside the claim. */
+  const current = await boot({ ...calm, rules: rulesFixture((r) => {
+    r.rules[0].lastEvaluatedAt = minutesAgo(5);
+    r.rules[1].lastEvaluatedAt = minutesAgo(5);
+  }) });
+  assert.equal(healthText(current), OK);
+  assert.deepEqual(notesOf(current), [], 'two current checks drew a note');
+
+  /* Whichever rule is the stale one, and however many are current. */
+  const swapped = await boot({ ...calm, rules: threeRules((rules) => {
+    rules[0].lastEvaluatedAt = oldStamp;
+    rules[1].lastEvaluatedAt = minutesAgo(1);
+  }) });
+  assert.deepEqual(notesOf(swapped), ['1 check stale']);
 });
 
-test('the coverage line is one clause each, and only ever beside the calm claim', async () => {
+test('a rule is counted as not reporting or as stale, never as both', async () => {
+  /* One rule current, one with an old verdict, one that reached no verdict:
+     one note of each kind. */
+  const both = await boot({ ...calm, rules: threeRules((rules) => {
+    rules[0].lastEvaluatedAt = oldStamp;
+    rules[2].lastEvaluationStatus = 'insufficient_data';
+  }) });
+  assert.deepEqual(notesOf(both), ['1 check not reporting', '1 check stale']);
+
+  /* An old run that reached no verdict is not reporting, not stale. */
+  const noVerdict = await boot({ ...calm, rules: threeRules((rules) => {
+    rules[2].lastEvaluatedAt = oldStamp;
+    rules[2].lastEvaluationStatus = 'insufficient_data';
+  }) });
+  assert.deepEqual(notesOf(noVerdict), ['1 check not reporting']);
+
+  /* A rule that is switched off was never going to report and its old stamp
+     says nothing about whether anything is checked now. */
+  const off = await boot({ ...calm, rules: threeRules((rules) => {
+    rules[2].enabled = false;
+    rules[2].lastEvaluatedAt = oldStamp;
+  }) });
+  assert.deepEqual(notesOf(off), []);
+
+  /* A firing verdict is a verdict, so an old one is stale too. */
+  const firing = await boot({ ...calm, rules: threeRules((rules) => {
+    rules[2].lastEvaluatedAt = oldStamp;
+    rules[2].lastEvaluationStatus = 'firing';
+  }) });
+  assert.deepEqual(notesOf(firing), ['1 check stale']);
+});
+
+test('the coverage line is one short clause per kind, and only ever beside the calm claim', async () => {
   const both = await boot({ ...calm, rules: threeRules((rules) => {
     rules.forEach((x) => { x.lastEvaluatedAt = minutesAgo(40); });
     rules[2].lastEvaluationStatus = 'insufficient_data';
   }) });
-  assert.deepEqual(notesOf(both), ['1 check not reporting', 'Checks last ran 40 minutes ago']);
+  assert.deepEqual(notesOf(both), ['1 check not reporting', '2 checks stale']);
   for (const note of notesOf(both)) assert.ok(!/[.,;:]/.test(note), 'the note is a sentence: ' + note);
 
   /* Every other line already says something about the checks or the queue. */
   const elsewhere = [
-    ['a critical issue', { rules: threeRules((rules) => { rules[2].lastEvaluationStatus = 'insufficient_data'; }) }],
+    ['a critical issue', { rules: threeRules((rules) => { rules[2].lastEvaluationStatus = 'insufficient_data'; rules[0].lastEvaluatedAt = oldStamp; }) }],
     ['checks not running', { ...calm, rules: rulesFixture((r) => { r.rules.forEach((x) => { x.lastEvaluationStatus = 'insufficient_data'; }); }) }],
     ['checks unread', { ...calm, rules: boom('down') }],
-    ['no destination', { ...calm, rules: threeRules((rules) => { rules[2].lastEvaluationStatus = 'error'; }) }],
+    ['no destination', { ...calm, rules: threeRules((rules) => { rules[2].lastEvaluationStatus = 'error'; rules[0].lastEvaluatedAt = oldStamp; }) }],
   ];
   elsewhere[3][1].rules.channels[0].configured = false;
   for (const [name, options] of elsewhere) {

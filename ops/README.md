@@ -624,9 +624,15 @@ something was in a position to notice; a failed, capped or unreadable problems l
 list in it at all is a failed read, never an empty queue), or checks that are not running, say so
 instead, and the health line carries a state of its own for "no alert destination set". The claim
 is about the problems and nothing else, so what it leaves out is printed beside it in the
-secondary ink: "N checks not reporting" for enabled rules that have not reached a verdict, and
-"Checks last ran <age>" once the newest verdict is more than fifteen minutes old (the rules are
-evaluated every five).
+secondary ink, at 14px, one note per kind and each a count of the checks it is true of: "N checks
+not reporting" for enabled rules that have not reached a verdict, and "N checks stale" for rules
+whose own last verdict is more than fifteen minutes old. A rule is in one kind only, and a current
+check never vouches for a stale one, so one rule evaluated five minutes ago beside another last
+evaluated in 2020 reads "No critical issues" with "1 check stale", while two current rules read it
+with nothing beside it. The fifteen minutes is `STALE_AFTER_MS` in `alerts-model.js`: the rules
+payload carries no interval per rule, so it is the one engine cadence (five minutes, per the
+backend's alert runbook) times three cycles, the runbook's own point at which the evaluation job
+is not running. A problems read that fails says "Couldn't load problems" instead of the claim.
 And **a moment is earned or it is not drawn**: each tile under "This week" has one rule and
 renders only when its own reads prove it, and the strip draws only the tiles that were earned, so
 it can hold two, one, or none and then is not drawn at all. A read that fails removes its tile.

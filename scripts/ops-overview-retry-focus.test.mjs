@@ -133,7 +133,7 @@ const boom = (what) => Object.assign(new Error(what + ' is down'), { status: 503
    is said when it comes back, and what repairs it. This table is the claim
    under test: a failure that is not here has no way to be asked again. */
 const CASES = [
-  { name: 'problems', section: 'health', headline: 'Problems unread', spoken: 'Health',
+  { name: 'problems', section: 'health', headline: "Couldn't load problems", spoken: 'Health',
     reads: ['problems'], fail: { problems: boom('problems') } },
   { name: 'rules', section: 'health', headline: 'Checks unread', spoken: 'Health',
     reads: ['rules'], fail: { rules: boom('rules') } },

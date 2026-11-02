@@ -166,6 +166,22 @@
      not currently judging anything. */
   var JUDGING = { ok: true, firing: true };
 
+  /* How old a verdict may be before it no longer says anything about now.
+
+     The rules payload carries no per-rule evaluation interval, so there is no
+     per-rule threshold to read. What exists is one engine: it walks every
+     rule on one cycle, five minutes by the backend's own runbook
+     (docs/ops/operations-dashboard-alert-runbook.md, "five minute evaluation
+     cadence"), and the same runbook says a stamp older than about fifteen
+     minutes means the job is not running. So the threshold is that cadence
+     times three cycles, which leaves room for one slow cycle and one missed
+     one before the verdict is called old. It is a single value for every rule
+     because the cadence is a single value for every rule. If the payload ever
+     carries an interval per rule, this is the one place to read it instead. */
+  var EVALUATION_CADENCE_MS = 5 * 60 * 1000;
+  var STALE_AFTER_CYCLES = 3;
+  var STALE_AFTER_MS = EVALUATION_CADENCE_MS * STALE_AFTER_CYCLES;
+
   /* The most recent of a list of timestamps, compared as numbers. Sorting
      these as strings happens to agree with numeric order for every 13-digit
      millisecond value, which makes it a trap rather than a bug, so it is done
@@ -208,14 +224,21 @@
      the last time it ran. Both panes lean on the answer, because "nothing is
      wrong" is only worth printing when something was in a position to
      notice. */
-  function armedState(rules) {
+  function armedState(rules, now) {
+    var at = typeof now === 'number' && isFinite(now) ? now : Date.now();
     var list = rules.rules || [];
     var enabled = list.filter(function (r) { return r.enabled; });
     var checking = enabled.filter(function (r) {
       return time(r.lastEvaluatedAt) !== null && JUDGING[r.lastEvaluationStatus] === true;
     });
     var lastEvaluated = latest(enabled.map(function (r) { return r.lastEvaluatedAt; }));
-    var lastJudged = latest(checking.map(function (r) { return r.lastEvaluatedAt; }));
+    /* Each rule against its own stamp. The newest verdict among the rules
+       cannot stand in for the others: a current verdict from one rule does
+       not make another rule's obsolete one current. A stamp from the future
+       (a skewed clock) is not old. */
+    var stale = checking.filter(function (r) {
+      return at - time(r.lastEvaluatedAt) > STALE_AFTER_MS;
+    });
 
     var channels = Array.isArray(rules.channels) ? rules.channels : [];
     /* `=== true`, and the two panes spell it the same way. A row saying
@@ -294,10 +317,11 @@
       /* Over the enabled rules only. A disabled rule's last run says nothing
          about whether anything is being checked now. */
       lastEvaluatedAt: iso(lastEvaluated),
-      /* The newest stamp among the rules counted in `checking`: when a verdict
-         was last reached, which is the age of whatever a calm line rests on.
-         A rule that ran and found no data does not make a verdict current. */
-      lastJudgedAt: iso(lastJudged),
+      /* The subset of `checking` whose verdict is older than STALE_AFTER_MS:
+         rules that did reach a verdict, but too long ago for it to describe
+         the present. Disjoint from the rules that are not reporting, so each
+         rule is counted once. */
+      stale: stale.length,
       lastFiredAt: iso(latest(list.map(function (r) { return r.lastFiredAt; }))),
       trustworthy: checking.length > 0
     };
@@ -357,6 +381,7 @@
     iso: iso,
     byWorstThenOldest: byWorstThenOldest,
     armedState: armedState,
+    STALE_AFTER_MS: STALE_AFTER_MS,
     needingAction: needingAction,
     takenOn: takenOn,
     active: active,

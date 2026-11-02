@@ -69,9 +69,6 @@
   /* The days a usage window must cover before "best day in N days" says
      anything. A fortnight is two of the weeks the chart compares. */
   var BEST_DAY_MIN_DAYS = 14;
-  /* Alert rules are evaluated every five minutes, so a verdict three times
-     that old means the evaluator is not running. */
-  var CHECKS_STALE_MS = 15 * 60 * 1000;
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -523,24 +520,25 @@
     }
 
     /* What the calm line does not say. "No critical issues" is a claim about
-       the problems; whether every check is reporting, and how old the verdicts
-       are, is a different fact and is printed beside it rather than folded
-       into it. Two words of each, never a sentence. */
+       the problems; whether every check is reporting, and whether the verdicts
+       it rests on are recent, is a different fact and is printed beside it
+       rather than folded into it. Each is a count of the checks it is true of,
+       one note per kind, so a current check cannot vouch for a stale one. A
+       rule is in one kind only: not reporting means it reached no verdict,
+       stale means its own last verdict is too old (alerts-model.js
+       STALE_AFTER_MS). */
     function checkNotes() {
       var armed = model.armedState(data('rules') || {});
       var notes = [];
       var silent = armed.enabled - armed.checking;
       if (silent > 0) notes.push(fmt.plural(silent, 'check') + ' not reporting');
-      var judged = armed.lastJudgedAt ? Date.parse(armed.lastJudgedAt) : NaN;
-      if (isFinite(judged) && Date.now() - judged > CHECKS_STALE_MS) {
-        notes.push('Checks last ran ' + fmt.ago(armed.lastJudgedAt));
-      }
+      if (armed.stale > 0) notes.push(fmt.plural(armed.stale, 'check') + ' stale');
       return notes;
     }
 
     function drawHealth(node) {
       if (results.problems.error) {
-        var title = h('span', { className: 'sec-title health-text', text: 'Problems unread' });
+        var title = h('span', { className: 'sec-title health-text', text: "Couldn't load problems" });
         node.appendChild(h('span', { className: 'dot is-warn', 'aria-hidden': 'true' }));
         node.appendChild(title);
         node.appendChild(retryButton(title, ['problems'], 'health'));

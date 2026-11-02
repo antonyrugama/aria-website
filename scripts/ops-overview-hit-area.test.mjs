@@ -1,4 +1,4 @@
-/* Two things on the operations pages that only a laid-out page can answer.
+/* Three things on the operations pages that only a laid-out page can answer.
 
    1. THE "WHAT THIS COUNTS" BUTTON IS A 44px TARGET THAT COSTS NO LAYOUT.
 
@@ -34,6 +34,16 @@
       measured at 390px, at 981px (the narrowest sticky bar, and so the
       tallest) and at 1440px.
 
+   3. THE CHECK NOTES BESIDE "NO CRITICAL ISSUES" ARE REAL BODY TEXT.
+
+      BUILD-NOTES sets 14px as the smallest body text. The notes that say what
+      the calm line leaves out ("1 check stale", "1 check not reporting") were
+      drawn at 13.5px, which a review measured in Chromium at 390px. The
+      computed size is read off the page, at both widths, in the reviewer's
+      own state: one rule evaluated five minutes ago beside one last evaluated
+      in 2020. The same page with both rules current is the control, and draws
+      no note at all.
+
    Real Chrome over CDP and the stub API, the way the other rendered oracles
    here work. The test needs a Chrome (CHROME_PATH), as they do.
 
@@ -57,6 +67,7 @@ import { stub } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIN_TARGET = 44;
+const MIN_BODY_TEXT = 14;
 const GLYPH = 17;
 const HEIGHT = 900;
 const EPS = 0.01;
@@ -79,11 +90,33 @@ const MIME = {
   '.woff2': 'font/woff2'
 };
 
+/* What the check-notes test asks the stub to say about the rules: null leaves
+   the stub alone, 'mixed' is one rule evaluated five minutes ago beside one
+   whose last verdict is from 2020, 'current' is both evaluated five minutes
+   ago. Both answer with an empty problems list so the calm line is drawn. */
+let checks = null;
+const OLD_VERDICT = '2020-01-01T00:00:00.000Z';
+
+function answer(pathname) {
+  const body = stub(pathname);
+  if (!checks) return body;
+  if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: [] } };
+  if (pathname.startsWith('/api/ops/alerts/rules')) {
+    const recent = new Date(Date.now() - 5 * 60000).toISOString();
+    const rules = body.data.rules.slice(0, 2).map((r) => Object.assign({}, r, {
+      enabled: true, lastEvaluationStatus: 'ok', lastEvaluatedAt: recent
+    }));
+    if (checks === 'mixed') rules[1].lastEvaluatedAt = OLD_VERDICT;
+    return { data: Object.assign({}, body.data, { rules }) };
+  }
+  return body;
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    res.end(JSON.stringify(answer(url.pathname)));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -359,4 +392,63 @@ for (const width of ANCHOR_WIDTHS) {
       }
     });
   }
+}
+
+/* ========================== the check notes' text size ==================== */
+
+const NOTES = `(() => {
+  const health = document.getElementById('today-health');
+  if (!health) return JSON.stringify({ error: 'no #today-health section' });
+  const claim = health.querySelector('.health-text');
+  const notes = [...health.querySelectorAll('.health-note')].map((el) => ({
+    text: el.textContent.trim(),
+    size: parseFloat(getComputedStyle(el).fontSize),
+    right: el.getBoundingClientRect().right
+  }));
+  return JSON.stringify({
+    claim: claim ? claim.textContent.trim() : null,
+    notes,
+    viewport: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth
+  });
+})()`;
+
+for (const width of WIDTHS) {
+  test(`the note for a stale check is body text beside the calm claim, at ${width}px`, async () => {
+    checks = 'mixed';
+    try {
+      await open('/ops/index.html', width);
+      await waitInPage("document.querySelector('#today-health .health-text')", 'the health line to draw');
+      await new Promise((r) => setTimeout(r, 250));
+      const read = await evaluate(NOTES);
+      assert.equal(read.error, undefined, read.error);
+      assert.equal(read.viewport, width);
+      assert.equal(read.claim, 'No critical issues', 'the problems claim changed');
+      assert.deepEqual(read.notes.map((n) => n.text), ['1 check stale'],
+        'a current verdict hid an obsolete one');
+      for (const note of read.notes) {
+        assert.ok(note.size >= MIN_BODY_TEXT,
+          `"${note.text}" computes to ${note.size}px, under the ${MIN_BODY_TEXT}px minimum body text`);
+        assert.ok(note.right <= width, `"${note.text}" ends at ${note.right}px, past the ${width}px viewport`);
+      }
+      assert.ok(read.scrollWidth <= width, `the page scrolls sideways: ${read.scrollWidth}px in ${width}px`);
+    } finally {
+      checks = null;
+    }
+  });
+
+  test(`two current checks draw no note beside the calm claim, at ${width}px`, async () => {
+    checks = 'current';
+    try {
+      await open('/ops/index.html', width);
+      await waitInPage("document.querySelector('#today-health .health-text')", 'the health line to draw');
+      await new Promise((r) => setTimeout(r, 250));
+      const read = await evaluate(NOTES);
+      assert.equal(read.error, undefined, read.error);
+      assert.equal(read.claim, 'No critical issues');
+      assert.deepEqual(read.notes, [], 'two current checks drew a note');
+    } finally {
+      checks = null;
+    }
+  });
 }

@@ -279,7 +279,7 @@ test('the pane goes down as a whole only when every read it cannot do without ha
 /* ========================= what a failed section says ===================== */
 
 const FAILURES = [
-  { read: 'problems', id: 'health', headline: 'Problems unread', says: false },
+  { read: 'problems', id: 'health', headline: "Couldn't load problems", says: false },
   { read: 'summary', id: 'people', headline: 'Active people could not be read', says: true },
   { read: 'usage', id: 'charts', headline: 'The daily lines could not be read', says: true },
   { read: 'jobs', id: 'jobs', headline: 'Jobs could not be read', says: true },
@@ -423,7 +423,7 @@ test('a problems answer with no readable list is a failed read, never a quiet qu
     const dom = await boot({ problems: answer });
     const everything = allText(shownPanel(dom));
     assert.ok(!everything.includes(OK), name + ' was reported as nothing being wrong');
-    assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), 'Problems unread', name);
+    assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), "Couldn't load problems", name);
     assert.equal(retries(section(dom, 'health')).length, 1, name + ': the failed read has no retry');
     assert.equal(withClass(section(dom, 'problems'), 'prob-row').length, 0, name + ' drew a queue row');
     assert.equal(dom.states[dom.states.length - 1], 'degraded', name + ': the pane is not marked degraded');
@@ -436,7 +436,7 @@ test('a problems answer with no readable list is a failed read, never a quiet qu
 test('an unreadable problems list that is retried and comes back readable draws the claim', async () => {
   let answer = { total: 0 };
   const dom = await boot({ problems: () => answer });
-  assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), 'Problems unread');
+  assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), "Couldn't load problems");
   answer = { problems: [], total: 0 };
   retries(section(dom, 'health'))[0].dispatchEvent({ type: 'click' });
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
