@@ -842,6 +842,67 @@ const RUNS_DAY = Object.assign({}, RUNS, {
   })
 });
 
+/* The Health page's own day, served with options.scene = 'health': nine checks
+   of which seven are reporting and two have no samples yet, two jobs running
+   and one waiting, twenty-four of twenty-five runs worked in the last day, and
+   the one acknowledged cost problem 'calm' serves. Every figure is the one the
+   Health mock draws. */
+const RULES_HEALTH = Array.from({ length: 9 }, (_, n) => ({
+  ruleKey: 'check_' + (n + 1), title: 'Check ' + (n + 1), scopeDescription: 'Per request type',
+  thresholdLabel: 'below 95% for 10m', channels: ['teams'], enabled: true,
+  lastEvaluationStatus: n < 7 ? 'ok' : 'insufficient_data',
+  lastInsufficientReason: n < 7 ? null : 'below_minimum_samples',
+  lastEvaluatedAt: ago(5 * MINUTE)
+}));
+
+const JOBS_HEALTH = {
+  generatedAt: ago(0),
+  recording: { state: 'recording', lastRecordedAt: ago(2 * MINUTE) },
+  queue: {
+    open: 3,
+    byState: [{ state: 'queued', jobs: 1 }, { state: 'running', jobs: 2 }, { state: 'canceling', jobs: 0 }],
+    lanes: []
+  },
+  workingSet: {
+    limit: 50, returned: 3, truncated: false,
+    jobs: [
+      { id: 'job_h1', jobType: 'training_plan', lane: 'background', state: 'running', progress: 42,
+        progressGrade: 'healthy', ageMs: 12000, queuedMs: 1000, runningMs: 11000 },
+      { id: 'job_h2', jobType: 'nutrition_plan', lane: 'background', state: 'running', progress: 71,
+        progressGrade: 'healthy', ageMs: 9000, queuedMs: 1000, runningMs: 8000 },
+      { id: 'job_h3', jobType: 'meal_photo', lane: 'gpu', state: 'queued', progress: 0,
+        progressGrade: null, ageMs: 4000, queuedMs: 4000, runningMs: null }
+    ]
+  },
+  attention: { completeness: 'whole_queue', stuck: [], abandoned: [] },
+  throughput: null, baseline: null, capacity: { slots: null, reason: 'Nothing records worker capacity.' }
+};
+
+const RUNS_HEALTH = Object.assign({}, RUNS_DAY, {
+  summary: {
+    runs: 25, completed: 24, failed: 1, canceled: 0, failureReasons: 1, unfinished: 0,
+    duration: { p50Ms: 18000, measured: 25, total: 25 },
+    queued: { p50Ms: 900, measured: 25, total: 25 }
+  },
+  runs: [
+    { jobId: '11111111-1111-4111-8111-aaaaaaaaaaaa',
+      type: { value: 'training_plan', label: 'Training plan', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 18000, finishedAt: ago(2 * MINUTE),
+      actions: { canCancel: false, cancelReason: null, canRetry: false, retryReason: null } },
+    { jobId: '22222222-2222-4222-8222-bbbbbbbbbbbb',
+      type: { value: 'nutrition_plan', label: 'Nutrition plan', labelled: true },
+      outcome: 'completed', outcomeLabel: 'Worked', failureCode: null, retryable: null,
+      modelUsed: 'gpt-5-mini', queuedMs: 700, durationMs: 14000, finishedAt: ago(6 * MINUTE),
+      actions: { canCancel: false, cancelReason: null, canRetry: false, retryReason: null } },
+    { jobId: '33333333-3333-4333-8333-cccccccccccc',
+      type: { value: 'meal_photo', label: 'Meal photo', labelled: true },
+      outcome: 'failed', outcomeLabel: 'Failed', failureCode: 'model_timeout', retryable: true,
+      modelUsed: 'gpt-5-mini', queuedMs: 1400, durationMs: 6000, finishedAt: ago(23 * MINUTE),
+      actions: { canCancel: false, cancelReason: null, canRetry: true, retryReason: null } }
+  ]
+});
+
 const RUN_REVEAL = {
   jobId: '22222222-2222-4222-8222-222222222222',
   jobType: 'video_analysis',
@@ -923,10 +984,12 @@ const PROOF = {
      printed verbatim. Absent from every empty state this pane has and from
      its failure card, none of which names a failure code or a model. */
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
-  /* The drill-down link the workPane rename restored, and the problem's own
-     reference. Both sit in the action row the narrow-viewport sweep
-     measures. */
-  alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
+  /* Health: the worst problem's title and the count of checks reporting, both
+     drawn only once the problems and the rules have been read. Problems: the
+     drill-down link the workPane rename restored, and the problem's own
+     reference, both in the action row the narrow-viewport sweep measures. */
+  alerts: [PROBLEM.title, 'checks reporting'],
+  problems: [PROBLEM.workPaneLabel, PROBLEM.reference],
   /* Mobile's sessions over the window and the second app's name, neither of
      which is on the empty state or the failure card. */
   analytics: ['308', USAGE.apps[1].label],
@@ -1013,7 +1076,7 @@ function stub(pathname, search, options = {}) {
   }
   if (pathname.startsWith('/api/ops/alerts/rules')) {
     return { data: {
-      rules: RULES.map((r) => Object.assign({
+      rules: (options.scene === 'health' ? RULES_HEALTH : RULES).map((r) => Object.assign({
         severity: 'warning', category: 'ai_reliability',
         lastInsufficientReason: null, lastEvaluatedAt: ago(2 * MINUTE), lastFiredAt: null
       }, r)),
@@ -1043,7 +1106,8 @@ function stub(pathname, search, options = {}) {
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) {
-    return { data: { problems: [options.scene === 'calm' ? PROBLEM_CALM : PROBLEM] } };
+    const calm = options.scene === 'calm' || options.scene === 'health';
+    return { data: { problems: [calm ? PROBLEM_CALM : PROBLEM] } };
   }
   if (/^\/api\/ops\/jobs\/[^/]+\/cancel$/.test(pathname)) {
     return { data: { jobId: pathname.split('/')[4], status: 'canceled' } };
@@ -1055,11 +1119,12 @@ function stub(pathname, search, options = {}) {
       status: 'queued',
     } };
   }
-  if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
+  if (pathname.startsWith('/api/ops/jobs')) return { data: options.scene === 'health' ? JOBS_HEALTH : JOBS };
   if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(pathname)) return { data: RUN_REVEAL };
   if (pathname === '/api/ops/runs') {
     const range = new URLSearchParams(search || '').get('range');
-    return { data: range === '24h' ? RUNS_DAY : RUNS };
+    if (range === '24h') return { data: options.scene === 'health' ? RUNS_HEALTH : RUNS_DAY };
+    return { data: RUNS };
   }
   if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
   if (pathname.startsWith('/api/ops/growth')) return { data: GROWTH };
@@ -1097,5 +1162,5 @@ function stub(pathname, search, options = {}) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, RULES_HEALTH, JOBS_HEALTH, RUNS_HEALTH, USAGE, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

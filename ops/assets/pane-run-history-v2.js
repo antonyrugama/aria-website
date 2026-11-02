@@ -129,7 +129,7 @@
   /* The panes that own the questions this one does not. Both are doorways. */
   var USERS_FILE = 'users.html';
   var JOBS_FILE = 'jobs-live.html';
-  var ALERTS_FILE = 'alerts.html';
+  var ALERTS_FILE = 'problems.html';
 
   function emptyJobActionControls() {
     return h('div', { className: 'job-action-stack' });
@@ -959,7 +959,7 @@
       ])));
       var row = h('div', { className: 'row mt-sm' });
       row.appendChild(doorwayLink('jobs', JOBS_FILE, 'What is running now', 'rh-doorway-empty-jobs'));
-      row.appendChild(doorwayLink('alerts', ALERTS_FILE, 'What the watchers caught',
+      row.appendChild(doorwayLink('problems', ALERTS_FILE, 'What the watchers caught',
         'rh-doorway-empty-alerts', 'btn btn-sm sp'));
       box.appendChild(row);
       if (data && data.window) box.appendChild(windowFoot(data.window));
@@ -1181,7 +1181,7 @@
         text: 'Grouped by the label the worker recorded. Every failed run in ' +
           coveredWords(data.coverage, selection) + ' is in exactly one of these rows.'
       }));
-      foot.appendChild(doorwayLink('alerts', ALERTS_FILE, 'What the watchers caught',
+      foot.appendChild(doorwayLink('problems', ALERTS_FILE, 'What the watchers caught',
         'rh-doorway-live-alerts', 'btn btn-sm sp'));
       box.appendChild(foot);
 

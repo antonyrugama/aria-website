@@ -1206,7 +1206,7 @@
       h('span', { text: 'Problems watches unusual service spend with the ' }),
       h('span', { className: 'code', text: 'service_cost_anomaly' }),
       h('span', { text: ' rule and links those problems here. This pane draws the cost breakdown, but it does not draw the anomaly list yet. Open ' }),
-      S.link(S.paneHref('alerts') || 'alerts.html', 'Problems'),
+      S.link(S.paneHref('problems') || 'problems.html', 'Problems'),
       h('span', { text: ' for the live cost-anomaly rule.' })
     ]));
     item.appendChild(words);

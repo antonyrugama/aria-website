@@ -164,7 +164,7 @@
     while (el.firstChild) el.removeChild(el.firstChild);
   }
 
-  S.definePane('alerts', function (content) {
+  S.definePane('problems', function (content) {
     var region = S.region(content);
 
     /* Reading is open to every role. Taking a problem on and closing it need

@@ -2425,7 +2425,7 @@
         ]),
         h('div', { className: 'row wrap' }, [
           shell.link(shell.paneHref('history') || 'run-history.html', 'Read real runs instead', 'btn btn-primary'),
-          shell.link(shell.paneHref('alerts') || 'alerts.html', 'Problems', 'btn')
+          shell.link(shell.paneHref('problems') || 'problems.html', 'Problems', 'btn')
         ])
       ])
     ]));

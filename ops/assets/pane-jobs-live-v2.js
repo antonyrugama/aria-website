@@ -136,7 +136,7 @@
 
   var JOBS_ENDPOINT = '/api/ops/jobs';
   var HISTORY_FILE = 'run-history.html';
-  var ALERTS_FILE = 'alerts.html';
+  var ALERTS_FILE = 'problems.html';
 
   function emptyJobActionControls() {
     return h('div', { className: 'job-action-stack' });
@@ -1114,7 +1114,7 @@
         'What happened', 'btn btn-sm');
       toHistory.setAttribute(RETAIN_ATTR, 'jobs-link-history');
       foot.appendChild(toHistory);
-      var toAlerts = S.link(S.paneHref('alerts') || ALERTS_FILE,
+      var toAlerts = S.link(S.paneHref('problems') || ALERTS_FILE,
         'Open Problems', 'btn btn-sm');
       toAlerts.setAttribute(RETAIN_ATTR, 'jobs-link-alerts');
       foot.appendChild(toAlerts);

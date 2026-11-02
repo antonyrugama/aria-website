@@ -210,7 +210,7 @@ function buildPage(dom, body) {
     parent.appendChild(node);
     return node;
   };
-  body.setAttribute('data-pane', 'alerts');
+  body.setAttribute('data-pane', 'problems');
   body.className = 'is-booting';
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
@@ -219,7 +219,7 @@ function buildPage(dom, body) {
   el(appGate, 'div', { id: 'app' });
 }
 
-/* Loads the page the way ops/alerts.html loads it. `open` and `rules` take an
+/* Loads the page the way ops/problems.html loads it. `open` and `rules` take an
    Error to make that read fail. */
 async function boot(options) {
   const opts = options || {};
@@ -232,7 +232,7 @@ async function boot(options) {
   };
 
   const dom = makeDom({
-    tokens: TOKENS, href: 'https://ops.example.invalid/ops/alerts.html',
+    tokens: TOKENS, href: 'https://ops.example.invalid/ops/problems.html',
   });
   const body = dom.element('body');
   dom.root.appendChild(body);
@@ -515,9 +515,9 @@ test('a severity naming an object built-in does not put JavaScript on screen', a
 test('Problems and Overview give one word for one state', async () => {
   const dom = await boot({ open: { problems: hostileSeverities() } });
 
-  const ovSrc = read('assets/pane-overview.js');
+  const ovSrc = read('assets/pane-status.js');
   const words = /function severityWords\(severity\) \{\s*return ([^;]+);/.exec(ovSrc);
-  assert.ok(words, 'pane-overview.js no longer has a severityWords() to agree with');
+  assert.ok(words, 'pane-status.js no longer has a severityWords() to agree with');
 
   /* Overview's own `textOf()`, lifted from its own source rather than
      rewritten here. Typing a copy of it would make this test agree with
@@ -531,7 +531,7 @@ test('Problems and Overview give one word for one state', async () => {
      mentioning: a lift that had silently matched a DIFFERENT textOf would
      have compared this pane against a function Overview does not run. */
   const ovTextOf = lift(ovSrc, 'function textOf(value) {');
-  assert.ok(ovTextOf, 'pane-overview.js no longer has a textOf() to run');
+  assert.ok(ovTextOf, 'pane-status.js no longer has a textOf() to run');
 
   /* And Overview's `model` is `global.OpsAlertsModel` -- the same
      alerts-model.js this pane loaded, taken from the booted window rather

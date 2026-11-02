@@ -262,20 +262,23 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today does not carry its registry question under the title. It carries the
-   date and when the figures were read, which are the figures' own stamp: the
-   summary read's generatedAt. The sub is still asserted to the character, off
-   that same fixture, so a Today whose sub stopped saying when it was read
-   would fail here exactly as a pane with the wrong question does. */
+/* Today and Health do not carry their registry question under the title. They
+   carry the date and when their figures were read, which are the figures' own
+   stamp: Today's summary read, Health's job-queue read (generatedAt on each).
+   The sub is still asserted to the character, off that same fixture, so a pane
+   whose sub stopped saying when it was read would fail here exactly as a pane
+   with the wrong question does. */
+function datedSub(stamp) {
+  const t = new Date(stamp);
+  const two = (n) => String(n).padStart(2, '0');
+  const day = t.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  });
+  return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+}
 const LIVE_SUB = {
-  overview: () => {
-    const t = new Date(SUMMARY.generatedAt);
-    const two = (n) => String(n).padStart(2, '0');
-    const day = t.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-    });
-    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  }
+  overview: () => datedSub(SUMMARY.generatedAt),
+  alerts: () => datedSub(JOBS.generatedAt)
 };
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
@@ -959,7 +962,11 @@ const RESULT_PROOF = {
   /* RUNS.failures[0].failureCode and the model its first run used. Neither
      is on this pane's landing state, either empty state, or failure card. */
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
-  alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
+  /* The worst problem's title and the count of checks reporting. Health draws
+     both only once the problems and the rules have been read, and neither is on
+     its loading state or a failure line. */
+  alerts: [PROBLEMS[0].title, 'checks reporting'],
+  problems: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
   spend: [COST_ROWS[0].label, COST_ROWS[2].label],
   /* Only the answered validation draws these: the digest the stub sent back
@@ -1048,7 +1055,7 @@ const KNOWN_UNPAINTED_STATE = [];
    this table said 0 for it until round 15 read the number the sweep prints
    against the number this table demands. */
 const EXPECTED_PAIRS = {
-  overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
+  overview: 0, jobs: 0, history: 0, alerts: 0, problems: 0, analytics: 0,
   /* One pair: the Group-the-bill-by switch's two buttons, `category` against
      `resourceGroup`. Not `service` — the pane drops that key from its switch
      on purpose (ops/assets/pane-spend.js:524-532) and draws the per-service

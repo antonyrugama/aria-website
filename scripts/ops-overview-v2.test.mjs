@@ -44,6 +44,7 @@ const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const MODEL_SRC = read('assets/alerts-model.js');
+const STATUS_SRC = read('assets/pane-status.js');
 const PANE_SRC = read('assets/pane-overview.js');
 
 const TOKENS = {
@@ -248,6 +249,7 @@ async function boot(options) {
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
+  vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
 
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
@@ -1007,7 +1009,7 @@ test('each problem opens the pane its work happens in, and an unknown pane opens
   });
   assert.deepEqual(
     withClass(section(rest, 'problems'), 'prob-view').map((a) => a.getAttribute('href').split('?')[0]),
-    Array(3).fill(registry.PANES.alerts.file),
+    Array(3).fill(registry.PANES.problems.file),
     'a problem whose work pane is not known, or is Today itself, opens Problems');
 });
 

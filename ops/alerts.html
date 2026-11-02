@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.runwitharia.com; base-uri 'none'; form-action 'none'">
-<title>Problems | Aria Operations</title>
+<title>Health | Aria Operations</title>
 <script src="assets/theme.js"></script>
 <!-- The v2 design system, the pane chrome around it, and this pane's own
      shapes. ops.css and operate.css are deliberately absent: both stylesheets
@@ -13,7 +13,8 @@
      token sets, so a page loads one system or the other, never both. -->
 <link rel="stylesheet" href="assets/aria.css">
 <link rel="stylesheet" href="assets/shell-pane-v2.css">
-<link rel="stylesheet" href="assets/pane-alerts-v2.css">
+<link rel="stylesheet" href="assets/pane-status-v2.css">
+<link rel="stylesheet" href="assets/pane-health-v2.css">
 <link rel="stylesheet" href="assets/tour-v2.css">
 </head>
 <body data-pane="alerts" class="is-booting">
@@ -58,10 +59,13 @@
 <script src="assets/aria.js"></script>
 <script src="assets/shell-pane-v2.js"></script>
 <!-- The vocabulary and the derivations the problems API is read through,
-     shared with Overview so the two panes cannot disagree about what "still
-     open" means or about whether the rules can be believed. -->
+     shared with Today and the Problems page so the three cannot disagree about
+     what "still open" means or about whether the rules can be believed. The
+     status asset is the one Today draws its status line, problem rows and
+     retry engine from. -->
 <script src="assets/alerts-model.js"></script>
-<script src="assets/pane-alerts.js"></script>
+<script src="assets/pane-status.js"></script>
+<script src="assets/pane-health.js"></script>
 <script src="assets/pane-ugc.js"></script>
 <!-- The guided tour reads the registry and the page this shell drew, so it
      loads after both and after the pane's own module. -->

@@ -327,6 +327,13 @@ test('a destination with several pages lists them under the title and marks the 
         assert.equal(links, null, dest.id + ' has a single page and drew a row for it');
         continue;
       }
+      /* A pane that declares `subnav: false` is a destination's home that
+         reaches its siblings through its own cards. The row still appears on
+         every other page of the destination. */
+      if (pane.subnav === false) {
+        assert.equal(links, null, id + ' declares subnav:false and drew a row anyway');
+        continue;
+      }
       assert.ok(links, id + ' belongs to ' + dest.id + ', which has ' + ids.length + ' pages, and drew no row');
       assert.deepEqual(Array.from(links.map((a) => a.getAttribute('data-badge-key'))), Array.from(ids),
         id + ': the row does not list the destination\'s pages, home first');
@@ -604,8 +611,8 @@ function barOrder(doc) {
 }
 
 test("a pane's own control lands in the shared bar, before the notes", async () => {
-  const { doc } = await bootPane('alerts', {
-    file: 'alerts.html',
+  const { doc } = await bootPane('problems', {
+    file: 'problems.html',
     definePane: (content, pane, shell) => {
       shell.paneFilters([shell.h('span', { className: 'filter-label', text: 'Severity' })]);
     },
@@ -628,8 +635,8 @@ test("a pane's own control lands in the shared bar, before the notes", async () 
 
 test('a pane that renders its controls again replaces them rather than adding more', async () => {
   let shellRef = null;
-  const { doc } = await bootPane('alerts', {
-    file: 'alerts.html',
+  const { doc } = await bootPane('problems', {
+    file: 'problems.html',
     definePane: (content, pane, shell) => {
       shellRef = shell;
       shell.paneFilters([shell.h('div', { className: 'seg', text: 'first' })]);

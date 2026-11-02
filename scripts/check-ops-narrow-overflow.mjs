@@ -224,18 +224,20 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today carries the date and when its figures were read under the title, not
-   its registry question. The sub is still asserted to the character, off this
-   file's own summary stamp. */
+/* Today and Health carry the date and when their figures were read under the
+   title, not their registry question. The sub is still asserted to the
+   character, off this file's own stamp: Today's summary, Health's job queue. */
+function datedSub(stamp) {
+  const t = new Date(stamp);
+  const two = (n) => String(n).padStart(2, '0');
+  const day = t.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  });
+  return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+}
 const LIVE_SUB = {
-  overview: () => {
-    const t = new Date(SUMMARY.generatedAt);
-    const two = (n) => String(n).padStart(2, '0');
-    const day = t.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-    });
-    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  }
+  overview: () => datedSub(SUMMARY.generatedAt),
+  alerts: () => datedSub(JOBS.generatedAt)
 };
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
@@ -637,9 +639,13 @@ const PROOF = {
   /* RUNS.failures[0].failureCode and the model its first run used. Both are
      inside cells this sweep measures, and neither is on an empty state. */
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
+  /* The worst open problem's title, which a failed problems read replaces with
+     a failure line, and the count of checks reporting, which Health prints only
+     once the rules have been read. */
+  alerts: [PROBLEM.title, 'checks reporting'],
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
-  alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
+  problems: [PROBLEM.workPaneLabel, PROBLEM.reference],
   analytics: ['No app reported over this window'],
   /* COSTS.availability.detail, which both this pane and the v2 remodel print
      verbatim into whichever card they draw for `not_published`. */
@@ -1037,7 +1043,7 @@ try {
             `in it — it starts ${JSON.stringify(seen.contentText.slice(0, 120))}.`);
           continue;
         }
-        if (page.key === 'alerts') {
+        if (page.key === 'problems') {
           if (seen.ruleRows < RULES.length) {
             failures.push(`${where}: expected at least ${RULES.length} rule rows, saw ${seen.ruleRows}`);
             continue;

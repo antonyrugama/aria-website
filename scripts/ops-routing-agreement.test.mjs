@@ -37,6 +37,7 @@ const REGISTRY_SRC = read('assets/pane-registry.js');
 const ARIA_SRC = read('assets/aria.js');
 const SHELL_SRC = read('assets/shell-pane-v2.js');
 const MODEL_SRC = read('assets/alerts-model.js');
+const STATUS_SRC = read('assets/pane-status.js');
 const OVERVIEW_SRC = read('assets/pane-overview.js');
 const ALERTS_SRC = read('assets/pane-alerts.js');
 
@@ -113,7 +114,7 @@ function buildPage(dom, body, pane) {
   const appGate = el(body, 'div', { class: 'gate gate-app' });
   const app = el(appGate, 'div', { id: 'app' });
   const rail = el(app, 'nav', { id: 'rail' });
-  el(rail, 'a', { class: 'nav-item', href: 'alerts.html' }).textContent = 'Problems';
+  el(rail, 'a', { class: 'nav-item', href: 'problems.html' }).textContent = 'Problems';
 }
 
 async function boot(pane, channels) {
@@ -122,7 +123,7 @@ async function boot(pane, channels) {
     '/api/ops/alerts/problems': { problems: [] },
     '/api/ops/alerts/rules': rulesFixture(channels),
   };
-  const page = pane === 'overview' ? 'index.html' : 'alerts.html';
+  const page = pane === 'overview' ? 'index.html' : 'problems.html';
 
   const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/' + page });
   const body = dom.element('body');
@@ -151,6 +152,7 @@ async function boot(pane, channels) {
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
+  if (pane === 'overview') vm.runInContext(STATUS_SRC, dom.window, { filename: 'pane-status.js' });
   vm.runInContext(pane === 'overview' ? OVERVIEW_SRC : ALERTS_SRC, dom.window,
     { filename: pane === 'overview' ? 'pane-overview.js' : 'pane-alerts.js' });
 
@@ -202,7 +204,7 @@ test('Today says a destination is not set up on every payload Problems does',
        does not. */
     for (const hostile of ['yes', 'false', 0, 1, null, undefined, {}]) {
       const overview = await boot('overview', channelsWith(hostile));
-      const problems = await boot('alerts', channelsWith(hostile));
+      const problems = await boot('problems', channelsWith(hostile));
       const said = panelText(problems);
 
       const overviewSaysUnset = healthWords(overview) === UNSET;

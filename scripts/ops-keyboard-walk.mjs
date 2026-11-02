@@ -58,13 +58,14 @@ const OUT = (() => {
   return i === -1 ? path.join(ROOT, 'ops', 'keyboard-audit.md') : path.resolve(process.argv[i + 1]);
 })();
 
-/* The ten panes, named as the registry names them. shell-v2.html is the rail
+/* The eleven panes, named as the registry names them. shell-v2.html is the rail
    demo and login/setup are not panes, so none of the three is walked here. */
 const PANES = [
   { pane: 'overview', url: '/ops/index.html', title: 'Today' },
   { pane: 'jobs', url: '/ops/jobs-live.html', title: 'Jobs live' },
   { pane: 'history', url: '/ops/run-history.html', title: 'Run history' },
-  { pane: 'alerts', url: '/ops/alerts.html', title: 'Alerts' },
+  { pane: 'alerts', url: '/ops/alerts.html', title: 'Health' },
+  { pane: 'problems', url: '/ops/problems.html', title: 'Problems' },
   { pane: 'analytics', url: '/ops/analytics.html', title: 'Analytics' },
   { pane: 'spend', url: '/ops/spend.html', title: 'Cloud costs' },
   { pane: 'evals', url: '/ops/evaluations.html', title: 'Evaluations' },

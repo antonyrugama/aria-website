@@ -109,7 +109,7 @@ import vm from 'node:vm';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PROOF, SUMMARY, stub } from './ops-api-stub.mjs';
+import { PROOF, SUMMARY, JOBS, stub } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
@@ -235,18 +235,20 @@ function readRegistry() {
 
 const DECLARED = readRegistry();
 
-/* Today carries the date and when its figures were read under the title, not
-   its registry question. The sub is still asserted to the character, off the
-   stub's own summary stamp. */
+/* Today and Health carry the date and when their figures were read under the
+   title, not their registry question. The sub is still asserted to the
+   character, off the stub's own stamp: Today's summary, Health's job queue. */
+function datedSub(stamp) {
+  const t = new Date(stamp);
+  const two = (n) => String(n).padStart(2, '0');
+  const day = t.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  });
+  return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+}
 const LIVE_SUB = {
-  overview: () => {
-    const t = new Date(SUMMARY.generatedAt);
-    const two = (n) => String(n).padStart(2, '0');
-    const day = t.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-    });
-    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  }
+  overview: () => datedSub(SUMMARY.generatedAt),
+  alerts: () => datedSub(JOBS.generatedAt)
 };
 const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   key,

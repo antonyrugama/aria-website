@@ -691,7 +691,7 @@ test('the approved unusual-costs card is acknowledged as not answerable yet', as
 
   const problemsLink = linkNamed(livePanel(dom), 'Problems');
   assert.ok(problemsLink, 'the unusual-costs cause does not link to the Problems pane');
-  assert.equal(problemsLink.getAttribute('href'), 'alerts.html');
+  assert.equal(problemsLink.getAttribute('href'), 'problems.html');
   assert.ok(hasClass(problemsLink, 'btn') && hasClass(problemsLink, 'btn-sm'),
     'the Problems link is not built with the shared v2 link helper class');
 });

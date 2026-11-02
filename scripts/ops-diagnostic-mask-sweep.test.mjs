@@ -18,10 +18,12 @@ const SRC = {
   aria: read('assets/aria.js'),
   shell: read('assets/shell-pane-v2.js'),
   alertsModel: read('assets/alerts-model.js'),
+  status: read('assets/pane-status.js'),
+  health: read('assets/pane-health.js'),
   overview: read('assets/pane-overview.js'),
   jobs: read('assets/pane-jobs-live-v2.js'),
   history: read('assets/pane-run-history-v2.js'),
-  alerts: read('assets/pane-alerts.js'),
+  problems: read('assets/pane-alerts.js'),
   analytics: read('assets/pane-analytics.js'),
   spend: read('assets/pane-spend.js'),
   releases: read('assets/pane-releases.js'),
@@ -330,11 +332,12 @@ function assertNoRawAddress(dom, label) {
 }
 
 const PANES = [
-  ['overview', ['alertsModel', 'overview'], 'index.html'],
+  ['overview', ['alertsModel', 'status', 'overview'], 'index.html'],
   ['releases', ['releases'], 'releases.html'],
   ['spend', ['spend'], 'spend.html'],
   ['analytics', ['analytics'], 'analytics.html'],
-  ['alerts', ['alertsModel', 'alerts'], 'alerts.html'],
+  ['alerts', ['alertsModel', 'status', 'health'], 'alerts.html'],
+  ['problems', ['alertsModel', 'problems'], 'problems.html'],
   ['jobs', ['jobs'], 'jobs-live.html'],
   ['history', ['history'], 'run-history.html'],
   ['settings', ['settings'], 'settings.html'],
@@ -462,9 +465,9 @@ test('People masks diagnostic notes but leaves intended email values alone', asy
 
 test('round-2 reviewed diagnostic rows are covered by the boundary sweep', async () => {
   const cases = [
-    ['Overview availability detail', 'overview', ['alertsModel', 'overview'], 'index.html',
+    ['Overview availability detail', 'overview', ['alertsModel', 'status', 'overview'], 'index.html',
       { '/api/ops/summary': { data: overviewPayload() } }],
-    ['Overview block and consent notes', 'overview', ['alertsModel', 'overview'], 'index.html',
+    ['Overview block and consent notes', 'overview', ['alertsModel', 'status', 'overview'], 'index.html',
       { '/api/ops/summary': { data: overviewPayload() } }],
     ['Releases source failure and candidate reason', 'releases', ['releases'], 'releases.html',
       { '/api/ops/releases': { data: releasesPayload() } }],
@@ -472,7 +475,7 @@ test('round-2 reviewed diagnostic rows are covered by the boundary sweep', async
       { '/api/ops/costs': { data: spendPayload() } }],
     ['Analytics cohort and coverage notes', 'analytics', ['analytics'], 'analytics.html',
       { '/api/ops/usage': { data: usagePayload() } }],
-    ['Problems insufficient-data reason', 'alerts', ['alertsModel', 'alerts'], 'alerts.html',
+    ['Problems insufficient-data reason', 'problems', ['alertsModel', 'problems'], 'problems.html',
       { '/api/ops/alerts/rules': { data: alertsRulesPayload() } }],
   ];
   for (const [name, pane, sources, file, overrides] of cases) {
@@ -498,7 +501,7 @@ test('round-3 summary hint and description rows are covered by named cases', asy
   overviewProblem.summary = DIAGNOSTIC;
   overviewResponses['/api/ops/alerts/problems'] = { data: { problems: [overviewProblem] } };
   assertNoRawDiagnostic(
-    await bootPane('overview', ['alertsModel', 'overview'], {
+    await bootPane('overview', ['alertsModel', 'status', 'overview'], {
       file: 'index.html',
       responses: overviewResponses,
     }),
@@ -510,12 +513,34 @@ test('round-3 summary hint and description rows are covered by named cases', asy
   problem.summary = DIAGNOSTIC;
   problemResponses['/api/ops/alerts/problems'] = { data: { problems: [problem] } };
   assertNoRawDiagnostic(
-    await bootPane('alerts', ['alertsModel', 'alerts'], {
-      file: 'alerts.html',
+    await bootPane('problems', ['alertsModel', 'problems'], {
+      file: 'problems.html',
       responses: problemResponses,
     }),
     'Problems summary'
   );
+
+  /* Health draws a problem's title, a job's type and a run's type label, and
+     no summary: each has to arrive masked. */
+  const healthResponses = cleanResponses();
+  const healthProblem = clone(PROBLEM);
+  healthProblem.title = DIAGNOSTIC;
+  healthResponses['/api/ops/alerts/problems'] = { data: { problems: [healthProblem] } };
+  const healthJobs = clone(JOBS);
+  healthJobs.workingSet.jobs[0].jobType = DIAGNOSTIC;
+  healthResponses['/api/ops/jobs'] = { data: healthJobs };
+  const healthRuns = clone(RUNS);
+  healthRuns.runs[0].type = { value: 'ai_chat', label: DIAGNOSTIC };
+  healthResponses['/api/ops/runs'] = { data: healthRuns };
+  const health = await bootPane('alerts', ['alertsModel', 'status', 'health'], {
+    file: 'alerts.html',
+    responses: healthResponses,
+  });
+  assertNoRawDiagnostic(health, 'Health problem title');
+  const masked = allDomTextAndAttrs(health.body).match(new RegExp(MASKED_DIAGNOSTIC.source, 'g')) || [];
+  /* The problem title and its View label, the job type, the run type. */
+  assert.equal(masked.length, 4,
+    'Health did not mask the problem title, the job type and the run type label');
 
   const spendResponses = cleanResponses();
   const spend = spendPayload();

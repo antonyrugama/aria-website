@@ -117,7 +117,7 @@
        and correctly does not red (RV24-A1). Whether the browser ENFORCES
        what was read is the part no assertion in this file can reach, and
        the three payloads above are named so nobody has to rediscover them.
-       ops/alerts.html appends no sheet today; nothing in this
+       ops/problems.html appends no sheet today; nothing in this
        file would notice if it did.
      - Every reader of the sheet. The line below enumerates the PREFIXED
        docblock lines, and PROSE_FRAMES_OVER_THE_SHEET the regex frames
@@ -346,7 +346,7 @@ const THIS_FILE = readFileSync(new URL(import.meta.url), 'utf8');
    same at-keyword to a browser and holds none of its letters in a row (also
    RV20-2), by the backslash refusal that covers every escape in every sheet
    at once. */
-const RAW_HTML = read('alerts.html');
+const RAW_HTML = read('problems.html');
 /* The space characters HTML separates a tag name from an attribute with, and
    an attribute name from its value with: exactly TAB, LF, FF, CR and SPACE.
    JS's `\s` also matches U+00A0 and the rest of the Unicode space class, and
@@ -697,7 +697,7 @@ const stillInHead = (node) => {
    RED about a rule that is really there. */
 const relTokens = (tag) => (tag.attrs.get('rel') || '').toLowerCase()
   .split(new RegExp(SP + '+')).filter(Boolean);
-/* The sheets ops/alerts.html loads, TYPED BY HAND, so this statement owes
+/* The sheets ops/problems.html loads, TYPED BY HAND, so this statement owes
    nothing to the walk above. Two
    readers are held against it: `html.includes(...)`, a raw substring scan,
    in the test that says the page loads one design system, and a deepEqual
@@ -959,7 +959,7 @@ function buildPage(dom, body) {
     parent.appendChild(node);
     return node;
   };
-  body.setAttribute('data-pane', 'alerts');
+  body.setAttribute('data-pane', 'problems');
   body.className = 'is-booting';
   const boot = el(body, 'main', { class: 'gate gate-boot gate-center' });
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
@@ -968,7 +968,7 @@ function buildPage(dom, body) {
   el(appGate, 'div', { id: 'app' });
 }
 
-/* Loads the page the way ops/alerts.html loads it: registry, aria.js, the
+/* Loads the page the way ops/problems.html loads it: registry, aria.js, the
    bootstrap, the alerts model, then the pane module.
 
    `answers` is handed back mutable, so a test can change what the API says and
@@ -990,7 +990,7 @@ async function boot(options) {
 
   const dom = makeDom({
     tokens: TOKENS,
-    href: 'https://ops.example.invalid/ops/alerts.html' + (opts.search || ''),
+    href: 'https://ops.example.invalid/ops/problems.html' + (opts.search || ''),
   });
   const body = dom.element('body');
   dom.root.appendChild(body);
@@ -1451,7 +1451,7 @@ const FOCUSABLE_PROBES = [
     note: 'the shape that shows the parse is not a validity test: this is 12' },
   { name: '<div tabindex="yes">', tag: 'div', attrs: { tabindex: 'yes' }, answer: false },
   { name: '<a>', tag: 'a', answer: false },
-  { name: '<a href>', tag: 'a', attrs: { href: '/ops/alerts.html' }, answer: true },
+  { name: '<a href>', tag: 'a', attrs: { href: '/ops/problems.html' }, answer: true },
   { name: '<a contenteditable>', tag: 'a', attrs: { contenteditable: '' }, answer: true,
     note: 'FOUND IN REVIEW: false. asking about href first answered before editing host' },
   { name: '<div contenteditable>', tag: 'div', attrs: { contenteditable: '' }, answer: true,
@@ -1564,7 +1564,7 @@ const FOCUSABLE_PROBES = [
   { name: '<input type="radio" tabindex="0">', tag: 'input',
     attrs: { type: 'radio', tabindex: '0' }, answer: true,
     why: 'unnamed, so no group to refuse for: measured, it takes its own stop' },
-  { name: '<area href>', tag: 'area', attrs: { href: '/ops/alerts.html' }, answer: 'cannot tell',
+  { name: '<area href>', tag: 'area', attrs: { href: '/ops/problems.html' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. a stop only inside a <map> a rendered <img usemap> uses' },
   { name: '<area> with no href', tag: 'area', answer: false,
     note: 'FOUND IN REVIEW: true. no href, no tabindex and nothing else that reaches '
@@ -1575,7 +1575,7 @@ const FOCUSABLE_PROBES = [
     note: 'FOUND IN REVIEW: true. measured: a stop when a rendered <img usemap> uses the '
       + 'map, none when it does not, with identical markup on the node' },
   { name: '<area href tabindex="0">', tag: 'area',
-    attrs: { href: '/ops/alerts.html', tabindex: '0' }, answer: 'cannot tell',
+    attrs: { href: '/ops/problems.html', tabindex: '0' }, answer: 'cannot tell',
     note: 'FOUND IN REVIEW: true. the tabindex does not make the used-map fact legible' },
   { name: '<area tabindex="-1"> with no href', tag: 'area', attrs: { tabindex: '-1' },
     answer: false,
@@ -3519,7 +3519,7 @@ test('every test the stylesheet cites by name is a test this file registers', as
 });
 
 test('the page loads one design system and one theme decision', () => {
-  const html = read('alerts.html');
+  const html = read('problems.html');
   /* A TEXT scan, and it reds on a MENTION rather than on a load. Measured
      round 29: a `data-href="assets/operate.css"` decoy beside a real href, and
      a duplicate `href=` the parser discards, both red here although Chrome
@@ -3530,12 +3530,12 @@ test('the page loads one design system and one theme decision', () => {
      off the document walk; this loop only says the v1 names are absent. */
   for (const v1 of ['assets/ops.css', 'assets/operate.css', 'assets/shell.js', 'assets/icons.js']) {
     assert.ok(!html.includes(v1),
-      'alerts.html loads ' + v1 + ' as well as the v2 sheets; both define .card, ' +
+      'problems.html loads ' + v1 + ' as well as the v2 sheets; both define .card, ' +
       '.rail, .topbar, .btn, .seg, .pill and .tbl from different token sets');
   }
   for (const v2 of [...V2_STYLESHEETS,
     'assets/aria.js', 'assets/shell-pane-v2.js', 'assets/pane-alerts.js']) {
-    assert.ok(html.includes(v2), 'alerts.html no longer loads ' + v2);
+    assert.ok(html.includes(v2), 'problems.html no longer loads ' + v2);
   }
   assert.equal((html.match(/assets\/theme\.js/g) || []).length, 1,
     'the theme is decided in more than one place');
@@ -3639,7 +3639,7 @@ test('the page loads one design system and one theme decision', () => {
     + 'over text can settle (RV25-1)');
 
   /* The sheet's own first sentence: "Loaded after assets/aria.css and
-     assets/shell-pane-v2.css, on ops/alerts.html and nowhere else." Order
+     assets/shell-pane-v2.css, on ops/problems.html and nowhere else." Order
      first -- a later sheet wins a tie in the cascade, and this one is written
      to override the two above it. */
   /* Each index is proven to EXIST first. indexOf returns -1 for any other
@@ -3651,21 +3651,21 @@ test('the page loads one design system and one theme decision', () => {
      failed OPEN, in the one direction that matters. */
   const at = (href) => {
     const i = html.indexOf('href="' + href + '"');
-    assert.ok(i >= 0, 'alerts.html no longer carries href="' + href + '" in that exact '
+    assert.ok(i >= 0, 'problems.html no longer carries href="' + href + '" in that exact '
       + 'spelling, so nothing below can compare its position');
     return i;
   };
   assert.ok(at('assets/aria.css') < at('assets/shell-pane-v2.css'),
-    'alerts.html loads shell-pane-v2.css before aria.css');
+    'problems.html loads shell-pane-v2.css before aria.css');
   assert.ok(at('assets/shell-pane-v2.css') < at('assets/pane-alerts-v2.css'),
-    'alerts.html loads pane-alerts-v2.css before the sheets it is written to override');
+    'problems.html loads pane-alerts-v2.css before the sheets it is written to override');
 
   /* And nowhere else. */
   const elsewhere = readdirSync(new URL('.', OPS))
-    .filter((name) => name.endsWith('.html') && name !== 'alerts.html')
+    .filter((name) => name.endsWith('.html') && name !== 'problems.html')
     .filter((name) => read(name).includes('pane-alerts-v2.css'));
   assert.deepEqual(elsewhere, [],
-    'pane-alerts-v2.css is loaded by a page other than alerts.html, which its own docblock '
+    'pane-alerts-v2.css is loaded by a page other than problems.html, which its own docblock '
     + 'says never happens');
 });
 
@@ -4757,7 +4757,7 @@ test('the ink on a severity is the -ink of the accent that severity draws', asyn
     + 'parser never built, and inventing one is the direction that ships a page with no policy '
     + 'while this file says it has one');
   assert.deepEqual(PAGE_SHEETS, V2_STYLESHEETS,
-    'the sheets this reads out of ops/alerts.html are not the four the page is meant to '
+    'the sheets this reads out of ops/problems.html are not the four the page is meant to '
     + 'load, in order: ' + JSON.stringify(PAGE_SHEETS) + ' against '
     + JSON.stringify(V2_STYLESHEETS) + '. Either the page changed, or a <link> in it is '
     + 'spelt in a way this walk reads differently from the browser -- and the rules every '

@@ -808,13 +808,14 @@
   }
 
   /* The row of sibling panes under the title. A destination is five links in
-     the rail, but Health is three pages (problems, what is running, what
-     happened) and Growth two, and a deep link to any of them has to land
+     the rail, but Health is four pages (its own, problems, what is running,
+     what happened) and Growth two, and a deep link to any of them has to land
      somewhere that can reach the others. The destination's own pages are
      listed with the one on screen marked; a destination with a single page, and
-     a page that belongs to none, has no row. */
+     a page that belongs to none, has no row. A destination's home that says
+     `subnav: false` links to the others from its own cards and draws no row. */
   function renderSubnav(pane) {
-    if (!pane.destination) return null;
+    if (!pane.destination || pane.subnav === false) return null;
     var ids = registry.panesOf(pane.destination);
     if (ids.length < 2) return null;
 

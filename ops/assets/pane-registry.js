@@ -40,6 +40,9 @@
                 against what aria.js drew, and the pair cannot drift.
      datedHead  the pane writes its own line under the title (a date and when
                 it last read) instead of the one-line question the others show
+     subnav     false on a destination's home that links to its other pages from
+                its own cards, so no row of siblings is drawn above them. The
+                destination's other pages still draw the row, home first
 
      A pane that has been built declares only the filters its own reads can act
      on. A control that changes nothing is worse than no control: picking
@@ -134,7 +137,18 @@
         'outcome are the narrowings — both are on the pane'
     },
     alerts: {
-      file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',
+      file: 'alerts.html', icon: 'pulse', label: 'Health', group: 'Right now',
+      destination: 'health', datedHead: true, subnav: false,
+      question: 'Is anything wrong, and is Aria keeping up?',
+      /* Health reads the present and the last day, and nothing it draws can be
+         narrowed: the window is part of each figure's name. So no control, and
+         so no note about one. The deeper pages below carry their own windows.
+         No row of sibling pages either: the cards link to them, and each of
+         them has the row back. */
+      wave: 'W2', scope: false, range: false, env: false
+    },
+    problems: {
+      file: 'problems.html', icon: 'alerts', label: 'Problems', group: 'Right now',
       destination: 'health',
       question: 'What needs a person right now, and who is on it?',
       /* The window is real: it is applied to the problems that were read, and
