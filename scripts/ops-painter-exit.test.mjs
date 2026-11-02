@@ -1,6 +1,6 @@
 /* A failing run has to END.
    ---------------------------------------------------------------------------
-   scripts/ops-analytics-v2.test.mjs launches Chrome to read a real cascade. To
+   scripts/ops-usage-v2.test.mjs launches Chrome to read a real cascade. To
    do that it first starts an HTTP server on a loopback port, and a listening
    server keeps the process alive. So any way out of the launch that is not the
    success path has to hand that server back, or the runner prints the failure
@@ -12,7 +12,7 @@
 
    THE SUBJECT
    -----------
-   openPainter() in scripts/ops-analytics-v2.test.mjs, driven through its own
+   openPainter() in scripts/ops-usage-v2.test.mjs, driven through its own
    entry point by a real `node --test` child process, at the points below. They
    are the ones this file drives, not a survey of every way the launch can
    fail -- NOT COVERED names two more:
@@ -61,12 +61,12 @@
    NOT COVERED
    -----------
    - The success path's release, which is bound in the file that owns it rather
-     than here: ops-analytics-v2.test.mjs asserts its own profile directory is
+     than here: ops-usage-v2.test.mjs asserts its own profile directory is
      gone after close(), two-sided against the same directory existing before
      it, and asserts that the browser had been reaped at the instant the
      removal ran. That assertion exists because the argument this bullet used
      to make -- "the whole suite already is the proof, since it terminates" --
-     did not catch a real leak: ops-analytics-v2.test.mjs has ended, and green,
+     did not catch a real leak: ops-usage-v2.test.mjs has ended, and green,
      while leaving its profile behind (Stadiora/Aria#10854). No quantifier --
      the run that found Stadiora/Aria#10800 neither ended nor passed, and this
      file's own header says so.
@@ -114,7 +114,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const SUBJECT = 'scripts/ops-analytics-v2.test.mjs';
+const SUBJECT = 'scripts/ops-usage-v2.test.mjs';
 const PAINT_TEST = 'every class this pane draws is one a loaded sheet moves a value with';
 
 /* Generous: the point is "does it end", not "how fast". Cases A and B land in
@@ -180,7 +180,7 @@ function runPaintSweep(env, watchDir, options = {}) {
     const poll = (watchDir || options.pidFile) ? setInterval(() => {
       try {
         if (watchDir
-          && readdirSync(watchDir).some((name) => name.startsWith('ops-analytics-paint-'))) {
+          && readdirSync(watchDir).some((name) => name.startsWith('ops-usage-paint-'))) {
           profileSeen = true;
         }
       } catch (e) { /* the directory is the test's own; a read that fails is not a verdict */ }
@@ -255,7 +255,7 @@ test('a run whose browser dies on startup fails, ends, and leaves no profile beh
       'no browser profile was ever created under ' + scratch + ' while the child ran, so the ' +
       'cleanup assertion below would hold no matter what the code did. Either the launch stopped ' +
       'putting its profile under os.tmpdir(), or TMPDIR stopped reaching the child.');
-    const left = readdirSync(scratch).filter((name) => name.startsWith('ops-analytics-paint-'));
+    const left = readdirSync(scratch).filter((name) => name.startsWith('ops-usage-paint-'));
     assert.deepEqual(left, [],
       'the failing run left its browser profile on disk: ' + JSON.stringify(left) + ' under ' +
       scratch + '. Nothing ever comes back to collect these.');
@@ -321,7 +321,7 @@ test('a run whose browser never answers fails, ends, and kills the browser', asy
       'runner exited. That is the Stadiora/Aria#10800 hang in its worst form: a live child, ' +
       'its profile directory, and the loopback server, all orphaned by one throw.');
 
-    const left = readdirSync(scratch).filter((name) => name.startsWith('ops-analytics-paint-'));
+    const left = readdirSync(scratch).filter((name) => name.startsWith('ops-usage-paint-'));
     assert.deepEqual(left, [],
       'the failing run left its browser profile on disk: ' + JSON.stringify(left));
     assert.equal(run.profileSeen, true,

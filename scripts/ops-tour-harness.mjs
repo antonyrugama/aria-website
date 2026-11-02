@@ -71,17 +71,18 @@ function appColumn(app, label, subtitle, color, active, sessions, featurePeople,
   };
 }
 
-export function usagePayload() {
+export function usagePayload(range = '30d') {
   const DAY = 86400000;
+  const days = range === '7d' ? 7 : 30;
   const end = new Date(Math.floor(Date.now() / DAY) * DAY);
-  const start = new Date(end.getTime() - 30 * DAY);
-  return {
+  const start = new Date(end.getTime() - days * DAY);
+  const payload = {
     asOf: end.toISOString(),
     window: {
-      range: '30d', start: start.toISOString(), endExclusive: end.toISOString(),
-      days: 30, grain: 'day', timezone: 'UTC',
+      range, start: start.toISOString(), endExclusive: end.toISOString(),
+      days, grain: 'day', timezone: 'UTC',
       rollupsComputedAt: new Date(Date.now() - 5 * 3600000).toISOString(),
-      reportingStart: start.toISOString().slice(0, 10), daysCovered: 30, daysMissingRollups: [],
+      reportingStart: start.toISOString().slice(0, 10), daysCovered: days, daysMissingRollups: [],
     },
     filters: { app: 'all', env: 'production' },
     reportingFloor: 50,
@@ -125,6 +126,13 @@ export function usagePayload() {
       ],
     },
   };
+  /* The week Growth reads has the last seven days of each line and no signup
+     weeks; the month has the weeks and is not read for its lines. */
+  if (days === 7) {
+    payload.apps.forEach((app) => { app.trend.values = app.trend.values.slice(-7); });
+    payload.cohorts = [];
+  }
+  return payload;
 }
 
 export async function settle(rounds = 12) {
@@ -197,7 +205,9 @@ export async function bootPage(paneId, options = {}) {
         const given = options.answer(url.pathname, opts);
         if (given !== undefined) return Promise.resolve(given);
       }
-      if (url.pathname === '/api/ops/usage') return Promise.resolve({ data: usagePayload() });
+      if (url.pathname === '/api/ops/usage') {
+        return Promise.resolve({ data: usagePayload(url.searchParams.get('range') || '30d') });
+      }
       const answer = JSON.parse(JSON.stringify(stub(url.pathname, url.search)));
       if (answer.data && answer.data.admin) answer.data.admin = { ...answer.data.admin, role };
       return Promise.resolve(answer);

@@ -878,8 +878,12 @@
     var px = function (i) { return count > 1 ? (i / (count - 1)) * 100 : 50; };
     var py = function (v) { return 100 - ((v - floor) / span) * 100; };
 
+    /* Decided up front so the plot can leave room above the peak for the note
+       that names it. */
+    var peak = opts.axes && opts.high ? highAt(values) : -1;
     var chart = h('div', {
-      className: 'tchart' + (opts.axes ? '' : ' is-spark') + (opts.area ? ' is-area' : ''),
+      className: 'tchart' + (opts.axes ? '' : ' is-spark') + (opts.area ? ' is-area' : '') +
+        (peak !== -1 ? ' has-high' : ''),
       role: 'img',
       'aria-label': chartName(opts)
     });
@@ -994,17 +998,14 @@
       mark(values, i, false, lastOf(values), seriesAll.filter(function (s) { return s !== values; }));
     });
 
-    if (opts.axes && opts.high) {
-      var peak = highAt(values);
-      if (peak !== -1) {
-        var note = h('span', {
-          className: 'tc-high' + (peak === count - 1 ? ' is-end' : ''),
-          text: 'Week high \u00b7 ' + int(values[peak])
-        });
-        note.style.setProperty('left', px(peak).toFixed(2) + '%');
-        note.style.setProperty('top', py(values[peak]).toFixed(2) + '%');
-        inner.appendChild(note);
-      }
+    if (peak !== -1) {
+      var note = h('span', {
+        className: 'tc-high' + (peak === count - 1 ? ' is-end' : ''),
+        text: 'Week high \u00b7 ' + int(values[peak])
+      });
+      note.style.setProperty('left', px(peak).toFixed(2) + '%');
+      note.style.setProperty('top', py(values[peak]).toFixed(2) + '%');
+      inner.appendChild(note);
     }
 
     if (opts.axes && opts.end) {

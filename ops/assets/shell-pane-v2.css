@@ -451,6 +451,14 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 .tip-btn:focus-visible + .tip-bubble { visibility: visible; opacity: 1; }
 .tip .tip-bubble[data-dismissed] { visibility: hidden; opacity: 0; }
 
+/* ------------------------------------------------------------- the head */
+
+/* A pane the registry marks datedHead puts the date and a second muted line
+   in the slot under the title, side by side on a desktop. */
+#pageSub { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.sub-date { color: var(--ink-2); font-size: 15px; }
+.sub-updated { color: var(--ink-3); font-size: 13.5px; }
+
 /* --------------------------------------------------------- the charts */
 
 .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -461,6 +469,7 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
   width: 18px; height: 0;
   border-top: 2px dashed var(--ink-3);
 }
+.tc-key-dot.is-also { background: var(--ink-3); }
 
 .tchart { position: relative; width: 100%; height: 100px; }
 .tchart.is-spark { height: 54px; }
@@ -529,6 +538,27 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 }
 .tc-val.is-end { font-weight: 600; }
 
+/* A second line on the lead's scale is the quiet one: no glow, grey, and its
+   readings in the secondary ink so the lead's are the ones that read first.
+   A reading that would land on another line's goes under its own dot. */
+.tc-line.is-also,
+.is-area .tc-line.is-also { stroke: var(--ink-3); stroke-width: 2; filter: none; }
+.tc-dot.is-also,
+.is-area .tc-dot.is-also { background: var(--ink-3); }
+.tc-dot.is-also.is-end,
+.is-area .tc-dot.is-also.is-end { width: 10px; height: 10px; margin: -5px 0 0 -5px; background: var(--ink-3); }
+.tc-val.is-also { color: var(--ink-2); }
+.tc-val.is-below { transform: translate(-50%, 70%); }
+
+/* The week's peak, named above its own reading. At the right edge it ends at
+   the plot's edge instead of running past it. */
+.tc-high {
+  position: absolute; transform: translate(-50%, -320%);
+  font-size: 12.5px; color: var(--ink-2); white-space: nowrap;
+}
+.tc-high.is-end { transform: translate(calc(-100% + 14px), -320%); }
+.tchart.has-high .tc-plot { top: 50px; }
+
 .tc-x {
   position: absolute; top: 100%; margin-top: 9px;
   transform: translateX(-50%);
@@ -543,6 +573,13 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 
 
 @media (max-width: 980px) {
+  /* The date and its line stack at the right of the title. */
+  .page-sub { margin-left: auto; text-align: right; }
+  #pageSub { display: block; }
+  .sub-date, .sub-updated { display: block; }
+  .sub-date { font-size: 15px; font-weight: 520; color: var(--ink); }
+  .sub-updated { margin-top: 2px; font-size: 13px; }
+
   .tip { position: static; }
   .tip-bubble { left: 0; right: 0; width: auto; max-width: none; }
 

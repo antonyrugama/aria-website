@@ -116,7 +116,7 @@ const HONOURED = {
      check 4. */
   history: { range: 'read' },
   alerts: { range: 'answer' },
-  analytics: { scope: 'read', range: 'read', env: 'read' },
+  usage: { scope: 'read', range: 'read', env: 'read' },
   users: { scope: 'read' },
   spend: { range: 'read' },
 };
@@ -367,9 +367,9 @@ const PAGES = {
       return undefined;
     },
   },
-  analytics: {
-    file: 'analytics.html',
-    scripts: ['assets/pane-analytics.js'],
+  usage: {
+    file: 'usage.html',
+    scripts: ['assets/pane-usage.js'],
     answer: (endpoint) => (endpoint === '/api/ops/usage' ? usage() : undefined),
   },
   spend: {

@@ -29,12 +29,6 @@
 .today p { margin: 0; }
 .today a { text-decoration: none; }
 
-/* ------------------------------------------------------------- the head */
-
-#pageSub { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-.sub-date { color: var(--ink-2); font-size: 15px; }
-.sub-updated { color: var(--ink-3); font-size: 13.5px; }
-
 /* ---------------------------------------------------------- status line */
 
 .status-line {
@@ -280,13 +274,6 @@
 
 @media (max-width: 980px) {
   .today { gap: 16px; }
-
-  /* The date and its time stack at the right of the title. */
-  .page-sub { margin-left: auto; text-align: right; }
-  #pageSub { display: block; }
-  .sub-date, .sub-updated { display: block; }
-  .sub-date { font-size: 15px; font-weight: 520; color: var(--ink); }
-  .sub-updated { margin-top: 2px; font-size: 13px; }
 
   .status-line .sec-title { font-size: 16px; }
 
