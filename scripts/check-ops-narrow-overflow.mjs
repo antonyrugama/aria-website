@@ -87,15 +87,15 @@
 
    WHAT THIS DOES NOT COVER, in the words of what was actually measured:
 
-   - **People and usage, and Cloud costs, are measured with no figures in
-     them.** The stub answers /api/ops/usage with an empty envelope, so People
-     and usage draws its no-data card, and it answers /api/ops/costs with a
-     period that has not published, so Cloud costs draws the card for that.
-     Those cards are what is laid out. Their shell chrome, filter bar and empty
-     state are swept; their populated state is not. Both panes are mid-remodel
-     onto the v2 design system, and a fixture written against the modules being
-     replaced would
-     measure markup that is about to be deleted.
+   - **Usage detail, and Cloud costs, are measured with no figures in them.**
+     The stub answers /api/ops/usage with an empty envelope to every pane but
+     Growth, so Usage detail draws its no-data card, and it answers
+     /api/ops/costs with a period that has not published, so Cloud costs draws
+     the card for that. Those cards are what is laid out. Their shell chrome,
+     filter bar and empty state are swept; their populated state is not. Both
+     panes are mid-remodel onto the v2 design system, and a fixture written
+     against the modules being replaced would measure markup that is about to
+     be deleted. Growth is the exception: it is measured with its figures.
    - **Look up a user is measured before any lookup**, and **Aria quality
      before any operation is submitted**. Both panes start as forms with no
      result, which is their real loaded state; neither result view is laid out
@@ -242,6 +242,19 @@ const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
   delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(COSTS.asOf),
+  /* Growth carries the date and which seven days it is about. */
+  analytics: () => {
+    const day = new Date(SUMMARY.generatedAt).toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+    });
+    const month = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const first = new Date(GROWTH_END - 7 * DAY);
+    const last = new Date(GROWTH_END - DAY);
+    const span = first.getUTCMonth() === last.getUTCMonth()
+      ? `${month(first)}\u2013${last.getUTCDate()}`
+      : `${month(first)}\u2013${month(last)}`;
+    return `${day}${span} \u00b7 UTC`;
+  },
   /* Look up a user carries the UTC date of the day and nothing else, on the
      page's own clock, so it is computed here the same way. */
   users: () => new Date().toLocaleDateString('en-US', {
@@ -278,6 +291,10 @@ for (const page of PAGES) {
    the pane itself, so a fixture pinned to a fixed instant writes a different
    sentence every day it is run and a longer one every year. */
 const NOW = Date.now();
+
+/* The key of the pane being laid out right now, so the stub can give one pane
+   figures that another, reading the same endpoint, is measured without. */
+let measuring = null;
 
 /* One reading of the live queue, for Happening now. Stadiora/Aria#5562 moved
    that pane off the alerting record and onto GET /api/ops/jobs, so its markers
@@ -387,6 +404,64 @@ const SUMMARY = {
   omissions: [
     { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' }
   ]
+};
+
+/* What Growth reads from /api/ops/usage, once for the last seven days and once
+   for thirty. Growth is the one pane here measured WITH its figures, because it
+   is the one whose populated state is the design: a headline, a two-line chart,
+   three app rows, a feature list and a signup-week table at 320px. Every other
+   pane in this table that reads this endpoint is still measured on the empty
+   envelope below. */
+const GROWTH_END = Math.floor(NOW / DAY) * DAY;
+const growthWindow = (days) => ({
+  range: days + 'd',
+  start: new Date(GROWTH_END - days * DAY).toISOString(),
+  endExclusive: new Date(GROWTH_END).toISOString(),
+  days,
+  rollupsComputedAt: ago(HOUR),
+  daysMissingRollups: []
+});
+const growthApp = (app, label, people, sessions, values) => ({
+  app, label, tone: app, coverageBasisPoints: 9400,
+  metrics: [
+    { label: 'Active people', kind: 'count', value: people },
+    { label: 'Sessions', kind: 'count', value: sessions }
+  ],
+  trend: { label: 'Active people per day, ' + label, color: app === 'aria' ? 's1' : 's2', values }
+});
+const USAGE_WEEK = {
+  window: growthWindow(7),
+  availability: { state: 'ready', detail: '' },
+  apps: [
+    growthApp('aria', 'Mobile', 870, 2460, [770, 790, 760, 820, 840, 870, 870]),
+    growthApp('coaches', 'Coaches Web', 412, 905, [380, 402, 396, 410, 421, 404, 412])
+  ],
+  notReporting: [],
+  cohorts: [],
+  features: {
+    hint: 'People who opened each feature.',
+    rows: [
+      { label: 'Training plan', app: 'Mobile', color: 's1', users: 410, denominator: 870 },
+      { label: 'Aria chat', app: 'Mobile', color: 's1', users: 330, denominator: 870 },
+      { label: 'Program builder', app: 'Coaches Web', color: 's2', users: 140, denominator: 412 }
+    ],
+    note: 'People who opened each feature in the window.'
+  }
+};
+const USAGE_MONTH = {
+  window: growthWindow(30),
+  availability: { state: 'ready', detail: '' },
+  apps: [],
+  notReporting: [],
+  cohorts: [{
+    app: 'aria', label: 'Mobile', offsets: ['W1', 'W2'],
+    note: 'A group is the accounts created in that UTC week.',
+    rows: [
+      { label: '5 Oct', size: 120, cells: [{ basisPoints: 6000, returned: 72 }, { basisPoints: 5000, returned: 60 }] },
+      { label: '12 Oct', size: 96, cells: [{ basisPoints: 5833, returned: 56 }, { state: 'not_aged' }] }
+    ]
+  }],
+  features: null
 };
 
 const RELEASE_TRACKS = (state) => [
@@ -559,10 +634,10 @@ const PROBLEM = {
 
    What this does NOT prove: Aria quality and Look up a user read nothing until
    something is submitted, so their markers pin the pane's own static prose and
-   nothing more. People and usage and Cloud costs are measured in the state
+   nothing more. Usage detail and Cloud costs are measured in the state
    their stubbed read produces — an empty envelope and a period that has not
    published — which is what WHAT THIS DOES NOT COVER above already says; their
-   markers pin those cards, not populated ones.
+   markers pin those cards, not populated ones. Growth's markers are populated.
 
    A pane that changes these words turns this red. That is the mechanism, not a
    side effect: the markers are kept in step by hand, on the same terms as the
@@ -665,7 +740,10 @@ const PROOF = {
   /* The drill-down link the workPane rename restored, and the problem's own
      reference. Both sit in the action row this check measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
-  analytics: ['No app reported over this window'],
+  /* The platform count off the summary, an app's feature row and a signup week.
+     The failure card has none of them. */
+  analytics: ['1,102', 'Training plan', 'Oct 5'],
+  usage: ['No app reported over this window'],
   /* COSTS.availability.detail, which both this pane and the v2 remodel print
      verbatim into whichever card they draw for `not_published`. */
   spend: ['there is no figure to read here until the export lands'],
@@ -692,7 +770,7 @@ for (const page of PAGES) {
   }
 }
 
-function stub(pathname, search) {
+function stub(pathname, query) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
       accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
@@ -725,10 +803,13 @@ function stub(pathname, search) {
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (pathname === '/api/ops/runs') {
-    return { data: new URLSearchParams(search || '').get('range') === '24h' ? RUNS_DAY : RUNS };
+    return { data: query && query.get('range') === '24h' ? RUNS_DAY : RUNS };
   }
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
+  if (pathname.startsWith('/api/ops/usage') && measuring === 'analytics') {
+    return { data: query && query.get('range') === '7d' ? USAGE_WEEK : USAGE_MONTH };
+  }
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
   if (pathname.startsWith('/api/ops/seval/admin/reviews/items/')) {
     return { data: {
@@ -756,7 +837,7 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname, url.search)));
+    res.end(JSON.stringify(stub(url.pathname, url.searchParams)));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));
@@ -1006,6 +1087,7 @@ try {
         const where = `${page.key} (${page.file}) at ${WIDTH}px, ${theme} theme`;
 
         cdp.reset();
+        measuring = page.key;
         await cdp.send('Page.navigate', { url: origin + page.url });
         await cdp.once('Page.loadEventFired');
         await new Promise((r) => setTimeout(r, SETTLE_MS));

@@ -80,7 +80,7 @@
  *
  * - Any meter a pane draws, against the card that pane puts it on. None is
  *   reached: Aria AI's scoring drawing is gone (R54), Money's rebuild (#203)
- *   draws no meter, and `pane-analytics.js` draws one per feature row only
+ *   draws no meter, and `pane-usage.js` draws one per feature row only
  *   when the usage route carries `features.rows`, which the stub does not.
  *   Every reading here is the synthetic arm's, taken off a real `.card`
  *   built for the purpose. Giving the stub feature rows reaches the Usage
@@ -435,13 +435,13 @@ const VALUE_FLOOR = 4;
 /* How many meters the panes draw in this sweep, declared, and the files that
    draw one. Zero is not a pass of anything: it is the admission that nothing
    here has judged a pane's meter against its own card since the last two
-   drawers left the board. `pane-analytics.js` draws one per feature row, but
+   drawers left the board. `pane-usage.js` draws one per feature row, but
    only when the usage route carries `features.rows`, which the stub does not,
    so the sweep never reaches it. `pane-data.js` `meterRow` has no caller. Both
    are named so that a drawer nobody listed, or a stub that starts reaching
    one, fails the inventory test instead of changing what the board means. */
 const REAL_METERS = 0;
-const METER_DRAWERS = ['pane-analytics.js', 'pane-data.js'];
+const METER_DRAWERS = ['pane-data.js', 'pane-usage.js'];
 
 /* #10848's fix darkens the light-theme fill to clear 3:1 against the TRACK,
    and the obvious way to cheat that is to darken it against everything -- the
@@ -497,7 +497,7 @@ const TONE_SEPARATION = 30;
 const REQUIRED_REAL = ['warn', 'bad'];
 
 const THEMES = ['dark', 'light'];
-const PANES = ['alerts', 'analytics', 'evaluations', 'jobs-live', 'releases',
+const PANES = ['alerts', 'usage', 'evaluations', 'jobs-live', 'releases',
   'run-history', 'settings', 'spend', 'users'];
 const STATES = ['live', 'loading', 'empty', 'degraded'];
 const VIEWPORT = { width: 1440, height: 1000 };

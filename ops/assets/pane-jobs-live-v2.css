@@ -34,7 +34,7 @@
    The table has seven columns and a phone has about 340px of card to put them
    in, so the box around it scrolls sideways rather than squeezing a duration
    into two characters. Same treatment as the Analytics cohort grid
-   (assets/pane-analytics-v2.css) and the Settings tables: the box is named and
+   (assets/pane-usage-v2.css) and the Settings tables: the box is named and
    focusable in the markup, because a scroll region a keyboard cannot reach
    fails WCAG 2.1.1 and an unnamed one announces nothing when it is reached.
 

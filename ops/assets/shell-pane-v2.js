@@ -50,6 +50,18 @@
      announce(message)       polite live-region announcement
      toast(iconName, text)   transient confirmation
      fmt                     the formatters every pane prints figures through
+     dates                   how a day is written: parse, monthDay, dayRange,
+                             headDate, updatedAt, and DAY in milliseconds
+     trendChart(opts)        the line chart: a lead series on a labelled scale,
+                             another on the same scale, the week before as a
+                             dashed ghost, a week high only when it is earned
+     delta(active, before, comparison)
+                             the change in people against the window before
+     tip(id, text)           an info icon that carries what a figure counts
+     usageWindow             what a usage answer's window covers: span,
+                             noStoredDays, storedDayGap, partial
+     sections(opts)          a page of independent reads that degrade one
+                             section at a time, each with its own Try again
      read(source)            a pane's own read, with the local fixture hook
      safeHref(text)          a same-origin, same-scheme href, or null
      isLoopback()            whether this page is being served locally, which
@@ -783,6 +795,553 @@
     return 'the ' + words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1] + ' roles';
   }
 
+  /* ----------------------------------------------------- shared pane parts
+
+     Today drew these first, and each is something a second pane would
+     otherwise copy: how a day is written, the line chart, the info tip beside
+     a figure, the change against the week before, and a page of independent
+     reads that degrades one section at a time. They are here so there is one
+     chart and one retry whatever pane draws them. */
+
+  var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var DAY_MS = 86400000;
+
+  function monthDay(date) {
+    return MONTHS[date.getUTCMonth()] + ' ' + date.getUTCDate();
+  }
+
+  /* "Oct 25–31", or "Oct 28–Nov 3" across a month. The end is exclusive in the
+     answer, and the label names the last whole day. */
+  function dayRange(startIso, endExclusiveIso) {
+    var start = parseTime(startIso);
+    var end = parseTime(endExclusiveIso);
+    if (!start || !end || end.getTime() <= start.getTime()) return null;
+    var last = new Date(end.getTime() - DAY_MS);
+    if (last.getUTCMonth() === start.getUTCMonth()) {
+      return monthDay(start) + '\u2013' + last.getUTCDate();
+    }
+    return monthDay(start) + '\u2013' + monthDay(last);
+  }
+
+  function headDate(iso) {
+    var t = parseTime(iso);
+    if (!t) return null;
+    return WEEKDAYS[t.getUTCDay()] + ', ' + monthDay(t) + ', ' + t.getUTCFullYear();
+  }
+
+  function updatedAt(iso) {
+    var t = parseTime(iso);
+    if (!t) return null;
+    return 'Updated ' + pad2(t.getUTCHours()) + ':' + pad2(t.getUTCMinutes()) + ' UTC';
+  }
+
+  var dates = {
+    DAY: DAY_MS, parse: parseTime, monthDay: monthDay, dayRange: dayRange,
+    headDate: headDate, updatedAt: updatedAt
+  };
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(name, attrs) {
+    var el = document.createElementNS(SVG_NS, name);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, String(attrs[k])); });
+    return el;
+  }
+
+  var gradientN = 0;
+
+  /* The one day a complete series peaks on, or -1. A week high is a claim about
+     every day of the week, so one day with no reading, or two days that tie,
+     leaves nothing to point at. */
+  function highAt(values) {
+    if (!values.length) return -1;
+    var top = -Infinity;
+    var at = -1;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] === null) return -1;
+      if (values[i] > top) { top = values[i]; at = i; } else if (values[i] === top) { at = -1; }
+    }
+    return at;
+  }
+
+  /* A line over the days it has a reading for, drawn as an SVG whose shape is
+     the data and HTML marks for everything with text in it, so the type keeps
+     its size when the chart narrows. The path breaks at a day with no reading
+     and never drops to the floor through one.
+
+       values   the lead series, one entry per day, null for a day with no reading
+       ghost    the same length of days before, dashed, or null
+       also     more series on the lead's own scale: [{ values, label }]
+       area     the lead is the page's one glowing line
+       fill     false draws no wash under the lead (default: with area)
+       axes     a scale, a reading on every point and the days along the foot
+       end      the exclusive end of the last day, for the days along the foot
+       high     name the lead's peak, when its whole week earns it
+       label    what the chart is, for the reader who cannot see it
+       who      what the lead series is called in that sentence */
+  function trendChart(opts) {
+    var values = opts.values;
+    var ghost = opts.ghost;
+    /* A series of another length is on another set of days, and would land on
+       the wrong ones along a shared axis, so it is not drawn here. */
+    var also = (opts.also || []).filter(function (s) { return s.values.length === values.length; });
+    var all = values.concat(ghost || []);
+    also.forEach(function (s) { all = all.concat(s.values); });
+    all = all.filter(function (v) { return v !== null; });
+    var floor = 0;
+    var ceiling;
+    if (opts.axes) {
+      /* Data driven: an even ceiling just over the highest reading, so the
+         peak never touches the top of the plot. */
+      var top = all.length ? Math.max.apply(null, all) : 0;
+      ceiling = Math.max(4, top + 1 + ((top + 1) % 2));
+    } else {
+      /* A sparkline has no axis to mislead, so it uses its own range. */
+      floor = all.length ? Math.min.apply(null, all) : 0;
+      ceiling = all.length ? Math.max.apply(null, all) : 1;
+      if (ceiling === floor) ceiling = floor + 1;
+    }
+    var span = ceiling - floor;
+    var count = values.length;
+    var px = function (i) { return count > 1 ? (i / (count - 1)) * 100 : 50; };
+    var py = function (v) { return 100 - ((v - floor) / span) * 100; };
+
+    /* Decided up front so the plot can leave room above the peak for the note
+       that names it. */
+    var peak = opts.axes && opts.high ? highAt(values) : -1;
+    var chart = h('div', {
+      className: 'tchart' + (opts.axes ? '' : ' is-spark') + (opts.area ? ' is-area' : '') +
+        (peak !== -1 ? ' has-high' : ''),
+      role: 'img',
+      'aria-label': chartName(opts)
+    });
+    var plot = h('div', { className: 'tc-plot' });
+    var inner = h('div', { className: 'tc-inner' });
+
+    if (opts.axes) {
+      [0, 50, 100].forEach(function (at) {
+        var line = h('i', { className: 'tc-grid' + (at === 100 ? ' is-base' : '') });
+        line.style.setProperty('top', at + '%');
+        plot.appendChild(line);
+        var tick = h('span', {
+          className: 'tc-y',
+          text: int(ceiling - (at / 100) * ceiling)
+        });
+        tick.style.setProperty('top', at + '%');
+        plot.appendChild(tick);
+      });
+    }
+
+    var svg = svgEl('svg', { 'class': 'tc-svg', viewBox: '0 0 100 100', preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+    var washed = opts.area && opts.fill !== false;
+    var gradient = 'tc-fill-' + (++gradientN);
+    if (washed) {
+      var defs = svgEl('defs');
+      var stops = svgEl('linearGradient', { id: gradient, x1: 0, y1: 0, x2: 0, y2: 1 });
+      stops.appendChild(svgEl('stop', { offset: '0', 'class': 'tc-stop-top' }));
+      stops.appendChild(svgEl('stop', { offset: '1', 'class': 'tc-stop-base' }));
+      defs.appendChild(stops);
+      svg.appendChild(defs);
+    }
+
+    var runsOf = function (series) {
+      var runs = [];
+      var run = [];
+      series.forEach(function (v, i) {
+        if (v === null) {
+          if (run.length) runs.push(run);
+          run = [];
+          return;
+        }
+        run.push([px(i), py(v)]);
+      });
+      if (run.length) runs.push(run);
+      return runs;
+    };
+    var trace = function (run) {
+      return run.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(2) + ' ' + p[1].toFixed(2); }).join(' ');
+    };
+
+    if (ghost) {
+      runsOf(ghost).forEach(function (run) {
+        if (run.length > 1) svg.appendChild(svgEl('path', { 'class': 'tc-ghost', d: trace(run) }));
+      });
+    }
+    also.forEach(function (series) {
+      runsOf(series.values).forEach(function (run) {
+        if (run.length > 1) svg.appendChild(svgEl('path', { 'class': 'tc-line is-also', d: trace(run) }));
+      });
+    });
+    runsOf(values).forEach(function (run) {
+      if (run.length < 2) return;
+      if (washed) {
+        var last = run[run.length - 1];
+        svg.appendChild(svgEl('path', {
+          'class': 'tc-area', fill: 'url(#' + gradient + ')',
+          d: trace(run) + ' L' + last[0].toFixed(2) + ' 100 L' + run[0][0].toFixed(2) + ' 100 Z'
+        }));
+      }
+      svg.appendChild(svgEl('path', { 'class': 'tc-line', d: trace(run) }));
+    });
+    inner.appendChild(svg);
+
+    /* A reading goes under its dot, not over it, when another line's reading
+       on the same day sits just above it, so two labels never share a place. */
+    var crowded = function (v, i, others) {
+      return others.some(function (o) {
+        var w = o[i];
+        return w !== null && w !== undefined && w > v && (w - v) / span < 0.16;
+      });
+    };
+    var mark = function (series, i, isAlso, lastIndex, others) {
+      var v = series[i];
+      if (v === null) return;
+      if (!opts.axes && (isAlso || i !== lastIndex)) return;
+      var dot = h('i', { className: 'tc-dot' + (isAlso ? ' is-also' : '') + (i === lastIndex ? ' is-end' : '') });
+      dot.style.setProperty('left', px(i).toFixed(2) + '%');
+      dot.style.setProperty('top', py(v).toFixed(2) + '%');
+      inner.appendChild(dot);
+      if (opts.axes) {
+        var tag = h('span', {
+          className: 'tc-val' + (isAlso ? ' is-also' : '') + (i === lastIndex ? ' is-end' : '') +
+            (crowded(v, i, others) ? ' is-below' : ''),
+          text: int(v)
+        });
+        tag.style.setProperty('left', px(i).toFixed(2) + '%');
+        tag.style.setProperty('top', py(v).toFixed(2) + '%');
+        inner.appendChild(tag);
+      }
+    };
+    var lastOf = function (series) {
+      var at = -1;
+      series.forEach(function (v, i) { if (v !== null) at = i; });
+      return at;
+    };
+    var seriesAll = [values].concat(also.map(function (s) { return s.values; }));
+    also.forEach(function (series) {
+      var others = seriesAll.filter(function (s) { return s !== series.values; });
+      series.values.forEach(function (_, i) { mark(series.values, i, true, lastOf(series.values), others); });
+    });
+    values.forEach(function (_, i) {
+      mark(values, i, false, lastOf(values), seriesAll.filter(function (s) { return s !== values; }));
+    });
+
+    if (peak !== -1) {
+      var note = h('span', {
+        className: 'tc-high' + (peak === count - 1 ? ' is-end' : ''),
+        text: 'Week high \u00b7 ' + int(values[peak])
+      });
+      note.style.setProperty('left', px(peak).toFixed(2) + '%');
+      note.style.setProperty('top', py(values[peak]).toFixed(2) + '%');
+      inner.appendChild(note);
+    }
+
+    if (opts.axes && opts.end) {
+      [0, Math.floor((count - 1) / 2), count - 1].forEach(function (i, slot) {
+        if (slot === 1 && (count - 1) % 2 !== 0) return;
+        if (slot === 1 && count < 3) return;
+        var day = new Date(opts.end.getTime() - (count - i) * DAY_MS);
+        var tick = h('span', { className: 'tc-x' + (slot === 1 ? ' is-mid' : ''), text: monthDay(day) });
+        tick.style.setProperty('left', px(i).toFixed(2) + '%');
+        inner.appendChild(tick);
+      });
+    }
+
+    plot.appendChild(inner);
+    chart.appendChild(plot);
+    return chart;
+  }
+
+  /* The chart's accessible name, and the only place its data is spoken: a
+     role="img" subtree is presentational. */
+  function chartName(opts) {
+    /* `back` is how many days earlier than the plotted week the series ends, so
+       the dashed week names its own last day and not this week's. */
+    var sentence = function (series, who, back) {
+      var seen = series.filter(function (v) { return v !== null; });
+      if (!seen.length) return who + ': no reading on any of ' + plural(series.length, 'day') + '.';
+      var lo = Math.min.apply(null, seen);
+      var high = Math.max.apply(null, seen);
+      var lastAt = -1;
+      series.forEach(function (v, i) { if (v !== null) lastAt = i; });
+      var day = opts.end
+        ? ' on ' + monthDay(new Date(opts.end.getTime() - (series.length - lastAt + back) * DAY_MS))
+        : '';
+      return who + ': ' + int(seen.length) + ' of ' + plural(series.length, 'day') +
+        ' with a reading, ' + (lo === high ? 'flat at ' + int(lo) : 'low ' + int(lo) + ', high ' + int(high)) +
+        ', ending ' + int(series[lastAt]) + day + '.';
+    };
+    var name = opts.label + ', ' + sentence(opts.values, opts.who || 'this week', 0);
+    (opts.also || []).filter(function (s) { return s.values.length === opts.values.length; }).forEach(function (series) {
+      name += ' ' + sentence(series.values, series.label, 0);
+    });
+    if (opts.ghost) name += ' ' + sentence(opts.ghost, 'the week before, dashed', opts.values.length);
+    return name;
+  }
+
+  /* The change against the window before, as a difference in people. Never a
+     rate: a share over a group this small moves several points on one person,
+     and the reporting floor withholds exactly that. An absent comparison is
+     shown as absent, never as no change. */
+  function delta(active, before, comparison) {
+    var was = isNum(before) ? before : null;
+    var span = comparison && isNum(comparison.days) ? comparison.days : null;
+    if (was === null || !comparison) {
+      return h('p', { className: 'delta is-none', text: 'No comparison yet' });
+    }
+    var diff = active - was;
+    var against = span === null || span === 7 ? 'last week' : 'the ' + plural(span, 'day') + ' before';
+    if (diff === 0) return h('p', { className: 'delta is-flat', text: 'No change vs ' + against });
+    var word = (diff > 0 ? '+' : '\u2212') + int(Math.abs(diff)) + ' vs ' + against;
+    return h('p', { className: 'delta ' + (diff > 0 ? 'is-up' : 'is-down') }, [
+      icon('arrow'),
+      h('span', { text: word })
+    ]);
+  }
+
+  /* What a usage answer's window covers, read once for every pane that prints
+     figures from GET /api/ops/usage. Usage detail and Growth both ask it, so a
+     figure the route could not have measured is withheld the same way on both.
+
+     Three separate facts, kept separate because they are answered differently.
+     `days` is what the operator asked for. `daysCovered` is how much of it the
+     pipeline has ever been able to write, because the nightly aggregation
+     started on a particular day and a window opened today can reach back past
+     its own lifetime. `daysMissingRollups` is the real gap: days at or after
+     the first covered one that carry no stored figures.
+
+       span(data)        { covered, days, start, missing }, or null when the
+                         answer does not say how much it covers
+       noStoredDays(d)   not one day of the window has been aggregated. The
+                         route reports it as `reportingStart: null` with
+                         `daysCovered: 0` and still calls itself ready, because
+                         the people figures are read live from accounts while
+                         nothing at all has been rolled up
+       storedDayGap(metric, noStored)
+                         a figure counted from the stored day grain that reads
+                         zero only because no day was stored: withheld, not a
+                         measured zero
+       partial(data)     the span when it covers some of the window but not all
+                         of it, else null. Not an availability state: the part
+                         that exists is still drawn
+
+     storedDayGap matches on the label because that is the only signal there
+     is: the metric union carries a kind and, for anything over a group, a
+     denominator, and neither says where the number came from. Named exactly
+     rather than by substring, and consulted only when the window has no stored
+     days AND the value is zero, so a relabelled metric fails towards showing
+     the figure rather than towards hiding one. Where this belongs is a
+     provenance field in the payload. */
+  var usageWindow = (function () {
+    var FROM_STORED_DAYS = ['Sessions', 'Sessions per person'];
+
+    function span(data) {
+      var w = data && data.window;
+      if (!w || typeof w !== 'object') return null;
+      if (!isNum(w.daysCovered)) return null;
+      return {
+        covered: w.daysCovered,
+        days: isNum(w.days) ? w.days : null,
+        start: typeof w.reportingStart === 'string' ? w.reportingStart : null,
+        missing: (Array.isArray(w.daysMissingRollups) ? w.daysMissingRollups : []).filter(function (day) {
+          return typeof day === 'string';
+        })
+      };
+    }
+
+    function noStoredDays(data) {
+      var s = span(data);
+      return !!s && s.covered === 0;
+    }
+
+    function storedDayGap(metric, noStored) {
+      return !!noStored && !!metric && typeof metric.label === 'string' &&
+        FROM_STORED_DAYS.indexOf(metric.label) !== -1 && metric.value === 0;
+    }
+
+    function partial(data) {
+      var s = span(data);
+      if (!s || s.days === null) return null;
+      if (s.covered <= 0 || s.covered >= s.days) return null;
+      return s;
+    }
+
+    return { span: span, noStoredDays: noStoredDays, storedDayGap: storedDayGap, partial: partial };
+  })();
+
+  /* What a figure counts, carried by an info icon rather than a label. Hover and
+     keyboard focus show it; Escape puts it away again. The id is the page's
+     own, so two tips on one page describe their own figure. */
+  function tip(id, text) {
+    var bubble = h('span', { className: 'tip-bubble', role: 'tooltip', id: id, text: text });
+    var button = h('button', {
+      className: 'tip-btn', type: 'button',
+      'aria-label': 'What this counts', 'aria-describedby': id
+    }, [icon('info')]);
+    var wrap = h('span', { className: 'tip' }, [button, bubble]);
+    button.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') bubble.setAttribute('data-dismissed', '');
+    });
+    ['mouseleave', 'blur'].forEach(function (name) {
+      button.addEventListener(name, function () { bubble.removeAttribute('data-dismissed'); });
+    });
+    return wrap;
+  }
+
+  /* A page of independent reads. Each read is carried as a value, { data } or
+     { error }, never a rejection, and a read that is down takes only its own
+     section off the screen and gives it a Try again that re-reads that read.
+
+       prefix   the page's name in the ids it hands out: <prefix>-<section>,
+                <prefix>-retry-N
+       reads    { key: () => Promise<data> }
+       names    what each section is called when its read is said to be back
+       whole    what the page is called when all of it is
+       marker   a section id that is on screen whenever the page is drawn
+       content  the pane's <main>
+       drawn    (keys) => void, called with the reads a retry brought back,
+                to redraw whatever draws from them
+
+     What it hands back is the pane's to draw with. */
+  function sections(opts) {
+    var prefix = opts.prefix;
+    var reads = opts.reads;
+    var names = opts.names || {};
+    var content = opts.content;
+    /* One counter per read. Asking for a read advances its counter, and an
+       answer may be used only while its counter is still the one it was asked
+       under, so the newest ask of a read wins whatever order the answers come
+       back in, and a read nobody asked again is never disturbed. */
+    var generation = {};
+    var results = {};
+    var retryN = 0;
+
+    function first(root, selector) {
+      var found = root.querySelectorAll(selector);
+      return found.length ? found[0] : null;
+    }
+
+    function data(key) {
+      var one = results[key];
+      return one && !one.error ? one.data : null;
+    }
+
+    /* A read as a value, never a rejection. A synchronous throw is a failed
+       read too. */
+    function settled(key) {
+      return new Promise(function (resolve) { resolve(reads[key]()); }).then(
+        function (value) { return { data: value }; },
+        function (err) { return { error: err }; }
+      );
+    }
+
+    /* Ask for these reads. Each answer says whether its read has been asked
+       for again since, judged when the last of them is in. */
+    function ask(keys) {
+      var stamp = {};
+      keys.forEach(function (key) {
+        generation[key] = (generation[key] || 0) + 1;
+        stamp[key] = generation[key];
+      });
+      return Promise.all(keys.map(function (key) {
+        return settled(key).then(function (one) { return { key: key, one: one }; });
+      })).then(function (answers) {
+        answers.forEach(function (a) { a.current = generation[a.key] === stamp[a.key]; });
+        return answers;
+      });
+    }
+
+    /* Re-read these reads and nothing else, then redraw the sections that draw
+       from them. Only an answer nobody has since asked for again is used: an
+       older answer that arrives late draws nothing and moves nothing, and the
+       retry that replaced it is the one that lands. Resolves to whether this
+       retry drew, which is the only one that may move focus or speak. */
+    function retry(keys) {
+      return ask(keys).then(function (answers) {
+        var used = answers.filter(function (a) { return a.current; });
+        if (!used.length) return false;
+        used.forEach(function (a) { results[a.key] = a.one; });
+        opts.drawn(used.map(function (a) { return a.key; }));
+        return true;
+      });
+    }
+
+    function shownPanel() { return first(content, '[data-shown]'); }
+
+    /* Pressing Try again redraws the section, which destroys the button. Focus
+       falls to <body> unless it is put somewhere on purpose, and the section's
+       own heading is the node that exists whether the retry worked or not.
+       What is spoken is the outcome: the section came back, or the same
+       failure is still there. */
+    function landOn(sectionId) {
+      var panel = shownPanel();
+      if (!panel) return;
+      var host = sectionId ? first(panel, '[id="' + prefix + '-' + sectionId + '"]') : null;
+      var head = first(host || panel, '.sec-title, .state-title');
+      if (!head) return;
+      head.setAttribute('tabindex', '-1');
+      head.focus();
+      var stuck = (host || panel).querySelectorAll('[data-retry]');
+      var message;
+      if (!host && !first(panel, '[id="' + prefix + '-' + opts.marker + '"]')) {
+        message = String(head.textContent || '') + ' again.';
+      } else if (!stuck.length) {
+        message = (host ? names[sectionId] : opts.whole) + ' was read again.';
+      } else if (host) {
+        message = String(stuck[0].getAttribute('data-retry') || '') + ' again.';
+      } else {
+        message = opts.whole + ' was read again. ' + plural(stuck.length, 'part') + ' could not be read.';
+      }
+      announce(message);
+    }
+
+    /* The name a screen reader gives a Try again is composed from the button
+       and the heading beside it, so two of them on one screen are told apart
+       in a list of controls. data-retry carries the same heading for the
+       sentence spoken once the read comes back. */
+    function retryButton(titleNode, keys, sectionId) {
+      retryN += 1;
+      var headingId = titleNode.getAttribute('id');
+      if (!headingId) {
+        headingId = prefix + '-failed-' + retryN;
+        titleNode.setAttribute('id', headingId);
+      }
+      var again = h('button', { className: 'btn btn-sm', type: 'button', text: 'Try again' });
+      var buttonId = prefix + '-retry-' + retryN;
+      again.setAttribute('id', buttonId);
+      again.setAttribute('aria-labelledby', buttonId + ' ' + headingId);
+      again.setAttribute('data-retry', String(titleNode.textContent || ''));
+      again.addEventListener('click', function () {
+        retry(keys).then(function (landed) {
+          if (landed) landOn(sectionId);
+        });
+      });
+      return again;
+    }
+
+    function failure(headline, err, keys, sectionId) {
+      var block = stateBlock('warn', headline, [failureMessage(err)], 3);
+      var title = first(block, '.state-title');
+      block.appendChild(h('div', { className: 'row mt-sm' }, [retryButton(title, keys, sectionId)]));
+      return block;
+    }
+
+    /* A read that failed inside a figure that has other things to say. */
+    function failedLine(headline, err, keys, sectionId) {
+      var line = h('div', { className: 'fail-line' });
+      var title = h('span', { className: 'sec-title fail-title', text: headline });
+      line.appendChild(title);
+      line.appendChild(h('span', { className: 'fail-why', text: failureMessage(err) }));
+      line.appendChild(retryButton(title, keys, sectionId));
+      return line;
+    }
+
+    return {
+      results: results, data: data, ask: ask, retry: retry, landOn: landOn,
+      retryButton: retryButton, failure: failure, failedLine: failedLine
+    };
+  }
+
   /* ------------------------------------------------------- announcements */
 
   var liveRegion = null;
@@ -1107,7 +1666,13 @@
     link: link,
     announce: announce,
     toast: toast,
-    fmt: fmt
+    fmt: fmt,
+    dates: dates,
+    trendChart: trendChart,
+    delta: delta,
+    tip: tip,
+    usageWindow: usageWindow,
+    sections: sections
   };
 
   if (document.body && PANES[document.body.getAttribute('data-pane')]) init();

@@ -538,6 +538,112 @@
     analytics: [
       {
         id: 'analytics-active-people', kind: 'metric', title: 'Active people',
+        anchor: { selector: '#growth-people' },
+        body: 'The definition below counts a person once per app. The headline goes one step ' +
+          'further and counts each person once across both apps, so somebody who used both ' +
+          'is one person and the two app rows do not add up to it. The change beside it is ' +
+          'the number of people more or fewer than the week before, not a percentage.',
+        live: peopleLive,
+        metric: {
+          definition: 'activeUser',
+          grain: 'Whole UTC days over the week the page names, compared with the same length ' +
+            'of week just before it.',
+          source: 'Usage events the apps send, counted by the server. People who have not ' +
+            'turned usage analytics on are never counted.',
+          healthy: 'Steady or rising against the week before.',
+          worrying: 'A sharp drop, most of all on one app only: that app may have stopped ' +
+            'sending anything, which Health watches for.'
+        }
+      },
+      {
+        id: 'analytics-daily-lines', kind: 'metric', title: 'Daily lines',
+        anchor: { selector: '#growth-chart' },
+        body: 'One line per app, on one shared scale, so the two can be read against each ' +
+          'other and never added together. A day with no reading breaks the line and is ' +
+          'named under the chart. Week high is printed only when every day has a reading ' +
+          'and one day is strictly the highest.',
+        live: function (ctx) {
+          var reads = ctx.readAll('.tc-val.is-end');
+          var gaps = ctx.read('.g-note');
+          return (reads.length ? 'Latest readings: ' + reads.join(', ') + '. ' : '') + gaps;
+        },
+        metric: {
+          definition: 'activeUser',
+          grain: 'One reading per UTC day over the last seven days, one line per app.',
+          source: 'Usage events the apps send, counted by the server for each day the chart ' +
+            'shows.',
+          healthy: 'A steady level on both lines, rising toward the end of the week.',
+          worrying: 'A line that goes flat, breaks, or stops: an app may have stopped ' +
+            'sending data.'
+        }
+      },
+      {
+        id: 'analytics-apps', kind: 'metric', title: 'People, sessions and coverage',
+        anchor: { selector: '#growth-apps' },
+        body: 'One row per app for the same week: the people who used it, the sessions they ' +
+          'had, and the coverage behind those figures. An app that sent nothing in the ' +
+          'week is named with no reading instead of being drawn as zeroes. The definitions ' +
+          'of people and of sessions are on Usage detail.',
+        metric: {
+          definition: 'coverage',
+          grain: 'Per app, over the same seven days as the chart.',
+          source: 'Sessions, and whether each one sent the event the figures need.',
+          healthy: 'Coverage near 100%, so the figures are most of what happened.',
+          worrying: 'Low coverage on an app: its people and feature counts are then ' +
+            'lower than the truth.'
+        }
+      },
+      {
+        id: 'analytics-features', kind: 'metric', title: 'Feature use',
+        anchor: { selector: '#growth-features' },
+        body: 'The features people opened, grouped by app, each as a number of that app\'s ' +
+          'people. It is a count and not a share, because a share over a small group moves ' +
+          'several points on one person.',
+        live: function (ctx) {
+          var n = ctx.count('.g-item');
+          return n > 0 ? 'The card holds ' + plural(n, 'feature') + ' right now.' : '';
+        },
+        metric: {
+          counts: 'People who opened the feature at least once in the week, counted within ' +
+            'each app.',
+          grain: 'The same seven days as the chart. A person who opened three features is in ' +
+            'three of these counts.',
+          source: 'Feature events from app versions that report them.',
+          healthy: 'The features you expect near the top.',
+          worrying: 'A feature everybody relies on dropping down the list.'
+        }
+      },
+      {
+        id: 'analytics-coming-back', kind: 'metric', title: 'Coming back',
+        anchor: { selector: '#growth-back' },
+        body: 'Signup weeks down the side, the weeks after across. The numbers are people, ' +
+          'never percentages. A dash is a week the group has not reached yet; it is not a ' +
+          'zero.',
+        metric: {
+          definition: 'comingBack',
+          grain: 'Whole signup weeks inside the last thirty days, and only the weeks that ' +
+            'have fully passed since.',
+          source: 'Account creation and later usage events, per app.',
+          healthy: 'Each newer group comes back about as well as the ones before it.',
+          worrying: 'Newer groups coming back less than older ones did at the same age.'
+        }
+      },
+      {
+        id: 'analytics-releases', kind: 'section', title: 'App releases',
+        anchor: { selector: '#growth-releases' },
+        body: 'The production build each store has, and where it is: live, rolling out, in ' +
+          'review or stopped. View tracks opens App releases, which has every track, the ' +
+          'rollout and the health of each build.',
+        live: function (ctx) {
+          var rows = ctx.readAll('.g-rel');
+          return rows.length ? 'Right now: ' + rows.join('; ') + '.' : '';
+        }
+      }
+    ],
+
+    usage: [
+      {
+        id: 'usage-active-people', kind: 'metric', title: 'Active people',
         anchor: { selector: '.kpi', title: 'Active people' },
         live: kpiLive,
         metric: {
@@ -551,7 +657,7 @@
         }
       },
       {
-        id: 'analytics-sessions', kind: 'metric', title: 'Sessions',
+        id: 'usage-sessions', kind: 'metric', title: 'Sessions',
         anchor: { selector: '.kpi', title: 'Sessions' },
         live: kpiLive,
         metric: {
@@ -563,7 +669,7 @@
         }
       },
       {
-        id: 'analytics-sessions-per-person', kind: 'metric', title: 'Sessions per person',
+        id: 'usage-sessions-per-person', kind: 'metric', title: 'Sessions per person',
         anchor: { selector: '.kpi', title: 'Sessions per person' },
         body: 'How many sessions each active person had, on average. The definition below ' +
           'is of one session, the thing being averaged.',
@@ -578,7 +684,7 @@
         }
       },
       {
-        id: 'analytics-feature', kind: 'metric', title: 'Opened a feature',
+        id: 'usage-feature', kind: 'metric', title: 'Opened a feature',
         anchor: { selector: '.kpi', title: 'Opened a feature' },
         live: kpiLive,
         metric: {
@@ -591,7 +697,7 @@
         }
       },
       {
-        id: 'analytics-growing', kind: 'metric', title: 'Is that growing',
+        id: 'usage-growing', kind: 'metric', title: 'Is that growing',
         anchor: { selector: 'section', title: 'Is that growing' },
         metric: {
           definition: 'activeUser',
@@ -603,7 +709,7 @@
         }
       },
       {
-        id: 'analytics-coming-back', kind: 'metric', title: 'Do people come back',
+        id: 'usage-coming-back', kind: 'metric', title: 'Do people come back',
         anchor: { selector: 'section', title: 'Do people come back' },
         metric: {
           definition: 'comingBack',
@@ -615,7 +721,7 @@
         }
       },
       {
-        id: 'analytics-features', kind: 'metric', title: 'Most used features',
+        id: 'usage-features', kind: 'metric', title: 'Most used features',
         anchor: { selector: '.card', title: 'Most used features' },
         live: function (ctx) {
           var n = ctx.count('tr') - 1;
@@ -630,7 +736,7 @@
         }
       },
       {
-        id: 'analytics-coverage', kind: 'metric', title: 'Which versions report',
+        id: 'usage-coverage', kind: 'metric', title: 'Which versions report',
         anchor: { selector: '.card', title: 'Which versions report' },
         metric: {
           definition: 'coverage',
@@ -642,7 +748,7 @@
         }
       },
       {
-        id: 'analytics-unanswered', kind: 'section', title: 'What this pane cannot answer yet',
+        id: 'usage-unanswered', kind: 'section', title: 'What this pane cannot answer yet',
         anchor: { selector: 'section', title: 'What this pane cannot answer yet' },
         body: 'Questions about usage that nothing records yet, named instead of drawn as a ' +
           'confident figure.'
