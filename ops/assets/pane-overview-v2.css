@@ -496,7 +496,8 @@
   .prob-more { padding: 4px 18px; }
 
   /* Aria AI and Cloud spend are one card with a hairline between them, and
-     Happening now is a row of its own beneath it. */
+     Happening now is a row of its own beneath it. Each half leaves out the
+     edge it shares, so the seam is the single line the spend half draws. */
   .tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
@@ -505,10 +506,13 @@
     column-gap: 0; row-gap: 12px;
   }
   .tile { min-height: 0; padding: 16px 16px 18px; }
-  .tile-ai { grid-area: ai; border-radius: var(--r-lg) 0 0 var(--r-lg); }
+  .tile-ai {
+    grid-area: ai; border-radius: var(--r-lg) 0 0 var(--r-lg);
+    box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line), inset 1px 0 0 var(--line);
+  }
   .tile-spend {
     grid-area: spend; border-radius: 0 var(--r-lg) var(--r-lg) 0;
-    box-shadow: inset 0 0 0 1px var(--line), inset 1px 0 0 var(--line-2);
+    box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line), inset -1px 0 0 var(--line), inset 1px 0 0 var(--line-2);
   }
   .tile-jobs {
     grid-area: jobs;
