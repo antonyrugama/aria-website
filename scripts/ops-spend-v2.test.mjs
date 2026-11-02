@@ -47,6 +47,7 @@ import vm from 'node:vm';
 import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
 import {
   hoursAgo, resolveCostPeriod, resolveComparisonWindow, GROUPS, UNGROUPED_GROUP, payload,
+  buildDailySeries, window_,
 } from './ops-spend-fixture.mjs';
 import { stub, PROOF } from './ops-api-stub.mjs';
 
@@ -523,12 +524,16 @@ test('month names come from the answer, not from the browser\'s clock', async ()
 
 test('the headline figures are the bill\'s own, and the dollar change is drawn only when the page can reproduce it',
   async () => {
-    const data = payload({ previousScale: 0.85 });
+    const data = payload({ previousScale: 0.85, dayScale: (i) => 1 + i / 20 });
     const billed = data.period.billedDays;
     const days = seriesOf(data, 'current').values.slice(0, billed);
+    const latestAt = Math.round((Date.parse(data.period.actualThrough)
+      - Date.parse(data.period.start)) / 86_400_000);
     const total = data.total.micros;
     const prior = sum(seriesOf(data, 'previous').values);
     const bp = data.total.changeBasisPoints;
+    assert.equal(sum(days), total, 'the varying daily series reconciles to the bill');
+    assert.notEqual(days[0], days[latestAt], 'the first day cannot stand in for the latest');
     assert.equal(Math.round(((total - prior) / prior) * 10_000), bp,
       'the fixture\'s own change reproduces from its own series, or the test below says nothing');
 
@@ -536,7 +541,7 @@ test('the headline figures are the bill\'s own, and the dollar change is drawn o
     assert.deepEqual(runs(byClass(hero(dom), 'mn-total')[0]), [usd(total)]);
     assert.equal(statValue(stat(dom, 'Daily average')), usd(Math.round(total / billed)),
       'the average is the total over the days actually billed');
-    assert.equal(statValue(stat(dom, 'Sep 19')), usd(days[billed - 1]),
+    assert.equal(statValue(stat(dom, 'Sep 19')), usd(days[latestAt]),
       'the latest day is the last billed day\'s own figure');
     assert.equal(statValue(stat(dom, 'Month-end forecast')), usd(data.forecast.micros, 0));
     assert.deepEqual(runs(byClass(hero(dom), 'mn-delta')[0]), [
@@ -547,7 +552,7 @@ test('the headline figures are the bill\'s own, and the dollar change is drawn o
     assert.equal(stat(closed, 'Month-end forecast'), undefined,
       'a closed month has no end still to come, so no forecast is drawn');
 
-    const unproved = payload({ previousScale: 0.85 });
+    const unproved = structuredClone(data);
     unproved.total.changeBasisPoints = bp + 1;
     assert.deepEqual(runs(byClass(hero(await boot({ costs: unproved })), 'mn-delta')[0]), [
       '+' + ((bp + 1) / 100).toFixed(1) + '% vs Aug 1\u201319',
@@ -557,6 +562,27 @@ test('the headline figures are the bill\'s own, and the dollar change is drawn o
     assert.equal(flat.total.changeBasisPoints, 0, 'the default fixture bills both stretches alike');
     assert.deepEqual(runs(byClass(hero(await boot({ costs: flat })), 'mn-delta')[0]),
       ['No change vs Aug 1\u201319']);
+
+    const uncollected = payload({ previousCollected: false });
+    const incompatible = payload({ previousCollected: false });
+    /* Both refusals withhold the comparison fields; only the route's daily note differs. */
+    incompatible.daily = buildDailySeries(incompatible.period, incompatible.period.billedDays,
+      window_(GROUPS, incompatible.period.start, incompatible.period.billedDays),
+      null, 'other_currency');
+    const refusals = [uncollected, incompatible];
+    for (const answer of refusals) {
+      assert.equal(answer.availability.state, 'ready');
+      assert.equal(answer.total.changeBasisPoints, undefined);
+      assert.equal(answer.comparison, undefined);
+      assert.equal(seriesOf(answer, 'previous'), undefined);
+    }
+    const uncompared = await Promise.all(refusals.map((costs) => boot({ costs })));
+    assert.deepEqual(uncompared.map((drawn) => byClass(hero(drawn), 'mn-delta').length), [0, 0],
+      'an uncollected or incompatible previous window cannot produce a delta');
+    for (const drawn of uncompared) {
+      assert.doesNotMatch(allText(livePanel(drawn)), /No change/,
+        '"No change" is a measured zero, not a missing or incompatible comparison');
+    }
   });
 
 /* ----------------------------------------------------- never a zero */
@@ -696,6 +722,13 @@ test('switching grouping redraws from the answer in hand, and hands focus back o
     assert.equal(after.getAttribute('data-view'), 'service',
       'the redraw destroyed the pressed button, so a keyboard operator is put on its replacement');
     assert.equal(after.getAttribute('aria-pressed'), 'true');
+    assert.deepEqual(rowsOf(dom).map((row) => ({
+      label: runs(byClass(row, 'mn-row-name')[0]).join(''),
+      amount: runs(byClass(row, 'mn-row-amt')[0]).join(''),
+    })), data.views.service.rows.map((row) => ({
+      label: row.label,
+      amount: usd(row.micros),
+    })), 'Service displays the service identities and their own billed amounts');
   });
 
 test('no view is offered that the answer did not carry, and a lone one is not a switch', async () => {
