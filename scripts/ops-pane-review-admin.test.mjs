@@ -102,12 +102,12 @@ const queueItem = {
   resultDigest: 'c'.repeat(64),
   status: 'open',
   rubric: { statement: 'Judge the rubric only.', grading: { method: 'qualified_human' }, authority: { domain: 'training' } },
-  evidence: { outcomePreview: 'Blinded output only.', evidenceRefs: ['evidence.demo.output'], comments: ['Evidence comment.'] },
+  evidence: { outcomePreview: 'Answer text only.', evidenceRefs: ['evidence.demo.output'], comments: ['Evidence comment.'] },
   redactions: ['candidateIdentity', 'baselineIdentity', 'modelFamily', 'modelConfig'],
   labelCounts: { submitted: 0, disputes: 0, adjudications: 0 },
 };
 
-test('review pane reads a blinded queue and hides labels before independent submission', async () => {
+test('review pane lists answers as plain rows and hides ratings before independent submission', async () => {
   const calls = [];
   const { root, toasts } = loadPane((path, opts = {}) => {
     calls.push({ path, opts });
@@ -119,23 +119,29 @@ test('review pane reads a blinded queue and hides labels before independent subm
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
-  assert.match(treeText(root), /Blinded review queue/, 'review pane must announce blinded queue');
-  assert.match(treeText(root), /evidence\.demo\.output/, 'queue cards render authorized evidence references before opening detail');
+  assert.match(treeText(root), /Judge the rubric only\./, 'the row names what the answer is judged on');
+  assert.match(treeText(root), /Training · Open · 0 ratings/, 'the row says who it is for, its state and how many ratings it has');
+  assert.doesNotMatch(treeText(root), /blind/i, 'the list does not use the word blinded');
+  assert.doesNotMatch(treeText(root), /evidence\.demo\.output|aaaaaaaa|candidateIdentity/, 'the row carries no digests, evidence references or redactions');
   assert.doesNotMatch(treeText(root), /gpt|claude|candidate model|baseline model/i, 'queue must not reveal model or treatment identity');
 
-  const button = find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent));
-  assert.ok(button, 'queue card must expose a review action');
+  const button = find(root, node => node.tag === 'button' && /^Review$/.test(node.textContent));
+  assert.ok(button, 'queue row must expose a review action');
+  assert.equal(button.getAttribute('aria-label'), 'Review: Judge the rubric only.', 'the action is named for its row');
   await button.dispatch('click');
   await Promise.resolve();
-  assert.match(treeText(root), /Hidden until you submit your own label/, 'other labels remain hidden before own label');
-  assert.match(treeText(root), /evidence\.demo\.output/, 'authorized evidence references render with the blinded output');
+  assert.match(treeText(root), /Hidden until you submit yours/, 'other ratings remain hidden before own rating');
+  assert.match(treeText(root), /evidence\.demo\.output/, 'authorized evidence references render with the answer');
   assert.match(treeText(root), /qualified_human/, 'grading metadata renders with the rubric');
+  assert.match(treeText(root), new RegExp(`Outcome digest\\s+${'a'.repeat(64)}(?![0-9a-f])`), 'the opened detail names the exact outcome version being rated, in full');
+  assert.match(treeText(root), new RegExp(`Criterion digest\\s+${'b'.repeat(64)}(?![0-9a-f])`), 'the opened detail names the exact criterion version it is rated against, in full');
+  assert.doesNotMatch(treeText(root), /blind/i, 'the detail does not use the word blinded');
 
   const rationale = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale');
   const comments = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'comments');
   assert.equal(rationale.getAttribute('id'), 'review-label-rationale', 'rationale control has a programmatic label target');
   assert.equal(find(root, node => node.tag === 'label' && node.getAttribute('for') === 'review-label-rationale')?.textContent, 'Rationale');
-  rationale.value = 'The blinded output satisfies the rubric.';
+  rationale.value = 'The answer satisfies the rubric.';
   comments.value = 'Independent human comment.';
   const form = find(root, node => node.tag === 'form');
   await form.dispatch('submit');
@@ -148,11 +154,23 @@ test('review pane reads a blinded queue and hides labels before independent subm
     label: 'pass',
     uncertainty: 'low',
     domain: 'training',
-    rationale: 'The blinded output satisfies the rubric.',
+    rationale: 'The answer satisfies the rubric.',
     comments: 'Independent human comment.',
     supersedesReviewId: null,
   });
-  assert.deepEqual(toasts, ['Review label recorded']);
+  assert.deepEqual(toasts, ['Rating recorded']);
+});
+
+test('review detail says a digest was not reported rather than leaving it blank', async () => {
+  const { root } = loadPane((path) => {
+    if (path === '/api/ops/seval/admin/reviews/queue') return Promise.resolve({ data: { items: [queueItem] } });
+    return Promise.resolve({ data: { ...queueItem, outcomeDigest: undefined, criterionDigest: '', reviewerState: { submittedOwnLabel: false, otherLabelsVisible: false }, correction: { activeReviewId: null }, labels: [] } });
+  });
+  await Promise.resolve();
+  await find(root, node => node.tag === 'button' && /^Review$/.test(node.textContent)).dispatch('click');
+  await Promise.resolve();
+  assert.match(treeText(root), /Outcome digest\s+Not reported/, 'a detail without an outcome digest says so');
+  assert.match(treeText(root), /Criterion digest\s+Not reported/, 'a detail without a criterion digest says so');
 });
 
 test('review pane sends the active review id for corrections', async () => {
@@ -167,7 +185,7 @@ test('review pane sends the active review id for corrections', async () => {
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
-  await find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent)).dispatch('click');
+  await find(root, node => node.tag === 'button' && /^Review$/.test(node.textContent)).dispatch('click');
   await Promise.resolve();
   assert.match(treeText(root), /Append correction/, 'existing own labels advertise corrections');
   find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale').value = 'Correction rationale.';
@@ -194,12 +212,12 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
-  const button = find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent));
+  const button = find(root, node => node.tag === 'button' && /^Review$/.test(node.textContent));
   await button.dispatch('click');
   await Promise.resolve();
-  assert.match(treeText(root), /Adjudicate disputed labels/, 'visible disputed labels must expose adjudication');
-  assert.doesNotMatch(treeText(root), /Submit independent label/, 'adjudicators who have seen labels cannot start an independent label');
-  assert.match(treeText(root), /independent labelling is closed/, 'adjudication mode explains why independent labelling is unavailable');
+  assert.match(treeText(root), /Settle the disagreement/, 'visible disputed labels must expose adjudication');
+  assert.doesNotMatch(treeText(root), /Submit rating/, 'adjudicators who have seen labels cannot start an independent rating');
+  assert.match(treeText(root), /you cannot add your own/, 'adjudication mode explains why an independent rating is unavailable');
   assert.match(treeText(root), /Grounded pass rationale/, 'adjudication view renders first label rationale');
   assert.match(treeText(root), /Grounded fail rationale/, 'adjudication view renders second label rationale');
 
@@ -222,7 +240,7 @@ test('review pane adjudicates disputed labels with exact digest bindings', async
     domain: 'training',
     rationale: 'The failing label cites the gating rubric.',
   });
-  assert.deepEqual(toasts, ['Adjudication recorded']);
+  assert.deepEqual(toasts, ['Decision recorded']);
 });
 
 test('review pane retries nonempty partial queues without clearing the active draft', async () => {
@@ -244,18 +262,18 @@ test('review pane retries nonempty partial queues without clearing the active dr
     throw new Error(`unexpected path ${path}`);
   });
   await Promise.resolve();
-  assert.match(treeText(root), /Review queue partially unavailable/, 'nonempty partial queues disclose their partial state');
-  const button = find(root, node => node.tag === 'button' && /Review blinded output/.test(node.textContent));
+  assert.match(treeText(root), /Some reviews could not be read/, 'nonempty partial queues disclose their partial state');
+  const button = find(root, node => node.tag === 'button' && /^Review$/.test(node.textContent));
   await button.dispatch('click');
   await Promise.resolve();
   const rationale = find(root, node => node.tag === 'textarea' && node.getAttribute('name') === 'rationale');
   rationale.value = 'Draft rationale must survive a queue retry.';
-  await find(root, node => node.tag === 'button' && /Reload review queue/.test(node.textContent)).dispatch('click');
+  await find(root, node => node.tag === 'button' && /^Reload$/.test(node.textContent)).dispatch('click');
   await Promise.resolve();
   assert.equal(queueReads, 2, 'partial retry reloads the queue data');
   assert.equal(rationale.value, 'Draft rationale must survive a queue retry.', 'partial retry preserves the active review draft');
-  assert.match(treeText(root), /Blinded output/, 'partial retry keeps the active detail mounted');
-  assert.doesNotMatch(treeText(root), /Review queue partially unavailable/, 'partial retry clears stale partial metadata after a complete queue response');
+  assert.match(treeText(root), /Answer to rate/, 'partial retry keeps the active detail mounted');
+  assert.doesNotMatch(treeText(root), /Some reviews could not be read/, 'partial retry clears stale partial metadata after a complete queue response');
 });
 
 test('review pane renders partial-failure recovery state without browser rendering', async () => {
@@ -267,21 +285,32 @@ test('review pane renders partial-failure recovery state without browser renderi
       : Promise.reject(new Error('network unavailable'));
   });
   await Promise.resolve();
-  assert.match(treeText(root), /Review queue incomplete/, 'partial empty queues are not described as genuinely empty');
+  assert.match(treeText(root), /Review list not fully read/, 'partial empty queues are not described as genuinely empty');
   assert.match(treeText(root), /review source timed out/, 'partial queue omissions are visible');
-  await find(root, node => node.tag === 'button' && /Reload review queue/.test(node.textContent)).dispatch('click');
+  await find(root, node => node.tag === 'button' && /^Reload$/.test(node.textContent)).dispatch('click');
   await Promise.resolve();
-  assert.match(treeText(root), /Could not load review queue/, 'queue read failures need a visible recovery state');
+  assert.match(treeText(root), /Reviews could not be read/, 'queue read failures need a visible recovery state');
   assert.match(treeText(root), /network unavailable/, 'failure detail should be visible near the failed state');
-  assert.ok(find(root, node => node.tag === 'button' && /Retry review queue/.test(node.textContent)), 'total failures offer retry');
+  assert.ok(find(root, node => node.tag === 'button' && /^Try again$/.test(node.textContent)), 'total failures offer retry');
 });
 
-test('review pane markup and CSS are responsive and CSP-safe', () => {
+test('review pane says an empty queue is empty', async () => {
+  const { root } = loadPane(() => Promise.resolve({ data: { items: [], partial: false, omissions: [] } }));
+  await Promise.resolve();
+  assert.match(treeText(root), /Nothing to review/, 'a complete empty queue reads as nothing to review');
+  assert.doesNotMatch(treeText(root), /not fully read/, 'a complete empty queue is not called incomplete');
+});
+
+/* What the controls measure (44px tall, 14px text) is asserted in a browser by
+   scripts/ops-review-controls-rendered.test.mjs. Searching this stylesheet for
+   a `min-height: 44px` or for small font sizes could not bind to the element:
+   it passed while the Review action's own rule fell to 20px and while the
+   shared .btn-sm, which sets the action's text size, fell to 10px. */
+test('review pane markup is mobile-first and CSP-safe, with a narrow layout', () => {
   const html = readFileSync(HTML, 'utf8');
   const css = readFileSync(CSS, 'utf8');
   assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/, 'review page must be mobile-first');
   assert.doesNotMatch(html, /style="/i, 'review page must not rely on inline styles');
   assert.match(css, /@media \(max-width: 760px\)/, 'review CSS must include a narrow-width breakpoint');
-  assert.match(css, /\.review-toolbar, \.review-list, \.review-form \{ grid-template-columns: 1fr; \}/, 'narrow layout must collapse dense grids to one column');
-  assert.match(css, /min-height: 44px/, 'review controls must meet minimum touch target height');
+  assert.match(css, /\.review-form \{ grid-template-columns: 1fr; \}/, 'narrow layout must collapse the form to one column');
 });

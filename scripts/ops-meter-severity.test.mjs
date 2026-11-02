@@ -78,6 +78,16 @@
  *
  * NOT COVERED
  *
+ * - Any meter a pane draws, against the card that pane puts it on. None is
+ *   reached: Aria AI's scoring drawing is gone (R54), Money's rebuild (#203)
+ *   draws no meter, and `pane-usage.js` draws one per feature row only
+ *   when the usage route carries `features.rows`, which the stub does not.
+ *   Every reading here is the synthetic arm's, taken off a real `.card`
+ *   built for the purpose. Giving the stub feature rows reaches the Usage
+ *   pane's bars and they fail claim 7, 2.44:1 to 2.50:1 fill against track,
+ *   because `.tone-cyan` and `.tone-violet` set `--c` to the bright token and
+ *   not the `-ink` one the severity tones use; that is the Usage pane's to
+ *   fix and `REAL_METERS` is what turns it into a decision when it is reached.
  * - No greyscale arm. It would not be independent evidence: relative
  *   luminance already discards hue, so a greyscale pass measures the same
  *   numbers a second time. The hue-free claim IS claim 5.
@@ -409,10 +419,29 @@ const EDGE_TRIM = 2;
 /* Literal floors, stated here rather than counted from the run. A floor
    derived from the thing under test cannot fail: a board that rendered no
    meters at all would satisfy "every meter rendered is correct" in silence.
-   Measured today: 96 meters, of which 56 carry a tone. */
-const METER_FLOOR = 40;
-const TONED_FLOOR = 24;
-const VALUE_FLOOR = 8;
+   Measured today: 8 meters, all of them the synthetic arm's (4 tones in each
+   theme). No pane draws a `.meter` in this sweep (see `REAL_METERS`).
+
+   These were 40, 24 and 8 when Aria AI's scoring drawing painted 76 of the
+   board's 96 meters and Money's rows the rest. Both are gone (R54: the first
+   was invented figures, the second was rebuilt in #203), so every count here
+   is now the synthetic arm's and the floors say so. They sit on what the arm
+   builds because that is all there is; `REAL_METERS` is what stops that from
+   passing for coverage of the panes. */
+const METER_FLOOR = 8;
+const TONED_FLOOR = 8;
+const VALUE_FLOOR = 4;
+
+/* How many meters the panes draw in this sweep, declared, and the files that
+   draw one. Zero is not a pass of anything: it is the admission that nothing
+   here has judged a pane's meter against its own card since the last two
+   drawers left the board. `pane-usage.js` draws one per feature row, but
+   only when the usage route carries `features.rows`, which the stub does not,
+   so the sweep never reaches it. `pane-data.js` `meterRow` has no caller. Both
+   are named so that a drawer nobody listed, or a stub that starts reaching
+   one, fails the inventory test instead of changing what the board means. */
+const REAL_METERS = 0;
+const METER_DRAWERS = ['pane-data.js', 'pane-usage.js'];
 
 /* #10848's fix darkens the light-theme fill to clear 3:1 against the TRACK,
    and the obvious way to cheat that is to darken it against everything -- the
@@ -443,10 +472,11 @@ const CARD_AGREE = 1.03;
    uniformity gate ever rejected every strip, "every bar clears 3:1 against
    its card" would be vacuously true. Applied PER THEME -- a pooled floor is
    satisfied by either theme alone, so a change that makes light-theme cards
-   non-uniform empties light's population while dark's 50 readings keep the
+   non-uniform empties light's population while dark's readings keep the
    count healthy and the claim silently judges one theme. T19 in the battery
-   is that payload. Counted today: see the run summary. */
-const CARD_FLOOR = 8;
+   is that payload. Counted today: 4 per theme, all of them the synthetic
+   arm's, read off its real `.card`; no pane draws a meter to add to them. */
+const CARD_FLOOR = 4;
 
 /* The severity hues are closer together after #10848 than before it --
    measured, light theme, closest pair `none` vs `ok` at 59.2 -> 39.9 RGB
@@ -457,13 +487,13 @@ const CARD_FLOOR = 8;
    rather than on it. */
 const TONE_SEPARATION = 30;
 
-/* Which severities a REAL pane must be caught drawing, per theme, declared
-   rather than counted. The totals above cannot do this job: `RANK.ok` is 0, so
-   a board of nothing but `ok` meters clears them with no notch on screen, and a
-   payload that deletes every `bad` reading leaves them green while the notch
-   claims judge nothing. `vio` is absent on purpose -- no pane draws one today,
-   which is why the synthetic arm exists and why it is the only thing that
-   caught `vio` rendering identically to `bad`. */
+/* Which severities must be caught drawing, per theme, declared rather than
+   counted. The totals above cannot do this job: `RANK.ok` is 0, so a board of
+   nothing but `ok` meters clears them with no notch on screen, and a payload
+   that deletes every `bad` reading leaves them green while the notch claims
+   judge nothing. No pane draws a toned meter today, so the synthetic arm is
+   what supplies them; it builds all four, `vio` included, which is the only
+   thing that caught `vio` rendering identically to `bad`. */
 const REQUIRED_REAL = ['warn', 'bad'];
 
 const THEMES = ['dark', 'light'];
@@ -598,10 +628,13 @@ const READ_METERS = `Array.prototype.map.call(document.querySelectorAll('.meter'
   };
 }).filter(function (m) { return m && m.box.width > 0 && m.box.height > 0; })`;
 
-/* Four tones built in the real document so they take the real cascade. They
-   exist because the panes render `ok`, `warn`, `bad` and nothing else -- `vio`
-   has a token and a rule and no site, which is precisely where a defect hides
-   until a pane starts using it. */
+/* Four tones built in the real document so they take the real cascade, inside
+   a real `.card` so the surface above each bar is the card's own `--surface`
+   and not a page background written for the purpose, with 32px between bars so
+   the strips at 18 and 26px above one land on card and not on the bar before
+   it. They exist because no pane draws a meter at all now, `vio` has a token
+   and a rule and no site, and that is precisely where a defect hides until a
+   pane starts using it. */
 const BUILD_SYNTHETIC = `(function () {
   var old = document.getElementById('severity-probe-host');
   if (old) old.remove();
@@ -612,12 +645,13 @@ const BUILD_SYNTHETIC = `(function () {
   host.style.top = '8px';
   host.style.width = '240px';
   host.style.zIndex = '99999';
-  host.style.background = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+  host.className = 'card';
+  host.style.padding = '36px 16px 16px';
   ['ok', 'warn', 'bad', 'vio'].forEach(function (tone) {
     var m = document.createElement('div');
     m.className = 'meter ' + tone + ' severity-probe';
     m.setAttribute('aria-hidden', 'true');
-    m.style.marginBottom = '10px';
+    m.style.marginBottom = '32px';
     var i = document.createElement('i');
     i.style.width = '160px';
     m.appendChild(i);
@@ -906,7 +940,8 @@ for (const theme of THEMES) {
   await forcedColors(false);
 }
 
-const toned = readings.filter((r) => r.tone);
+const board = [...readings, ...synthetic];
+const toned = board.filter((r) => r.tone);
 
 /* ------------------------------------------------------------------- tests */
 
@@ -933,14 +968,14 @@ test('the tone vocabulary this sweep declares is the tone vocabulary the sheets 
 });
 
 test('the sweep judged a real board of meters, not an empty one', () => {
-  assert.ok(readings.length >= METER_FLOOR,
-    `judged ${readings.length} meters, below the declared floor of ${METER_FLOOR}; ` +
+  assert.ok(board.length >= METER_FLOOR,
+    `judged ${board.length} meters, below the declared floor of ${METER_FLOOR}; ` +
     'a board that rendered nothing would satisfy every other claim in this file');
   /* PER THEME, not pooled. A pooled floor lets one theme contribute zero while
      the other carries the count, and every claim downstream then reports a
      healthy population for a sweep that judged one theme. */
   for (const theme of THEMES) {
-    const here = readings.filter((r) => r.theme === theme);
+    const here = board.filter((r) => r.theme === theme);
     assert.ok(here.length >= Math.floor(METER_FLOOR / THEMES.length),
       `judged ${here.length} meters in ${theme}, below its share of the floor; ` +
       'a pooled count hides a theme that rendered nothing');
@@ -953,14 +988,32 @@ test('the sweep judged a real board of meters, not an empty one', () => {
   for (const theme of THEMES) {
     for (const tone of REQUIRED_REAL) {
       assert.ok(toned.some((r) => r.theme === theme && r.tone === tone),
-        `no real .meter.${tone} was judged in the ${theme} theme, so every claim ` +
-        `about ${RANK[tone]}-notch severity rests on the synthetic arm alone`);
+        `no .meter.${tone} was judged in the ${theme} theme, so every claim ` +
+        `about ${RANK[tone]}-notch severity has nothing to judge`);
     }
   }
 });
 
+/* What the sweep says about the panes, declared. `REAL_METERS` is how many
+   meters a pane drew in it, and `METER_DRAWERS` the files that can draw one.
+   A new drawer, or a stub that reaches an existing one, changes what the
+   board means, so it fails here and whoever did it sets both and decides what
+   `CARD_FLOOR` and the floors above should now be -- including deleting the
+   admission that the panes' own cards go unjudged. */
+test('the sweep says which panes\' meters it reached and which drawers it did not', () => {
+  const assets = path.join(ROOT, 'ops/assets');
+  const drawers = fs.readdirSync(assets).filter((f) => f.endsWith('.js') &&
+    /className:\s*'meter[ ']/.test(fs.readFileSync(path.join(assets, f), 'utf8'))).sort();
+  assert.deepEqual(drawers, [...METER_DRAWERS].sort(),
+    'the files that draw a .meter changed; decide whether the sweep reaches them and update ' +
+    'METER_DRAWERS and REAL_METERS');
+  assert.equal(readings.length, REAL_METERS,
+    `the panes drew ${readings.length} meters in the sweep, declared ${REAL_METERS}; they are ` +
+    'judged by every claim below now, so raise REAL_METERS and restore real-card floors');
+});
+
 test('every meter a pane renders carries exactly the notches its tone declares', () => {
-  const wrong = readings
+  const wrong = board
     .map((r) => ({ r, want: r.tone ? RANK[r.tone] : 0 }))
     .filter(({ r, want }) => r.grooves.length !== want);
   assert.deepEqual(wrong.map(({ r, want }) =>
@@ -1016,7 +1069,7 @@ test('every severity-bearing fill is wide enough for its own notches', () => {
 });
 
 test('the bar reports its value, filled against unfilled, in both themes', () => {
-  const judged = readings.filter((r) => r.value && r.value.emptyWidth >= 4);
+  const judged = board.filter((r) => r.value && r.value.emptyWidth >= 4);
   for (const theme of THEMES) {
     const here = judged.filter((r) => r.theme === theme);
     assert.ok(here.length >= VALUE_FLOOR,

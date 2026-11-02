@@ -1572,7 +1572,6 @@ test('the rendered admission form submits the exact operation and renders a rece
   const resultText = treeText(view.byId('admission-result'));
   assert.match(resultText, /Admitted, no access granted/);
   assert.match(resultText, new RegExp(receiptId));
-  assert.match(resultText, /Receipt only/);
   assert.match(resultText, /Raw content, storage locations, evaluator access, training permission and export grants are intentionally not returned/);
 });
 
@@ -1846,86 +1845,20 @@ for (const scenario of [
    The block above exercises what the two working tools send, out of a
    hand-written stub. This one boots ops/evaluations.html the way a browser
    does — the registry, aria.js, assets/shell-pane-v2.js, then the pane — and
-   asserts the one thing this pane can get wrong in a way that matters:
-   whether a reader can tell the two figures that were measured from the
-   hundred that were made up.
+   asserts what a reader sees: the six tools and nothing drawn that is not one.
 
-   Two of these are the shapes this repository has shipped false greens in
-   before, so they are built deliberately:
+   The page used to end with a drawing of a scoring harness filled with made-up
+   figures, and most of this block existed to prove no figure escaped it. The
+   drawing is gone, so what is asserted now is that nothing replaced it: no
+   preview, no banner, no stamp, no meter. Role gating is asserted in BOTH
+   directions: a viewer is refused the evidence form and told why, AND an
+   operator gets the real form. A one-directional assertion stays green against
+   code that refuses everybody.
 
-     - "Nothing invented looks real" is NOT asserted by looking for a stamp.
-       A stamp assertion stays green if every band is stamped, if none is, or
-       if the wrong ones are. What is asserted is the PARTITION: every band
-       inside the preview carries the invented stamp, every band outside it
-       carries the working stamp, neither set is empty, and neither a
-       two-decimal score nor a listed invented phrase appears outside the
-       preview in the two render states swept. Move one band across that
-       boundary and seven tests in this file go red.
-
-     - Role gating is asserted in BOTH directions: a viewer is refused the
-       evidence form and told why, AND an operator gets the real form. A
-       one-directional assertion stays green against code that refuses
-       everybody.
-
-   NOT COVERED here, deliberately, and not implied to be:
-
-     - Laid-out geometry, except the width of the document. The stub has no
-       layout, so nothing about the dashed hairline, the hatch or the contrast
-       of the preview is asserted here, and check-ops-shell-v2.mjs only asserts
-       this page renders with no console error, which stays true when the
-       preview is widened past the viewport. One thing is guarded, since
-       Stadiora/Aria#10492: check-ops-narrow-overflow.mjs lays this page out at
-       375px and 360px in both themes and fails if the DOCUMENT scrolls
-       sideways, which is what this pane's 89-character registry filterNote
-       does when BOTH copies of `white-space: normal` are taken away — the one
-       in shell-pane-v2.css's `.filter-note` block and the one at
-       pane-evaluations-v2.css:41, which is `.filters .filter-note` and so wins
-       on specificity. Deleting only the shell copy leaves this page green;
-       deleting both gives the measured scrollWidth 514 against a 375px
-       viewport, the note named as the offender. Anything finer than the
-       document width — an element that overruns inside a container that clips
-       it, the 390px reading on the PR — is still a hand-run number and not a
-       regression test.
-     - The CSS that draws the stamp. These assert the word and the class the
-       pane writes, not what pane-evaluations-v2.css paints them.
-     - That INVENTED_FIGURES and INVENTED_PHRASES are COMPLETE. They are two
-       hand-written inventories, and the sweeps can only look for what is in
-       them plus any two-decimal score plus a digit inside a stamp. A made-up
-       string outside all three of those shapes — a bare count like the "3"
-       and "11" in the comparison panel, a new sentence with a round number
-       in it — can be printed outside the preview and nothing here will see
-       it. Adding invented data to the pane means adding it to an inventory
-       by hand; there is no mechanism that notices you did not.
-     - RENDER STATES BEYOND TWO. The outward sweeps read the page as it boots,
-       and again after each of the two working tools has been submitted and
-       answered. The ERROR branches are a third state and nothing reads them:
-       a two-decimal score and a listed phrase appended to the JSON-parse
-       catch in datasetValidationSection leave the whole suite green, while the
-       same string on a boot-state hint in evidenceQuarantineSection turns
-       three tests red. So the gap is the render state, not the string. Both
-       are published rows of the battery on the PR. Named by function rather
-       than by line, because a line number is the one citation that rots on
-       every edit above it, and this one already went stale once.
-     - A FIGURE SPLIT MID-TOKEN across two elements. The sweeps read one
-       string built from <body> with the preview subtree removed, joining
-       element boundaries with a single space the way allText does. A phrase
-       or score split across SIBLING elements is found — <b>180</b> inside a
-       sentence is this file's own idiom, and a per-element sweep walked past
-       it until a reviewer demonstrated it. But "0.8" and "2" in two adjacent
-       elements join as "0.8 2" here and as "0.82" in a browser.
-     - THAT THE POST-SUBMIT SWEEP'S WAIT IS FAST ENOUGH, proven locally. It
-       waits for the receipt itself now rather than for a fixed number of
-       microtask turns, and there is no local mutation behind that: the turn
-       budget it replaced was green on every machine it was written on and red
-       on ubuntu-latest for five heads, so the platform that shows the defect
-       is the only one that can show the fix. The evidence is CI's own red at
-       f3a38ff and green after, linked on the PR, not a row of the battery. An
-       attempt to reproduce it locally by settling the receipt on a timer is
-       recorded on the PR as contaminated and was withdrawn rather than
-       published. What IS asserted here is that a wait which ends early cannot
-       pass silently: the two receipts are looked for by name and the failure
-       message says the test swept nothing.
-     - The dataset and quarantine transports, which the block above owns. */
+   NOT COVERED here: laid-out geometry, which the stub does not have.
+   check-ops-narrow-overflow.mjs lays this page out at 375px and 360px in both
+   themes and fails if the DOCUMENT scrolls sideways. The dataset and quarantine
+   transports are owned by the block above. */
 
 const OPS = new URL('../ops/', import.meta.url);
 const readOps = rel => readFileSync(new URL(rel, OPS), 'utf8');
@@ -1940,49 +1873,6 @@ const TOKENS = {
   '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
   '--line-2': '#1F2A36', '--ink': '#E6EDF3',
 };
-
-/* Written out here rather than read back off the pane. An expectation derived
-   from the thing under test moves with the mutation, which is the "the mock
-   ignores the query" failure wearing a different hat. If the pane's INVENTED
-   table changes, this list has to be changed by hand to match — which is the
-   point, because adding a made-up figure should be a deliberate act. */
-const INVENTED_FIGURES = [
-  '0.82', '0.88', '0.90', '0.87', '0.86', '0.79', '0.96', '0.84', '0.83',
-  '0.74', '0.91', '0.62', '0.71', '0.70', '0.81', '0.68', '0.78', '0.89',
-  '0.85',
-  /* A movement carries its direction as a sign, because a glyph nobody
-     announces and a tint are not a direction. */
-  '-0.29', '-0.17', '-0.14', '-0.13', '-0.08', '-0.06', '-0.02', '-0.03',
-  '-0.01', '-0.09', '+0.03', '+0.02',
-  /* Two more that live inside a sentence rather than in a cell: the
-     regressions threshold, and the safety floor. Dropping either went
-     unnoticed until a reviewer looked for them. */
-  '0.05', '0.95',
-];
-
-/* Made-up strings that are NOT two-decimal scores. The sweep below sees a
-   score and nothing else, so a duration, a case count, a timestamp or a
-   made-up case id walks straight past it — which is how a banner chip reading
-   "Last scored 29 Jul, 180 cases, 41 minutes" could sit above the boundary
-   with this whole file green.
-
-   Written out by hand, like the figures, and deliberately restricted to
-   strings distinctive enough that a real value from the working half cannot
-   collide with one. Bare counts the design prints in the comparison panel
-   ("3" and "11" cases below 0.70) are NOT here for that reason, and are named
-   in the NOT COVERED block above. */
-const INVENTED_PHRASES = [
-  '180 cases', '41 minutes', '02:14 UTC', '$3.18', '73% of sessions',
-  'Held since 29 Jul', 'first scored', 'Cases below 0.70',
-  'tc_0147', 'tc_0312', 'tc_0208', 'tc_0455', 'tc_0091',
-  '14 Jul', '30 Jun', '12 Jun', '28 May', '14 May', '2 May',
-];
-
-/* A score is written to two decimals everywhere on this pane, so this is the
-   shape of "a figure somebody could quote". It is asserted to appear only
-   inside the preview. Nothing real on this pane is written this way: the two
-   working tools print a 64-character digest, a byte count and a timestamp. */
-const SCORE = /\d\.\d\d(?!\d)/;
 
 function buildEvalsPage(dom, body) {
   const el = (parent, tag, attrs = {}) => {
@@ -2429,84 +2319,6 @@ const within = (node, ancestor) => {
   return false;
 };
 
-/* Everything a reader meets on the page EXCEPT the preview, as one string.
-   Four things this buys over asking each element for its own text:
-
-   - A phrase split across sibling elements is still found. <b>180</b> inside a
-     sentence is this file's own idiom (u-list-row bolds a score that way), and
-     a per-element sweep walks straight past it.
-   - It starts at <body>, not at #content, so the shell's live region is swept.
-     announce() is how a screen-reader operator receives every success message
-     on this pane, and the stamps are visual chips; an invented figure announced
-     there would reach a blind operator with nothing marking it invented.
-   - It collects text carried on ATTRIBUTES, not only textContent, and the LIVE
-     `value` a control is holding, which is a property and not always an
-     attribute — `expiry.value = ...` and `mediaType.value = ...` in this pane
-     set one without the other, and a sweep that asks getAttribute walks past
-     what is painted in the box. The attribute list is SPOKEN_ATTRS below and
-     that is the only place it is written down, because an enumeration repeated
-     in prose goes stale the round after the list is widened — which is how
-     `value` came to be missing from one and present in the other. Two shapes
-     justify the class: text PAINTED on screen (a field's value, a placeholder
-     shown until the operator types), and text a screen reader SUBSTITUTES for
-     the element's own (aria-label, title, alt). The second is worse than the
-     live region, because it also suppresses the real words underneath it. This
-     pane already uses all three idioms.
-   - There is one string and one place to be wrong, rather than a rule applied
-     per node.
-
-   Element boundaries join with a single space, the way allText does, so a
-   figure split MID-TOKEN across two elements is not found. That is disclosed
-   below rather than chased. */
-const SPOKEN_ATTRS = ['value', 'placeholder', 'title', 'aria-label',
-  'aria-description', 'aria-valuetext', 'alt', 'aria-roledescription'];
-
-function textOutside(node, excluded) {
-  if (!node || node === excluded) return '';
-  const own = node.textContent || '';
-  const spoken = node.getAttribute
-    ? SPOKEN_ATTRS.map(name => node.getAttribute(name) || '').join(' ')
-    : '';
-  /* The property, separately from the attribute of the same name. A control
-     whose value was assigned in JS has no value attribute at all. */
-  const held = typeof node.value === 'string' ? node.value : '';
-  const kids = (node.childNodes || []).map(kid => textOutside(kid, excluded)).join(' ');
-  return (own + ' ' + spoken + ' ' + held + ' ' + kids).replace(/\s+/g, ' ').trim();
-}
-
-/* A readable slice around a hit, so a failure names where to look. */
-const around = (haystack, needle) => {
-  const at = haystack.indexOf(needle);
-  return haystack.slice(Math.max(0, at - 60), at + needle.length + 60);
-};
-
-function scoresOutside(text) {
-  const out = [];
-  const re = new RegExp(SCORE.source, 'g');
-  let hit;
-  while ((hit = re.exec(text))) out.push(around(text, hit[0]));
-  return out;
-}
-
-const phrasesOutside = text => INVENTED_PHRASES
-  .filter(phrase => text.includes(phrase))
-  .map(phrase => `${phrase} — ${around(text, phrase)}`);
-
-function previewOf(dom) {
-  return find(dom.content, node => hasClass(node, 'preview'));
-}
-
-/* The stamp a band carries, as the word a reader sees plus whether it is the
-   working variant. Read off .band-end so a chip sitting somewhere else in the
-   band cannot stand in for the one in the status slot. */
-function bandStamp(section) {
-  const end = find(section, node => hasClass(node, 'band-end'));
-  if (!end) return null;
-  const chip = find(end, node => hasClass(node, 'u-tag'));
-  if (!chip) return null;
-  return { word: allText(chip), works: hasClass(chip, 'works') };
-}
-
 const bandTitle = section => allText(find(section, node => hasClass(node, 'band-title')));
 
 test('v2: the pane reads no API on boot', async () => {
@@ -2515,142 +2327,41 @@ test('v2: the pane reads no API on boot', async () => {
     'both tools act on what the operator supplies and the scoring half has no API');
 });
 
-test('v2: every band in the preview is stamped invented and every band outside it is stamped working', async () => {
-  const dom = await bootPane();
-  const preview = previewOf(dom);
-  assert.ok(preview, 'the deferred scoring preview is missing');
+test('v2: the page draws the six tools and nothing made up', async () => {
+  const dom = await bootPane({ role: 'owner' });
+  const titles = findAll(dom.content, isBand).map(bandTitle);
+  assert.deepEqual(titles, [
+    'Scenario catalogue',
+    'Scenario runs',
+    'Check a dataset declaration',
+    'Put evidence into quarantine',
+    'Qualified approval handoff',
+    'Admit synthetic evidence',
+  ], 'the page holds the six tools, in order, and no other band');
 
-  const bands = findAll(dom.content, isBand);
-  const inside = bands.filter(b => within(b, preview));
-  const outside = bands.filter(b => !within(b, preview));
-
-  /* Neither half may be empty. A partition with one side empty is the shape
-     that stays green when every card is marked, or none is. */
-  assert.ok(inside.length >= 3, `the preview must hold the drawn bands, saw ${inside.length}`);
-  assert.ok(outside.length >= 2, `the working tools must be bands too, saw ${outside.length}`);
-  assert.equal(inside.length + outside.length, bands.length);
-
-  for (const section of inside) {
-    const stamp = bandStamp(section);
-    assert.ok(stamp, `preview band "${bandTitle(section)}" carries no stamp`);
-    assert.equal(stamp.word, 'Invented figures',
-      `preview band "${bandTitle(section)}" is stamped "${stamp.word}"`);
-    assert.equal(stamp.works, false,
-      `preview band "${bandTitle(section)}" carries the working stamp`);
+  for (const cls of ['preview', 'soon', 'u-tag', 'meter', 'tbl-wrap']) {
+    assert.deepEqual(findAll(dom.content, node => hasClass(node, cls)).length, 0,
+      `a "${cls}" element is back, which only the retired scoring drawing used`);
   }
-  for (const section of outside) {
-    const stamp = bandStamp(section);
-    assert.ok(stamp, `working band "${bandTitle(section)}" carries no stamp`);
-    assert.equal(stamp.word, 'Works now',
-      `working band "${bandTitle(section)}" is stamped "${stamp.word}"`);
-    assert.equal(stamp.works, true,
-      `working band "${bandTitle(section)}" carries the invented stamp`);
-  }
-});
+  assert.doesNotMatch(allText(dom.content), /Works now|Invented figures|not built yet|\d\.\d\d(?!\d)/,
+    'the page prints a stamp, a not-built banner or a two-decimal score');
 
-test('v2: no score reaches the page outside the preview', async () => {
-  const dom = await bootPane();
-  const offenders = scoresOutside(textOutside(dom.body, previewOf(dom)));
-  assert.deepEqual(offenders, [],
-    'a two-decimal figure outside the preview is a made-up number with no stamp over it');
-});
-
-test('v2: every invented figure the design prints is inside the preview', async () => {
-  const dom = await bootPane();
-  const preview = previewOf(dom);
-  /* Tokens rather than whole node text, because a figure is allowed to sit in
-     a sentence — the regressions threshold does. Trailing punctuation is
-     trimmed back to the last digit, so "0.85." matches and "ships." cannot. */
-  const printed = new Set(allText(preview).split(/\s+/)
-    .map(word => word.replace(/^[^0-9+-]+/, '').replace(/[^0-9]+$/, ''))
-    .filter(Boolean));
-  const missing = INVENTED_FIGURES.filter(figure => !printed.has(figure));
-  assert.deepEqual(missing, [],
-    'the drawn design lost a figure, or printed one somewhere this test cannot see it');
-});
-
-test('v2: the banner says the harness is not built and that the figures below are invented', async () => {
-  const dom = await bootPane();
-  const banner = find(dom.content, node => hasClass(node, 'soon'));
-  assert.ok(banner, 'the not-built banner is missing');
-  assert.equal(within(banner, previewOf(dom)), false, 'the banner must not be inside what it warns about');
-
-  const words = allText(banner);
-  assert.match(words, /not built yet/, 'the banner must say the harness is not built');
-  assert.match(words, /figures somebody made up/, 'the banner must say the figures are invented');
-  assert.match(words, /No harness/);
-  assert.match(words, /No stored scores/);
-
-  /* Order matters: a warning a reader meets after the thing it warns about has
-     already been read is not a warning. */
-  const flat = findAll(dom.content, () => true);
-  assert.ok(flat.indexOf(banner) < flat.indexOf(previewOf(dom)),
-    'the banner must come before the preview in reading order');
-});
-
-test('v2: the preview holds no control and the working bands do', async () => {
-  const dom = await bootPane();
-  const preview = previewOf(dom);
+  /* Every band is one a person can operate. A band with nothing to press or
+     fill in is a drawing. */
   const CONTROL = new Set(['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA']);
-
-  /* The fold control is subtracted here and re-asserted below rather than
-     waved through: it is a control, it is in the preview, and it is in the
-     tab order, so the only honest way past this assertion is to say what it
-     is and hold it to the same bar as the scroll region. It does not operate
-     the harness — it shows and hides a section — so it is the same kind of
-     thing the region below is, and it is why the preview can be 42% of this
-     pane's height on a phone without being 42% of the scrolling. */
-  const folds = findAll(preview, node => hasClass(node, 'band-fold'));
-  const dead = findAll(preview, node => CONTROL.has(node.tagName))
-    .filter(node => !folds.includes(node))
-    .map(node => `${node.tagName.toLowerCase()} "${allText(node)}"`);
-  assert.deepEqual(dead, [],
-    'a drawing of a pane must not put a control that changes nothing into the tab order');
-
-  const previewBands = findAll(preview, isBand);
-  assert.equal(folds.length, previewBands.length,
-    'every band in the preview folds, or the index it is part of is a half index');
-  for (const fold of folds) {
-    assert.equal(fold.tagName, 'BUTTON');
-    assert.equal(fold.getAttribute('type'), 'button',
-      'a control inside no form still must not be a submit button by default');
-    /* Named, like the scroll region, and named with its own band's heading so
-       a reader who has only the control knows what it opens. */
-    const name = fold.getAttribute('aria-label') || '';
-    assert.ok(previewBands.some(section => bandTitle(section) === name),
-      `fold control named "${name}" does not match any band heading in the preview`);
-    assert.ok(fold.getAttribute('aria-controls'),
-      'a disclosure that does not say what it controls is a shrug');
+  for (const section of findAll(dom.content, isBand)) {
+    const own = findAll(section, node => CONTROL.has(node.tagName) && !hasClass(node, 'band-fold'));
+    assert.ok(own.length > 0, `band "${bandTitle(section)}" has nothing to operate`);
   }
 
-  /* Everything else the preview puts in the tab order, enumerated rather than
-     assumed absent: a table that scrolls sideways has to be reachable from a
-     keyboard, and that is the one thing in here allowed to take focus. It
-     changes nothing — it moves the view — and it carries a name. */
-  const focusable = findAll(preview, node => node.getAttribute('tabindex') === '0');
-  assert.equal(focusable.length, 1, 'the preview should hold exactly one focus stop');
-  assert.equal(hasClass(focusable[0], 'tbl-wrap'), true);
-  assert.equal(focusable[0].getAttribute('role'), 'region');
-  assert.match(focusable[0].getAttribute('aria-label') || '', /invented/i,
-    'the scroll region must carry a name, and the name must repeat the warning');
-
-  const working = findAll(dom.content, isBand).filter(b => !within(b, preview));
-  for (const section of working) {
-    assert.ok(findAll(section, node => CONTROL.has(node.tagName)).length > 0,
-      `working band "${bandTitle(section)}" has nothing to operate`);
-  }
-});
-
-test('v2: every meter in the preview is decoration beside a printed number', async () => {
-  const dom = await bootPane();
-  const preview = previewOf(dom);
-  const meters = findAll(preview, node => hasClass(node, 'meter'));
-  assert.ok(meters.length >= 5, `expected the drawn bars, saw ${meters.length}`);
-  for (const bar of meters) {
-    assert.equal(bar.getAttribute('aria-hidden'), 'true',
-      'a bar with no accessible name must not be announced as an unnamed thing');
-    assert.match(allText(bar.parentNode), /\d/,
-      'a bar is only decoration when its value is printed next to it');
+  /* Every band folds on a phone, and each fold is named for its own heading so
+     a reader who has only the control knows what it opens. */
+  for (const section of findAll(dom.content, isBand)) {
+    const fold = find(section, node => hasClass(node, 'band-fold'));
+    assert.ok(fold, `band "${bandTitle(section)}" has no fold control`);
+    assert.equal(fold.getAttribute('type'), 'button');
+    assert.equal(fold.getAttribute('aria-label'), bandTitle(section));
+    assert.ok(fold.getAttribute('aria-controls'), 'a disclosure that does not say what it controls is a shrug');
   }
 });
 
@@ -2674,15 +2385,12 @@ test('v2: a viewer is refused the evidence form, told why, and keeps the rest of
 
   assert.ok(find(dom.content, node => hasClass(node, 'dataset-form')),
     'a viewer keeps the tool their role can use');
-  assert.ok(previewOf(dom), 'a viewer sees the same deferred design');
 });
 
-test('v2: the pane keeps the registry note saying why shell filters do not apply', async () => {
+test('v2: the pane draws no filter bar, because none of its tools is filtered by app, date or environment', async () => {
   const dom = await bootPane();
-  const bar = find(dom.doc.body, node => hasClass(node, 'filters'));
-  assert.ok(bar, 'the filter bar carrying the note is missing');
-  assert.match(allText(bar),
-    /Browse has pane-local filters; the mutation tools use supplied declarations or evidence, not app, date or environment filters/);
+  assert.equal(find(dom.doc.body, node => hasClass(node, 'filters')), null,
+    'a filter bar is back on a pane whose tools take their input from forms');
 });
 
 test('v2: the consent boundary survives the restyle for every role', async () => {
@@ -2695,99 +2403,9 @@ test('v2: the consent boundary survives the restyle for every role', async () =>
   }
 });
 
-/* Two facts a reader of this pane has to be able to trust, each found by a
-   reviewer as a green suite hiding a live defect.
-
-   The banner draws the boundary between the half that runs and the half that
-   is drawn, so nothing above that boundary may make a claim a reader could
-   quote. A chip there reading "Design agreed 12 Jul 2026" wearing the marker
-   this pane uses for "this really runs" shipped past every other test in this
-   file, because the sweep below only looks for a two-decimal score. */
-test('v2: the banner states no figure and claims nothing that runs', async () => {
-  const dom = await bootPane();
-  const banner = find(dom.content, node => hasClass(node, 'soon'));
-  assert.ok(banner, 'the coming-soon banner is gone');
-  const text = allText(banner);
-  assert.ok(!/\d/.test(text),
-    `the banner prints a figure, and a figure above the boundary is a claim: ${text}`);
-
-  /* And no stamp chip anywhere on the pane carries a figure. A stamp is a
-     status marker, so a digit inside one is a claim wearing a status. Every
-     chip the pane draws is a word: "Works now", "Invented figures",
-     "No access granted", "No harness", "No stored scores", "No alerting". */
-  const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
-  assert.ok(chips.length >= 6, `expected the drawn stamps, saw ${chips.length}`);
-  const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
-  assert.deepEqual(numeric, [],
-    'a stamp carries a figure, which is a claim wearing a status marker');
-
-  const preview = previewOf(dom);
-  const bands = findAll(dom.content, isBand);
-  const working = bands.filter(section => !within(section, preview));
-  assert.ok(working.length >= 2, `expected the working bands, saw ${working.length}`);
-  const marked = findAll(dom.content,
-    node => hasClass(node, 'u-tag') && hasClass(node, 'works'));
-  assert.ok(marked.length >= 2,
-    `nothing wears the working marker, so this test proves nothing: ${marked.length}`);
-  const stray = marked
-    .filter(node => !working.some(section => within(node, section)))
-    .map(node => allText(node));
-  assert.deepEqual(stray, [],
-    'the marker for "this really runs" is worn by something outside a working band');
-});
-
-/* A rise and a fall reached a screen reader as the same three characters,
-   because the direction lived only in an aria-hidden glyph and a tint.
-   assets/pane-overview.js:796 carries the same repair. */
-test('v2: a rise and a fall do not announce the same thing', async () => {
-  const dom = await bootPane();
-  const preview = previewOf(dom);
-  const pills = findAll(preview, node => hasClass(node, 'u-move'));
-  assert.ok(pills.length >= 10, `expected the drawn change pills, saw ${pills.length}`);
-  const rises = pills.filter(node => hasClass(node, 'up')).map(node => allText(node).trim());
-  const falls = pills.filter(node => hasClass(node, 'down')).map(node => allText(node).trim());
-  assert.ok(rises.length >= 1, `the design draws no rise, so this test proves nothing`);
-  assert.ok(falls.length >= 2, `the design draws ${falls.length} falls, expected the drawn set`);
-
-  const shared = rises.filter(text => falls.includes(text));
-  assert.deepEqual(shared, [],
-    'a rise and a fall announce the same text, so direction is carried by colour alone');
-  assert.deepEqual(rises.filter(text => !text.startsWith('+')), [],
-    'a rising change does not announce its sign');
-  assert.deepEqual(falls.filter(text => !text.startsWith('-')), [],
-    'a falling change does not announce its sign');
-});
-
-/* The sweep for two-decimal scores is the narrowest possible reading of "no
-   invented figure escapes the preview". A reviewer showed four made-up strings
-   leaving it with the suite green: a duration, a case count, a timestamp and a
-   made-up case id. These two tests widen it to the inventory, in both
-   directions, and the NOT COVERED block above states what is still outside
-   them. */
-test('v2: every invented phrase the design prints is inside the preview', async () => {
-  const dom = await bootPane();
-  const text = allText(previewOf(dom));
-  const missing = INVENTED_PHRASES.filter(phrase => !text.includes(phrase));
-  assert.deepEqual(missing, [],
-    'the drawn design stopped printing a made-up string, or moved it out of the preview');
-});
-
-test('v2: no invented phrase reaches the page outside the preview', async () => {
-  const dom = await bootPane();
-  const offenders = phrasesOutside(textOutside(dom.body, previewOf(dom)));
-  assert.deepEqual(offenders, [],
-    'a made-up string outside the preview is an unstamped claim');
-});
-
-/* Every sweep above reads the page as it boots, and the two working tools each
-   draw a card only AFTER a submit — a validation receipt and a quarantine
-   receipt. A reviewer printed round one's dated chip onto the receipt and the
-   whole suite stayed green: the partition was asserted over a DOM that does
-   not contain the half most likely to grow a claim, because that is where the
-   server's answer lands.
-
-   This boots the pane with a working transport, submits both forms, and runs
-   the three outward-facing sweeps again over the page that results. */
+/* The tools a receipt lands in draw their card only AFTER a submit, so the
+   boot-state assertions above never see it. This boots the pane with a working
+   transport and submits both forms. */
 async function bootPaneWithReceipts() {
   const digest = 'b'.repeat(64);
   const dom = await bootPane({
@@ -2868,58 +2486,33 @@ async function bootPaneWithReceipts() {
     (hasClass(node, 'dataset-form') || hasClass(node, 'evidence-form')));
   assert.equal(forms.length, 2, `expected dataset and quarantine forms, saw ${forms.length}`);
 
-  /* One reading per submit, not one at the end. The shell's live region is a
-     single node that each announce() overwrites, so a figure announced by the
-     first tool is gone by the time the second has answered. Reading only the
-     final DOM would see the last announcement and call the rest covered.
-
-     Each reading waits for the RECEIPT, not for a fixed number of microtask
+  /* Each submit is awaited on its RECEIPT, not on a fixed number of microtask
      turns. A turn budget is a guess about machine speed: quarantine awaits
      crypto.subtle.digest, which on a cold CI runner does not settle inside any
      budget that is comfortable locally, and this test was red on ubuntu-latest
      for five heads because of it while passing on every developer machine. */
-  const snapshots = [];
   const receipts = ['Declarations valid', 'Quarantined, review required'];
   for (let i = 0; i < forms.length; i += 1) {
     forms[i].dispatch('submit', { preventDefault() {} });
     await waitFor(
       () => Boolean(find(dom.content, n => (n.textContent || '') === receipts[i])),
       `the ${receipts[i]} receipt never rendered, so this test sweeps nothing`);
-    snapshots.push(textOutside(dom.body, previewOf(dom)));
   }
-  return { ...dom, snapshots };
+  return dom;
 }
 
-test('v2: the sweeps hold over the cards a submit draws, not only over the boot', async () => {
+test('v2: a submit draws a receipt that says what happened and states no score', async () => {
   const dom = await bootPaneWithReceipts();
-  /* The receipt has to actually be on the page, or every assertion below is
-     about a DOM that never grew the thing it is sweeping for. */
   const receipt = find(dom.content, node => (node.textContent || '') === 'Declarations valid');
-  assert.ok(receipt, 'the validation receipt never rendered, so this test sweeps nothing');
+  assert.ok(receipt, 'the validation receipt never rendered');
   const quarantined = find(dom.content,
     node => (node.textContent || '') === 'Quarantined, review required');
-  assert.ok(quarantined, 'the quarantine receipt never rendered, so this test sweeps nothing');
+  assert.ok(quarantined, 'the quarantine receipt never rendered');
 
-  /* True by construction today: bootPaneWithReceipts asserts the dataset and quarantine forms and
-     pushes one reading each, and THAT assertion is what catches an unread
-     tool. This one holds the shape if a future edit makes the push
-     conditional. */
-  assert.equal(dom.snapshots.length, 2, 'one reading per submit');
-  for (const outside of dom.snapshots) {
-    assert.deepEqual(scoresOutside(outside), [],
-      'a two-decimal figure reached a card a submit drew, outside the preview');
-    assert.deepEqual(phrasesOutside(outside), [],
-      'a made-up string reached a card a submit drew, outside the preview');
-  }
-
-  const chips = findAll(dom.content, node => hasClass(node, 'u-tag'));
-  /* Nine at boot, including approval, plus the quarantine receipt's one.
-     The validation receipt carries no chip. */
-  assert.ok(chips.length >= 10,
-    `expected the boot stamps plus the quarantine receipt's stamp, saw ${chips.length}`);
-  const numeric = chips.map(node => allText(node)).filter(chip => /\d/.test(chip));
-  assert.deepEqual(numeric, [],
-    'a stamp on a card a submit drew carries a figure');
+  const page = allText(dom.content);
+  assert.doesNotMatch(page, /\d\.\d\d(?!\d)/, 'a receipt printed a two-decimal figure');
+  assert.doesNotMatch(page, /Works now|Invented figures/, 'a receipt carries a stamp');
+  assert.equal(findAll(dom.content, node => hasClass(node, 'preview')).length, 0);
 });
 
 /* The platform is SEVAL, and the backend retired every Ciel name: /api/ops/ciel/operations

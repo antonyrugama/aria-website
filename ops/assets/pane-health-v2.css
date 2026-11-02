@@ -109,6 +109,7 @@
 .day-fig { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .day-fig + .day-fig, .day-tally + .day-fig { padding-left: 22px; border-left: 1px solid var(--line-2); }
 .day-n { font-size: 30px; font-weight: 600; line-height: 1.15; color: var(--ink); }
+.day-fig.is-failed.is-hot .day-n { color: var(--rose-ink); }
 .day-fig .day-l { text-transform: capitalize; }
 .day-sub { font-size: 14px; color: var(--ink-3); }
 .day-foot { font-size: 15px; color: var(--ink-3); }

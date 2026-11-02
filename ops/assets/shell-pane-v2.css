@@ -95,6 +95,9 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
   height: 2px;
   background: var(--cyan);
 }
+/* Violet is Aria AI's, so its tabs and the sparkle beside its title wear it. */
+.subnav[data-destination="ai"] .subnav-item.on::after { background: var(--violet); }
+.page-title-ico { display: inline-block; width: 24px; height: 24px; margin-right: 10px; vertical-align: -2px; color: var(--violet-ink); }
 @media (max-width: 980px) {
   .subnav { padding: 0 4px; }
   .subnav-item { min-height: 44px; padding: 0 10px; }

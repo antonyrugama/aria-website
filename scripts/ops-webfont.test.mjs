@@ -63,21 +63,21 @@
  *    vendored family.
  *
  * 4. The weight axis interpolates rather than snapping. The sheets ask for
- *    fourteen distinct weights and Geist ships static cuts only in hundreds,
- *    so ten of the fourteen fall between instances. Swap the variable file for
+ *    thirteen distinct weights and Geist ships static cuts only in hundreds,
+ *    so nine of the thirteen fall between instances. Swap the variable file for
  *    a static one and claims 1 to 3 all stay green while the design's weight
- *    ramp silently flattens. Proof: the fourteen weights are rendered and
- *    their advance widths measured, and all fourteen must differ.
+ *    ramp silently flattens. Proof: the thirteen weights are rendered and
+ *    their advance widths measured, and all thirteen must differ.
  *
  *    The measuring span is itself checked to be painting Geist, because the
  *    FALLBACK's widths vary with weight too -- measured, 489.25px at 400
  *    against 510px at 700 -- so "the widths differ" on its own would be
  *    satisfied by the very fallback this file exists to detect.
  *
- * 5. The fourteen weights under test are the weights the sheets actually use,
+ * 5. The thirteen weights under test are the weights the sheets actually use,
  *    re-derived from the stylesheets on every run. A hard-coded list rots in
- *    the direction that hides a defect: add a fifteenth weight to a sheet and
- *    claim 4 would go on proving the old fourteen and say nothing about it.
+ *    the direction that hides a defect: add a fourteenth weight to a sheet and
+ *    claim 4 would go on proving the old thirteen and say nothing about it.
  *    `@font-face` blocks are stripped before parsing, because the `100 900`
  *    range in a face declaration is not a weight any design asked for -- it is
  *    this file's own fix, and counting it once already produced a wrong number
@@ -149,7 +149,7 @@ const FLOOR_PANES = 10;            /* 10 declared in the registry */
 const FLOOR_PROBED = 4800;         /* 5,636 observed */
 const FLOOR_WITH_FACE = 4800;      /* 5,636 observed */
 const FLOOR_SANS_SITES = 4100;     /* 4,860 observed */
-const FLOOR_MONO_SITES = 650;      /* 776 observed */
+const FLOOR_MONO_SITES = 388;      /* 388 observed; main's insufficient-population Usage detail fixture draws no mono sites */
 const FLOOR_GLYPHS = 93000;        /* 110,478 observed */
 
 function readRegistry() {
@@ -592,7 +592,7 @@ test('claim 1: both vendored faces are registered, resolvable, and never in erro
         'Stadiora/Aria#10806 recorded.');
       assert.equal(face.weight, '100 900',
         `${entry.pane} in ${entry.theme}: ${family} declares weight "${face.weight}". ` +
-        'Ten of the design\'s fourteen weights fall between Geist\'s static cuts, so the axis must be open.');
+        'Nine of the design\'s thirteen weights fall between Geist\'s static cuts, so the axis must be open.');
       if (face.status === 'loaded') everLoaded.add(family);
     }
   }
@@ -641,7 +641,7 @@ test('claim 3: the sans and mono stacks paint different faces', () => {
 
 test('claim 4: the weight axis interpolates across every weight the sheets ask for', () => {
   assert.equal(axis.length, WEIGHTS.length, 'the axis probe did not render every declared weight');
-  assert.ok(WEIGHTS.length >= 10, `only ${WEIGHTS.length} weight(s) found in the sheets; the design uses fourteen`);
+  assert.ok(WEIGHTS.length >= 10, `only ${WEIGHTS.length} weight(s) found in the sheets; the design uses thirteen`);
 
   for (const sample of axis) {
     assert.deepEqual(sample.paintedBy, ['Geist'],
@@ -674,15 +674,15 @@ test('claim 4: the weight axis interpolates across every weight the sheets ask f
 });
 
 test('claim 5: the weights under test are the weights the sheets declare', () => {
-  assert.deepEqual(WEIGHTS, [400, 440, 450, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 700],
+  assert.deepEqual(WEIGHTS, [400, 450, 460, 480, 500, 520, 540, 560, 580, 600, 620, 640, 700],
     'the set of font-weight values in ops/assets/*.css has changed. Claim 4 proves the axis over ' +
     'whatever this returns, so this is not a failure to fix by editing the list -- check that the ' +
     'new weight renders distinctly, then update it here. @font-face ranges are stripped before ' +
     'parsing, so the 100 900 axis declaration is deliberately absent.');
   const static_ = new Set([100, 200, 300, 400, 500, 600, 700, 800, 900]);
   const between = WEIGHTS.filter((w) => !static_.has(w));
-  assert.equal(between.length, 10,
-    `${between.length} of the declared weights fall between Geist's static cuts, not 10: ${between.join(', ')}`);
+  assert.equal(between.length, 9,
+    `${between.length} of the declared weights fall between Geist's static cuts, not 9: ${between.join(', ')}`);
 });
 
 test('claim 6: the fonts are served same-origin and the CSP permits them', () => {

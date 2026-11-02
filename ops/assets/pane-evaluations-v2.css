@@ -1,28 +1,13 @@
-/* Aria quality, on the v2 pane bootstrap.
+/* More, under Aria AI, on the v2 pane bootstrap.
 
-   The pane holds two things that must not be confused for one another. Two
-   tools work today — dataset declaration validation and evidence quarantine —
-   and the scoring harness the pane is named for does not exist. Everything
-   below the violet banner is a drawing of the harness's agreed layout filled
-   with numbers somebody made up.
+   Two tools work here — dataset declaration validation and evidence quarantine —
+   next to the scenario catalogue, the controlled runs and the approval and
+   admission handoffs. The page used to end with a drawing of a scoring harness
+   filled with invented figures. It is gone, along with the stamps, the hatch
+   and the rules that existed to keep that line visible.
 
-   So the rules here are mostly about keeping that line visible:
-
-     - Every figure in the drawing carries the word "Invented" somewhere above
-       it, on its own band, because a screenshot of one card has to arrive with
-       the warning attached to it.
-     - The drawing is marked as a drawing by a dashed hairline and a hatch, not
-       by fading it. The mock faded the preview to 55%, which is the obvious
-       move and an AA failure: the v2 palette is contrast-correct at full
-       strength (monorepo Stadiora/Aria#10042, #10293) and multiplying every ink
-       by .55 walks it straight out of that. Nothing here changes an ink.
-     - The drawing contains no control at all. A faded button is still in the
-       tab order, and a control that changes nothing is worse than no control.
-       Its one focus stop is the table that scrolls sideways on a phone, which
-       moves the view rather than changing anything.
-
-   Everything the pane draws otherwise is aria.css's: .card, .band, .pill,
-   .meter, .tbl, .kpi. Only the shapes aria.css has no name for are here.
+   Everything the pane draws is aria.css's: .card, .band, .pill, .kpi. Only the
+   shapes aria.css has no name for are here.
 
    Two names, .q-field and its children, exist because aria.css already has a
    .field — the search box in the top bar — and a form field is not that. */
@@ -391,162 +376,7 @@ select.field-input { appearance: none; padding-right: 26px; }
 }
 .callout-warn svg { color: var(--amber-ink); }
 
-/* ----------------------------------------------------------- not-built yet
-   Sized like a hero rather than a note, because a reader who skims past it
-   reads invented figures as real. */
-.card.soon { --acc: var(--violet); }
-.card.soon > .card-body {
-  align-items: flex-start;
-  gap: 18px;
-  padding: 20px 22px;
-}
 
-.u-soon-icon {
-  width: 54px; height: 54px; flex: none;
-  border-radius: 17px;
-  display: grid; place-items: center;
-  color: var(--violet-ink);
-  background: color-mix(in srgb, var(--violet) 13%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 28%, transparent);
-}
-.u-soon-icon svg { width: 25px; height: 25px; }
-
-.u-soon-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.u-soon-title { font-size: 18px; font-weight: 620; letter-spacing: -.018em; }
-.u-soon-line { font-size: 12.5px; line-height: 1.6; color: var(--ink-2); max-width: 80ch; }
-
-/* Repeated over every band of the drawing so a screenshot of any one card
-   still carries the warning with it. The word does the work; the violet only
-   agrees with it. */
-.u-tag {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 7px; border-radius: 6px;
-  font-size: 9.5px; font-weight: 620; letter-spacing: .1em; text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--violet-ink);
-  background: color-mix(in srgb, var(--violet) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--violet) 24%, transparent);
-}
-.u-tag svg { width: 11px; height: 11px; }
-
-/* A band whose tool really runs gets the same chip shape in the same slot, so
-   the two are read against each other rather than one being read alone. */
-.u-tag.works {
-  color: var(--emerald-ink);
-  background: color-mix(in srgb, var(--emerald) 12%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--emerald) 26%, transparent);
-}
-
-/* ------------------------------------------------------------ the drawing
-   Not a live panel: no lit top edge, a dashed hairline, and a hatch behind
-   the content rather than over it so nothing above it loses contrast. The
-   stripe is ink at 4%, lighter than .state-icon's own 6% fill in aria.css. */
-.preview { display: flex; flex-direction: column; gap: 26px; }
-.preview .card {
-  background: none;
-  background-color: color-mix(in srgb, var(--bg) 45%, transparent);
-  box-shadow: none;
-  border: 1px dashed var(--line-2);
-}
-.preview .card::before { display: none; }
-.preview .card > .card-body,
-.preview .card > .tbl-wrap {
-  background: repeating-linear-gradient(135deg,
-    color-mix(in srgb, var(--ink) 4%, transparent) 0 6px,
-    transparent 6px 14px);
-}
-.preview .card > .card-body:last-child,
-.preview .card > .tbl-wrap:last-child { border-radius: 0 0 var(--r-lg) var(--r-lg); }
-.preview .tbl tbody tr:hover { background: none; }
-
-/* A table has a minimum width its columns cannot go under, so on a phone it
-   scrolls inside its own panel rather than taking the document with it.
-
-   Positioned, because `overflow-x` clips only a descendant whose containing
-   block is this box. An absolutely positioned one resolves its containing
-   block to the nearest positioned ancestor, so while this box was static the
-   nearest was the page: a visually-hidden span inside a table wider than the
-   phone would sit at its static position in page coordinates, escape this
-   clip and take the document sideways while the table around it scrolled
-   correctly. ops.css carried this on .table-wrap and the v2 sheets dropped it.
-   Stadiora/Aria#10706. */
-.tbl-wrap { overflow-x: auto; position: relative; }
-.tbl-wrap:focus-visible { outline-offset: -2px; }
-.tbl-wrap .tbl { min-width: 560px; }
-
-/* ------------------------------------------------- scores by dimension
-   Name, bar, score, movement, in that order, so the eye runs down the bars
-   and stops at the short one. */
-.u-score {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 168px 52px 84px;
-  gap: 16px;
-  align-items: center;
-  padding: 11px 0;
-  border-top: 1px solid var(--line);
-}
-.u-score:first-child { border-top: 0; padding-top: 2px; }
-.u-score-name { font-size: 12.5px; font-weight: 520; }
-.u-score-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
-.u-score-val { font-family: var(--mono); font-size: 14.5px; text-align: right; font-variant-numeric: tabular-nums; }
-.u-score-chg { display: flex; justify-content: flex-end; }
-
-/* The change beside a score. `u-move` marks the pills that are a movement —
-   assets/pane-evaluations.js queries it, because `.pill.down` is also the red
-   tone and the release-held pill wears that without being a fall — and it
-   carried no rule of its own, in this sheet or any other the page loads
-   (Stadiora/Aria#10647).
-
-   What it now carries is the treatment the figure beside it already has.
-   `.u-score-val` three rules up is mono and tabular; the movement is the same
-   figure in the same column and was neither, so the column jittered. Tabular
-   digits alone do not fix it, because the sign is not a tabular glyph: at
-   identical digits `+0.03` came out 1.9px wider than `-0.02`. Mono sets every
-   character to one advance, sign included, so the column is a column whatever
-   font the machine falls back to. aria.css's `.pill .mono` is this exact
-   treatment — same family, same 11px — for a figure inside a pill; the span is
-   the figure, and the bare-word pills ("flat", "first scored") are left in the
-   text face because they are not figures. */
-.u-move { font-variant-numeric: tabular-nums; }
-.u-move span { font-family: var(--mono); font-size: 11px; }
-
-/* -------------------------------------------------------- side by side */
-.u-vs { display: grid; grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr); }
-.u-vs-rule { background: var(--line); }
-.u-vs-side { min-width: 0; padding: 0 18px; }
-.u-vs-side:first-child { padding-left: 0; }
-.u-vs-side:last-child { padding-right: 0; }
-.u-vs-app { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 540; flex-wrap: wrap; }
-.u-vs-app small { font-size: 11.5px; font-weight: 440; color: var(--ink-3); }
-.u-vs-big { font-family: var(--mono); font-size: 30px; letter-spacing: -.03em; margin-top: 8px; }
-.u-vs-cap { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
-.u-fig {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  padding: 5px 0; border-top: 1px solid var(--line);
-}
-.u-fig:first-of-type { margin-top: 12px; }
-.u-fig-k { font-size: 12px; color: var(--ink-3); }
-.u-fig-v { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; letter-spacing: -.015em; }
-
-.u-rose { color: var(--rose-ink); }
-
-.u-held { display: flex; flex-direction: column; gap: 9px; }
-.u-held-line { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); max-width: 70ch; }
-
-.u-split { display: flex; flex-direction: column; gap: 11px; }
-.u-split-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; }
-
-.u-meta { display: flex; flex-direction: column; gap: 5px; }
-.u-meta-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; }
-
-.u-list { display: flex; flex-direction: column; }
-.u-list-head {
-  display: flex; justify-content: space-between; gap: 10px;
-  font-size: 11.5px; color: var(--ink-3);
-  padding-bottom: 6px; border-bottom: 1px solid var(--line);
-}
-.u-list-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 11.5px; padding: 5px 0; }
-.u-list-end { display: flex; align-items: center; gap: 8px; }
 
 /* -------------------------------------------------------------- narrow */
 
@@ -607,22 +437,7 @@ select.field-input { appearance: none; padding-right: 26px; }
   .band-fold svg { transition: none; }
 }
 
-@media (max-width: 1280px) {
-  .u-score { grid-template-columns: minmax(0, 1fr) 110px 48px 78px; gap: 12px; }
-}
-
 @media (max-width: 900px) {
   .q-grid,
   .evidence-form-grid { grid-template-columns: minmax(0, 1fr); }
-  /* The bar drops under the row, and the three text cells keep the row.
-     Placing the bar explicitly matters: auto-placement pushed it to a row of
-     its own and then started a third row for the score and the change, which
-     left the last track empty at every width under 900px. */
-  .u-score { grid-template-columns: minmax(0, 1fr) 48px 74px; row-gap: 6px; column-gap: 12px; }
-  .u-score > :first-child { grid-column: 1; grid-row: 1; }
-  .u-score .meter { grid-column: 1 / -1; grid-row: 2; }
-  .u-vs { grid-template-columns: minmax(0, 1fr); }
-  .u-vs-rule { height: 1px; width: auto; margin: 6px 0; }
-  .u-vs-side { padding: 0; }
-  .u-soon-title { font-size: 16px; }
 }

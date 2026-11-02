@@ -487,8 +487,11 @@
         : fmt.int(measured) + ' measured';
     }
 
-    function figure(kind, value, label, sub) {
-      return h('div', { className: 'day-fig is-' + kind }, [
+    /* `hot` marks a figure that is a count of something gone wrong and is not
+       zero: the failed count is the one number on this tile that wants a
+       person, and a zero is not news. */
+    function figure(kind, value, label, sub, hot) {
+      return h('div', { className: 'day-fig is-' + kind + (hot ? ' is-hot' : '') }, [
         h('span', { className: 'num day-n', text: value }),
         h('span', { className: 'day-l', text: label }),
         sub ? h('span', { className: 'day-sub', text: sub }) : null
@@ -520,7 +523,9 @@
       ]));
       node.appendChild(St.workedBar(day));
 
-      var tally = h('div', { className: 'day-tally' }, [figure('failed', fmt.int(day.failed), 'failed')]);
+      var tally = h('div', { className: 'day-tally' }, [
+        figure('failed', fmt.int(day.failed), 'failed', null, day.failed > 0)
+      ]);
       if (day.canceled !== null) {
         tally.appendChild(h('p', { className: 'day-foot', text: fmt.int(day.canceled) + ' cancelled' }));
       }

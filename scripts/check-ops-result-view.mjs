@@ -278,10 +278,12 @@ const datedSub = (iso) => {
   return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
 };
 /* Money's line comes off the cost answer's own `asOf`: the time the server
-   collected the bill, not the time the page was opened. */
+   collected the bill, not the time the page was opened. Delivery carries the
+   same dated head as Today, off the same summary read. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
   alerts: () => datedSub(JOBS.generatedAt),
+  delivery: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(COSTS.asOf),
   /* Growth carries the date and which seven days it is about, off the seven
      day answer's own window. */
@@ -309,7 +311,8 @@ const PAGES = Object.keys(DECLARED).map((key) => ({
   key,
   file: DECLARED[key].file,
   url: '/ops/' + DECLARED[key].file,
-  label: DECLARED[key].label,
+  /* The title the top bar draws: the registry's heading where a pane has one. */
+  label: DECLARED[key].heading || DECLARED[key].label,
   question: DECLARED[key].question
 }));
 
@@ -805,6 +808,18 @@ const RUNS = {
   truncated: false
 };
 
+/* The same two runs as the last 24 hours, for Delivery, which asks the route
+   for that window and draws its chart and table only from a complete list. */
+const RUNS_DAY = {
+  ...RUNS,
+  window: { range: '24h', startAt: ago(DAY), endExclusiveAt: ago(0) },
+  summary: {
+    runs: 2, completed: 1, failed: 1, canceled: 0, failureReasons: 1, unfinished: 0,
+    duration: { p50Ms: 8400, measured: 2, total: 2 },
+    queued: { p50Ms: 900, measured: 2, total: 2 }
+  }
+};
+
 const REVIEW_ITEM = {
   reviewItemId: 'review-item.browser-training',
   outcomeDigest: 'a'.repeat(64),
@@ -859,7 +874,9 @@ function stub(pathname, body, query) {
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) return { data: { problems: PROBLEMS } };
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
-  if (pathname === '/api/ops/runs') return { data: RUNS };
+  if (pathname === '/api/ops/runs') {
+    return { data: query && query.get('range') === '24h' ? RUNS_DAY : RUNS };
+  }
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
   if (pathname.startsWith('/api/ops/usage')) {
@@ -977,14 +994,14 @@ const DRIVE = {
   })()`,
   review: `(async () => {
     const deadline = Date.now() + ${STEP_MS} * 8;
-    while (!Array.from(document.querySelectorAll('button')).some((button) => /Review blinded output/.test(button.textContent || '')) && Date.now() < deadline) {
+    while (!Array.from(document.querySelectorAll('button')).some((button) => /^Review$/.test(button.textContent || '')) && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
     }
-    const button = Array.from(document.querySelectorAll('button')).find((candidate) => /Review blinded output/.test(candidate.textContent || ''));
+    const button = Array.from(document.querySelectorAll('button')).find((candidate) => /^Review$/.test(candidate.textContent || ''));
     if (!button) return 'the review queue drew no review button';
     button.click();
     await new Promise((r) => setTimeout(r, ${STEP_MS}));
-    return 'opened a blinded review item';
+    return 'opened a review item';
   })()`
 };
 
@@ -1033,6 +1050,9 @@ const RESULT_PROOF = {
   /* Only the answered validation draws these: the digest the stub sent back
      and the sentence the pane writes for a valid declaration. */
   evals: ['Declarations valid', 'b'.repeat(64)],
+  /* The day's runs, which only the by-job table prints, and the title of the
+     review item the queue holds, which only the review list prints. */
+  delivery: [RUNS.runs[1].type.label, REVIEW_ITEM.rubric.statement],
   review: [REVIEW_ITEM.evidence.evidenceRefs[0], REVIEW_ITEM.evidence.outcomePreview],
   releases: [RELEASES.sources[0].label, RELEASES.adoption.buckets[0].label],
   /* Nothing here is on the page until a lookup has answered AND a match has
@@ -1105,13 +1125,13 @@ const KNOWN_UNPAINTED_STATE = [];
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Ten panes are zero because their result views declare no ARIA state at
+   Eleven panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
-   silently compared nothing. Ten, not eleven: releases draws state too, and
+   silently compared nothing. Eleven, not twelve: releases draws state too, and
    this table said 0 for it until round 15 read the number the sweep prints
    against the number this table demands. */
 const EXPECTED_PAIRS = {
-  overview: 0, jobs: 0, history: 0, alerts: 0, problems: 0, analytics: 0, usage: 0,
+  overview: 0, jobs: 0, history: 0, alerts: 0, problems: 0, analytics: 0, usage: 0, delivery: 0,
   /* One pair: the Group-the-bill-by switch's buttons, one `aria-pressed`
      group over the cuts the answer carries (ops/assets/pane-spend.js,
      `viewSwitch()`). The switch is drawn only when two or more cuts have rows,

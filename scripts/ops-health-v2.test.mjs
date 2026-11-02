@@ -412,6 +412,15 @@ test('worked over attempted leaves cancellations out and counts them beside it',
     'a count nobody sent was drawn');
 });
 
+test('the failed count wears the problem colour only when something failed', async () => {
+  const marked = async (failed) => {
+    const dom = await boot({ runs: runsFixture((r) => { r.summary.completed = 20; r.summary.failed = failed; }) });
+    return classesOf(one(host(dom, 'day'), 'is-failed')).includes('is-hot');
+  };
+  assert.equal(await marked(2), true, 'a day with failures drew its failed count like a quiet one');
+  assert.equal(await marked(0), false, 'a zero failed count was dressed as news');
+});
+
 test('typical time needs a measured base, and says how large it is', async () => {
   const typical = async (duration) => {
     const dom = await boot({ runs: runsFixture((r) => { r.summary.duration = duration; }) });

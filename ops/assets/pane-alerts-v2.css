@@ -332,7 +332,7 @@
    is in "the rules table scrolls inside a box a keyboard can reach and a
    screen reader can name", which is also where the tab stop is asserted.
 
-   SAME FOCUS RING AS: pane-settings-v2.css, pane-evaluations-v2.css
+   SAME FOCUS RING AS: pane-settings-v2.css
    DIFFERENT FOCUS RING: pane-releases-v2.css adds border-radius: 0
 
    Both lines are read by the same test, which finds each named sheet's

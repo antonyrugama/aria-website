@@ -56,7 +56,7 @@
     bell:    ['M18 8a6 6 0 1 0-12 0c0 6-2.5 7-2.5 7h17S18 14 18 8Z', 'M13.7 20a2 2 0 0 1-3.4 0'],
     chart:   ['M3 3v16.5A1.5 1.5 0 0 0 4.5 21H21', 'M7 15.5V12M12 15.5V7M17 15.5v-5'],
     coin:    ['M14.7 9.2A3 3 0 0 0 12 7.8c-1.7 0-3 1-3 2.3s1.3 2 3 2.3 3 1 3 2.3-1.3 2.3-3 2.3a3 3 0 0 1-2.7-1.4', 'M12 6v12'],
-    spark:   ['m12 3 2.1 5.6L20 10l-4.5 3.8L16.8 20 12 16.9 7.2 20l1.3-6.2L4 10l5.9-1.4Z'],
+    spark:   ['M12 3c.8 5 3 7.2 8 9-5 1.8-7.2 4-8 9-.8-5-3-7.2-8-9 5-1.8 7.2-4 8-9Z'],
     ship:    ['M12 2 4 6.5v11L12 22l8-4.5v-11Z', 'M4 6.5 12 11l8-4.5M12 11v11'],
     person:  ['M4.5 20a7.5 7.5 0 0 1 15 0'],
     gear:    ['M19.4 14.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H2a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.4-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H8a1.6 1.6 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 1 1.4 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8a1.6 1.6 0 0 0 1.5 1h.2a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1Z'],
@@ -152,7 +152,7 @@
     { id: 'growth', label: 'Growth',  href: 'analytics.html',   icon: 'chart', key: 'analytics' },
     { id: 'health', label: 'Health',  href: 'alerts.html',      icon: 'pulse', key: 'alerts' },
     { id: 'money',  label: 'Money',   href: 'spend.html',       icon: 'coin',  key: 'spend' },
-    { id: 'ai',     label: 'Aria AI', href: 'evaluations.html', icon: 'spark', key: 'evals' }
+    { id: 'ai',     label: 'Aria AI', href: 'delivery.html',    icon: 'spark', key: 'delivery' }
   ];
 
   /* What the avatar menu offers. Settings is one page; the three sections the

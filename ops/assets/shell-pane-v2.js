@@ -1411,7 +1411,7 @@
     registry.DESTINATIONS.forEach(function (d) { if (d.id === pane.destination) destination = d; });
 
     var nav = h('nav', {
-      className: 'subnav', id: 'subnav',
+      className: 'subnav', id: 'subnav', 'data-destination': pane.destination,
       'aria-label': (destination ? destination.label : 'Section') + ' pages'
     });
     ids.forEach(function (id) {
@@ -1602,8 +1602,8 @@
       return;
     }
 
-    document.title = pane.label + ' | Aria Operations';
     activePane = pane;
+    document.title = (pane.heading ? pane.heading + ' \u00b7 ' + pane.label : pane.label) + ' | Aria Operations';
     setGate('booting');
 
     session.boot().then(whenParsed).then(function () {
@@ -1631,7 +1631,7 @@
          file's. */
       aria.boot({
         id: pane.destination,
-        title: pane.label,
+        title: pane.heading || pane.label,
         sub: pane.datedHead ? '' : pane.question,
         subSlot: !!pane.datedHead,
         badges: lockedBadges(),
@@ -1640,6 +1640,10 @@
       });
       refreshNavHrefs();
 
+      if (pane.headIcon) {
+        var heading = document.querySelector('.page-title');
+        if (heading) heading.insertBefore(icon(pane.headIcon, 'page-title-ico'), heading.firstChild);
+      }
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (paneContent[pageId]) paneContent[pageId](content, pane);
       else content.appendChild(renderNotBuilt(pane));
