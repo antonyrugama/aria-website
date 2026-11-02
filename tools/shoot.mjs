@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
-const WT = '/data/ianrowe/worktrees/r54-ops-health';
+const WT = process.env.WT || '/data/ianrowe/worktrees/r54-ops-health';
 const require = createRequire('/data/ianrowe/git/harvey-realestate-mocks/package.json');
 const { chromium } = require('playwright-core');
 const stubMod = await import(WT + '/scripts/ops-api-stub.mjs');
@@ -67,10 +67,21 @@ const STATES = {
   } },
   error: { override: (p) => (p.startsWith('/api/ops/alerts') || p === '/api/ops/jobs' || p === '/api/ops/runs' ? { fail: true } : undefined) },
   queue: { role: 'owner' },
-  critical: { scene: 'default' }
+  critical: { scene: 'default' },
+  /* Pending reports as the stub's own queue has them (due two hours on). */
+  safety: { role: 'owner' },
+  /* One past its deadline, one with no deadline at all. */
+  safetyLate: { role: 'owner', override: (p) => {
+    if (!p.startsWith('/api/ops/moderation/reports')) return undefined;
+    const { MODERATION_REPORTS } = stubMod;
+    const ago = (h) => new Date(Date.now() - h * 3600000).toISOString();
+    return { data: { nextCursor: null, items: MODERATION_REPORTS.map((r, n) => ({ ...r, actionDueAt: n === 2 ? null : ago(n === 0 ? 3 : 1) })) } };
+  } },
+  safetyFail: { role: 'owner', override: (p) => (p.startsWith('/api/ops/moderation/reports') ? { fail: true } : undefined) },
+  safetyNone: { role: 'owner', override: (p) => (p.startsWith('/api/ops/moderation/reports') ? { data: { items: [], nextCursor: null } } : undefined) }
 };
 
-async function shoot(name, { width, height, theme, state }) {
+async function shoot(name, { width, height, theme, state, page: route = '/ops/alerts.html', measure = [], styles = null }) {
   const spec = STATES[state];
   scene = spec.scene || 'health';
   override = spec.override || null;
@@ -86,17 +97,50 @@ async function shoot(name, { width, height, theme, state }) {
   }, [origin, theme]);
   page.on('console', (m) => { if (m.type() === 'error') console.log('console.error:', m.text()); });
   page.on('pageerror', (e) => console.log('pageerror:', e.message));
-  await page.goto(origin + '/ops/alerts.html', { waitUntil: 'networkidle' });
+  await page.goto(origin + route, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   await page.screenshot({ path: path.join(out, name + '.png'), fullPage: true });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  console.log(name, 'overflow', overflow);
+  const boxes = await page.evaluate((sels) => sels.map((s) => Array.from(document.querySelectorAll(s)).map((n) => {
+    const b = n.getBoundingClientRect();
+    return { w: Math.round(b.width), h: Math.round(b.height), top: Math.round(b.top + window.scrollY), text: (n.textContent || '').trim().slice(0, 60) };
+  })), measure);
+  console.log(name, 'overflow', overflow, measure.length ? JSON.stringify(Object.fromEntries(measure.map((s, i) => [s, boxes[i]]))) : '');
+  if (styles) {
+    /* Every element under `styles`, as tag.class plus the computed properties
+       that decide how it looks, so two checkouts can be compared by diff. */
+    const dump = await page.evaluate((root) => {
+      const keys = ['display', 'color', 'backgroundColor', 'borderTopWidth', 'borderTopColor', 'borderTopStyle', 'borderRadius',
+        'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'marginTop', 'marginBottom', 'fontSize', 'fontWeight',
+        'fontFamily', 'lineHeight', 'letterSpacing', 'minHeight', 'width', 'opacity'];
+      const top = document.querySelector(root);
+      if (!top) return null;
+      return [top, ...top.querySelectorAll('*')].slice(0, 400).map((n) => {
+        const c = getComputedStyle(n);
+        return [n.tagName.toLowerCase() + '.' + String(n.getAttribute('class') || ''), Object.fromEntries(keys.map((k) => [k, c[k]]))];
+      });
+    }, styles);
+    fs.writeFileSync(path.join(out, name + '.styles.json'), JSON.stringify(dump, null, 1));
+  }
   await ctx.close();
 }
 
+const SAFETY_BOXES = ['#health-safety .prob-row', '#health-safety .prob-view', '#health-safety .prob-retry .btn', '#health-problems .prob-row', '#health-problems .prob-view'];
 const jobs = [
-  ['health-queue-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'queue' }],
-  ['health-queue-phone', { width: 390, height: 2300, theme: 'dark', state: 'queue' }],
+  ['health-safety-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'safety', measure: SAFETY_BOXES }],
+  ['health-safety-phone', { width: 390, height: 1700, theme: 'dark', state: 'safety', measure: SAFETY_BOXES }],
+  ['health-safety-late-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'safetyLate', measure: SAFETY_BOXES }],
+  ['health-safety-late-phone', { width: 390, height: 1700, theme: 'dark', state: 'safetyLate', measure: SAFETY_BOXES }],
+  ['health-safety-fail-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'safetyFail', measure: SAFETY_BOXES }],
+  ['health-safety-fail-phone', { width: 390, height: 1700, theme: 'dark', state: 'safetyFail', measure: SAFETY_BOXES }],
+  ['health-safety-none-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'safetyNone', measure: SAFETY_BOXES }],
+  ['health-safety-light-desktop', { width: 1536, height: 1024, theme: 'light', state: 'safety', measure: SAFETY_BOXES }],
+  ['problems-queue-desktop', { width: 1536, height: 1400, theme: 'dark', state: 'safety', page: '/ops/problems.html', styles: '.ugc-queue', measure: ['.ugc-queue', '.ugc-queue select', '.ugc-queue button'] }],
+  ['problems-queue-phone', { width: 390, height: 2400, theme: 'dark', state: 'safety', page: '/ops/problems.html', styles: '.ugc-queue', measure: ['.ugc-queue', '.ugc-queue select'] }],
+  /* WT=<a checkout of main> node shoot.mjs ... main-queue-*: where the queue was drawn on main. */
+  ['main-queue-desktop', { width: 1536, height: 1400, theme: 'dark', state: 'safety', page: '/ops/alerts.html', styles: '.ugc-queue', measure: ['.ugc-queue', '.ugc-queue select', '.ugc-queue button'] }],
+  ['main-queue-phone', { width: 390, height: 2400, theme: 'dark', state: 'safety', page: '/ops/alerts.html', styles: '.ugc-queue', measure: ['.ugc-queue', '.ugc-queue select'] }],
+  ['health-viewer-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'full', measure: SAFETY_BOXES }],
   ['health-critical-desktop', { width: 1536, height: 1024, theme: 'dark', state: 'critical' }],
   ['health-critical-phone', { width: 390, height: 1500, theme: 'dark', state: 'critical' }],
   ['health-phone-375', { width: 375, height: 1500, theme: 'dark', state: 'full' }],
