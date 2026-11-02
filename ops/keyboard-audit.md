@@ -40,7 +40,7 @@ _None._
 
 - **No focus traps.** 26 walks, 583 stops, 0 traps. A control is called a trap only after **12** consecutive Tab presses leave `document.activeElement` unchanged — twice the widest composite input Chrome ships, which is the 6-field `datetime-local`.
 - **Nothing unreachable.** 533 enabled, visible, interactive controls; 0 were not reached by Tab.
-- **24 stops landed on something this tool does not call interactive**, and 3 of 26 walks ended by wrapping back to their first stop (23 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
+- **24 stops landed on something this tool does not call interactive**, and 4 of 26 walks ended by wrapping back to their first stop (22 ran out of document instead, and 0 hit the press limit). The terminal stop is timing-dependent in Chrome; the first two endings are both complete walks and neither is a defect. The third is a truncated one, and a full sweep refuses rather than reporting over it.
 - **Tab order is reading order** on all 26 walks: 0 stops out of DOM order, where a stop is out of order if its element precedes the previous stop's element in document order.
 - **Shift+Tab is the exact inverse of Tab** on 26 of 26 walks, over the WHOLE walk rather than a prefix of it: 531 stops retraced against 583 forward stops, which took 549 presses because a composite input consumes several. 0 walks made no press and are counted on neither side.
 - **The skip link works.** It is the first stop on 26/26 walks and Enter lands focus on `main#content` on 26/26.
