@@ -26,7 +26,7 @@ function makeDom(tokens) {
   let doc;
   const readTokens = typeof tokens === 'function' ? tokens : () => tokens;
 
-  function parseSelector(sel) {
+  function parseCompound(sel) {
     const parts = sel.trim().split(/(?=[.[])/);
     const tests = [];
     for (const part of parts) {
@@ -52,6 +52,23 @@ function makeDom(tokens) {
     }
     if (!tests.length) throw new Error('empty selector');
     return (el) => tests.every((t) => t(el));
+  }
+
+  /* One level of descendant combinator is enough for what aria.js asks, and
+     it has to be here: the menu decides whether an entry the tour mounted was
+     pressed with closest('.menu-extra [role="menuitem"]'), and a stub that
+     cannot read that selector would never take the branch. A space inside an
+     attribute value is not a combinator. */
+  function parseSelector(sel) {
+    const tests = sel.trim().split(/\s+(?![^[]*\])/).map(parseCompound);
+    return (el) => {
+      if (!tests[tests.length - 1](el)) return false;
+      let want = tests.length - 2;
+      for (let node = el.parentNode; node && want >= 0; node = node.parentNode) {
+        if (node.tagName && tests[want](node)) want -= 1;
+      }
+      return want < 0;
+    };
   }
 
   function element(tag, ns) {
@@ -98,6 +115,11 @@ function makeDom(tokens) {
         assert.equal(typeof fn, 'function', `${tag} has no ${name} listener`);
         return fn({ preventDefault() {}, ...ev });
       },
+      focus() { doc.activeElement = el; },
+      contains(node) {
+        for (let n = node; n; n = n.parentNode) if (n === el) return true;
+        return false;
+      },
       closest(sel) {
         const match = parseSelector(sel);
         let node = el;
@@ -126,6 +148,12 @@ function makeDom(tokens) {
       get: () => el.getAttribute('class') || '',
       set: (v) => el.setAttribute('class', v),
     });
+    /* A reflected boolean attribute, as a browser has it: assigning false takes
+       the attribute off rather than writing the word "false". */
+    Object.defineProperty(el, 'hidden', {
+      get: () => el.hasAttribute('hidden'),
+      set: (v) => { if (v) el.setAttribute('hidden', ''); else el.removeAttribute('hidden'); },
+    });
     el.classList = {
       contains: (c) => el.className.split(/\s+/).includes(c),
       add: (c) => { if (!el.classList.contains(c)) el.className = (el.className + ' ' + c).trim(); },
@@ -150,24 +178,44 @@ function makeDom(tokens) {
   }
 
   const root = element('html');
+  const docListeners = new Map();
   doc = {
     documentElement: root,
+    activeElement: null,
     createElement: (tag) => element(tag),
     createElementNS: (ns, tag) => element(tag, ns),
     getElementById: (id) => doc.querySelectorAll(`[id="${id}"]`)[0] || null,
     querySelectorAll: (sel) => root.querySelectorAll(sel),
     querySelector: (sel) => root.querySelector(sel),
+    addEventListener(name, fn) {
+      docListeners.set(name, (docListeners.get(name) || []).concat(fn));
+    },
+    dispatch(name, ev) {
+      const fns = docListeners.get(name) || [];
+      assert.ok(fns.length, `the document has no ${name} listener`);
+      fns.forEach((fn) => fn({ preventDefault() {}, ...ev }));
+    },
   };
 
+  const sessionData = new Map();
   const window = {
     document: doc,
     getComputedStyle: () => ({ getPropertyValue: (n) => readTokens()[n] || '' }),
     addEventListener() {},
     setTimeout: () => 0,
     clearTimeout() {},
+    sessionStorage: {
+      getItem: (k) => (sessionData.has(k) ? sessionData.get(k) : null),
+      setItem: (k, v) => { sessionData.set(k, String(v)); },
+      removeItem: (k) => { sessionData.delete(k); },
+    },
+    location: { pathname: '/ops/index.html', assigned: [], assign(href) { this.assigned.push(href); } },
+    sent: [],
+    dispatchEvent(ev) { window.sent.push(ev.type); return true; },
+    CustomEvent: class { constructor(type) { this.type = type; } },
   };
   window.window = window;
-  return { window, doc, root, element };
+  return { window, doc, root, element, sessionData };
 }
 
 const TOKENS = {
@@ -200,11 +248,12 @@ function el(dom, parent, tag, attrs = {}) {
 
 /* ============================ the exposed surface ======================= */
 
-test('window.Aria exposes exactly boot, icon, redraw and applyState', () => {
+test('window.Aria exposes the seven functions the shell and its panes call, and no others', () => {
   const { Aria } = load();
-  assert.deepEqual(Object.keys(Aria).sort(), ['applyState', 'boot', 'icon', 'redraw']);
+  const keys = ['appendBadge', 'applyState', 'boot', 'icon', 'lookup', 'redraw', 'takeLookup'];
+  assert.deepEqual(Object.keys(Aria).sort(), keys);
   assert.equal(Aria.icons, undefined, 'there is no Aria.icons() accessor');
-  for (const k of ['boot', 'icon', 'redraw', 'applyState']) {
+  for (const k of keys) {
     assert.equal(typeof Aria[k], 'function', `Aria.${k} is not callable`);
   }
 });
@@ -243,94 +292,144 @@ test('boot() replaces every <i data-i> with an svg and carries its class across'
   );
 });
 
-/* ================================== rail =============================== */
+/* ============================= the navigation ========================== */
+
+const DESTINATIONS = [
+  ['today', 'Today', 'index.html'],
+  ['growth', 'Growth', 'analytics.html'],
+  ['health', 'Health', 'alerts.html'],
+  ['money', 'Money', 'spend.html'],
+  ['ai', 'Aria AI', 'evaluations.html'],
+];
 
 function railDom() {
   return load((dom, b) => {
     el(dom, b, 'nav', { id: 'rail' });
     el(dom, b, 'header', { id: 'topbar' });
+    el(dom, b, 'nav', { id: 'bottomNav' });
   });
 }
 
-test('the rail groups the panes under the three headings, in order', () => {
+test('the rail and the phone bar each offer the five destinations, in order, as links', () => {
   const { doc, Aria } = railDom();
   Aria.boot({ id: 'alerts', title: 'Problems' });
 
   const rail = doc.getElementById('rail');
-  assert.deepEqual(
-    rail.querySelectorAll('.nav-group').map((g) => g.textContent),
-    ['Right now', 'How we are doing', 'Apps and people']
-  );
-
-  const lists = rail.querySelectorAll('.nav-list');
-  assert.equal(lists.length, 3, 'one list per group');
-  assert.deepEqual(lists.map((l) => l.querySelectorAll('.nav-item').length), [4, 4, 3]);
-  for (const l of lists) {
-    assert.equal(l.getAttribute('role'), 'group');
-    const heading = doc.getElementById(l.getAttribute('aria-labelledby'));
-    assert.ok(heading, 'a group points at a heading that is not on the page');
+  const bottom = doc.getElementById('bottomNav');
+  for (const [surface, cls] of [[rail, '.nav-item'], [bottom, '.tab-item']]) {
+    const links = surface.querySelectorAll(cls);
+    assert.deepEqual(links.map((l) => l.querySelector('.nav-label').textContent),
+      DESTINATIONS.map((d) => d[1]));
+    assert.deepEqual(links.map((l) => l.getAttribute('href')), DESTINATIONS.map((d) => d[2]));
+    assert.deepEqual(links.map((l) => l.getAttribute('data-destination')), DESTINATIONS.map((d) => d[0]));
+    assert.deepEqual(links.map((l) => l.tagName), ['A', 'A', 'A', 'A', 'A']);
   }
-  /* role="listitem" on an <a> replaces the link role, which is why these are
-     groups. If someone switches them back, this is what notices. */
+
+  /* One group of five, with no headings: the old rail grouped eleven panes
+     under three, and a heading left behind would say the panes are still
+     there. role="listitem" on an <a> replaces the link role, which is why this
+     is a group and not a list. */
+  assert.equal(rail.querySelectorAll('.nav-group').length, 0, 'a group heading survived');
+  const lists = rail.querySelectorAll('.nav-list');
+  assert.equal(lists.length, 1);
+  assert.equal(lists[0].getAttribute('role'), 'group');
+  assert.equal(lists[0].getAttribute('aria-label'), 'Destinations');
   assert.equal(rail.querySelectorAll('[role="listitem"]').length, 0);
   assert.equal(rail.querySelectorAll('[role="list"]').length, 0);
 });
 
-test('exactly the current pane is marked aria-current, and it is the one asked for', () => {
-  const { doc, Aria } = railDom();
-  Aria.boot({ id: 'spend', title: 'Cloud costs' });
-  const rail = doc.getElementById('rail');
-  const current = rail.querySelectorAll('[aria-current]');
-  assert.equal(current.length, 1);
-  assert.equal(current[0].getAttribute('aria-current'), 'page');
-  assert.equal(current[0].getAttribute('href'), 'spend.html');
-  assert.ok(current[0].classList.contains('on'));
-  assert.equal(rail.querySelectorAll('.on').length, 1);
+test('exactly the current destination is marked aria-current, in both surfaces', () => {
+  for (const [id, , href] of DESTINATIONS) {
+    const { doc, Aria } = railDom();
+    Aria.boot({ id, title: id });
+    for (const surface of ['rail', 'bottomNav']) {
+      const root = doc.getElementById(surface);
+      const current = root.querySelectorAll('[aria-current]');
+      assert.equal(current.length, 1, `${id}: ${surface} marked ${current.length} links current`);
+      assert.equal(current[0].getAttribute('aria-current'), 'page');
+      assert.equal(current[0].getAttribute('href'), href, `${id}: ${surface} marked the wrong link`);
+      assert.ok(current[0].classList.contains('on'));
+      assert.equal(root.querySelectorAll('.on').length, 1);
+    }
+  }
 });
 
-test('an unknown pane id marks nothing current rather than guessing', () => {
-  const { doc, Aria } = railDom();
-  Aria.boot({ id: 'not-a-pane' });
-  assert.equal(doc.getElementById('rail').querySelectorAll('[aria-current]').length, 0);
+test('an unknown destination, or none, marks nothing current rather than guessing', () => {
+  for (const cfg of [{ id: 'not-a-destination' }, {}, { id: null }]) {
+    const { doc, Aria } = railDom();
+    Aria.boot(cfg);
+    for (const surface of ['rail', 'bottomNav']) {
+      assert.equal(doc.getElementById(surface).querySelectorAll('[aria-current]').length, 0,
+        `${JSON.stringify(cfg)} marked something current in ${surface}`);
+    }
+  }
 });
 
-test('the rail invents no badge, no account and no number when boot() passes none', () => {
+test('the navigation invents no badge, no account and no number when boot() passes none', () => {
   const { doc, Aria } = railDom();
-  Aria.boot({ id: 'overview' });
+  Aria.boot({ id: 'today' });
   const rail = doc.getElementById('rail');
-  assert.equal(rail.querySelectorAll('.nav-badge').length, 0);
+  const bottom = doc.getElementById('bottomNav');
+  assert.equal(rail.querySelectorAll('.nav-badge').length + bottom.querySelectorAll('.nav-badge').length, 0);
   assert.equal(rail.querySelectorAll('.rail-foot').length, 0);
 
-  const text = (function read(node) {
-    return node.childNodes.map((c) => (c.tagName ? read(c) : '')).join(' ') + ' ' + node.textContent;
-  })(rail);
-  assert.doesNotMatch(text, /\d/, 'the rail rendered a number nobody supplied: ' + text.trim());
-  assert.doesNotMatch(text, /@/, 'the rail rendered an address nobody supplied: ' + text.trim());
+  for (const surface of [rail, bottom]) {
+    const text = (function read(node) {
+      return node.childNodes.map((c) => (c.tagName ? read(c) : '')).join(' ') + ' ' + node.textContent;
+    })(surface);
+    assert.doesNotMatch(text, /\d/, 'a surface rendered a number nobody supplied: ' + text.trim());
+    assert.doesNotMatch(text, /@/, 'a surface rendered an address nobody supplied: ' + text.trim());
+  }
+  /* The avatar still draws, as a person glyph, so the menu is reachable. */
+  const btn = doc.getElementById('acctBtn');
+  assert.ok(btn.querySelector('svg'), 'with no account the avatar button drew no glyph');
+  assert.equal(btn.querySelectorAll('.who-av').length, 0, 'with no account the avatar button invented initials');
 });
 
-test('a badge renders with a spoken description; the account footer renders initials', () => {
+test('a badge is filed under the pane a destination opens on, and spoken, on both surfaces', () => {
   const { doc, Aria } = railDom();
   Aria.boot({
-    id: 'overview',
+    id: 'today',
     badges: { alerts: { label: '3', tone: 'warn', description: '3 open problems' } },
-    account: { email: 'sam.patel@example.invalid', meta: 'Owner' },
   });
-  const rail = doc.getElementById('rail');
-  const badge = rail.querySelectorAll('.nav-badge');
-  assert.equal(badge.length, 1);
-  assert.equal(badge[0].textContent, '3');
-  assert.ok(badge[0].classList.contains('warn'));
+  for (const [surface, cls] of [['rail', '.nav-item'], ['bottomNav', '.tab-item']]) {
+    const root = doc.getElementById(surface);
+    const badge = root.querySelectorAll('.nav-badge');
+    assert.equal(badge.length, 1, `${surface} drew ${badge.length} badges`);
+    assert.equal(badge[0].textContent, '3');
+    assert.ok(badge[0].classList.contains('warn'));
+    /* Health, not the first or the last: the key is the pane id aria.js files
+       a destination under, and a destination that took the wrong key would
+       wear another's count. */
+    assert.equal(badge[0].parentNode.getAttribute('data-destination'), 'health');
+    assert.ok(root.querySelectorAll(cls).filter((l) => l.querySelector('.nav-badge')).length === 1);
 
-  const spoken = rail.querySelectorAll('.sr').map((s) => s.textContent);
-  assert.deepEqual(spoken, [', 3 open problems'],
-    'a bare number beside a pane name is announced as part of the name');
+    const spoken = root.querySelectorAll('.sr').map((s) => s.textContent);
+    assert.deepEqual(spoken, [', 3 open problems'],
+      'a bare number beside a destination name is announced as part of the name');
+  }
+});
 
-  const foot = rail.querySelectorAll('.rail-foot');
-  assert.equal(foot.length, 1);
-  assert.equal(foot[0].querySelector('.who-av').textContent, 'SP');
-  assert.equal(foot[0].querySelector('.who-name').textContent, 'sam.patel@example.invalid');
-  assert.equal(foot[0].querySelector('.who-meta').textContent, 'Owner');
-  assert.equal(foot[0].querySelector('.who-av').getAttribute('aria-hidden'), 'true');
+test('the rail footer shows an avatar and a first name, and never an address', () => {
+  const cases = [
+    [{ name: 'Sam Patel', email: 'sam.patel@example.invalid' }, 'Sam', 'SP'],
+    [{ email: 'sam.patel@example.invalid' }, 'Sam', 'SP'],
+    [{ email: 'owner@example.invalid' }, 'Owner', 'OW'],
+    [{ name: 'madonna' }, 'Madonna', 'MA'],
+    [{ email: '' }, 'Signed in', '?'],
+  ];
+  for (const [account, name, av] of cases) {
+    const { doc, Aria } = railDom();
+    Aria.boot({ id: 'today', account: { ...account, meta: 'Owner' } });
+    const foot = doc.getElementById('rail').querySelectorAll('.rail-foot');
+    assert.equal(foot.length, 1, JSON.stringify(account) + ': no footer');
+    assert.equal(foot[0].querySelector('.who-name').textContent, name);
+    assert.equal(foot[0].querySelector('.who-av').textContent, av);
+    assert.equal(foot[0].querySelector('.who-av').getAttribute('aria-hidden'), 'true');
+    assert.equal(foot[0].querySelectorAll('.who-meta').length, 0, 'the footer still carries a second line');
+    assert.doesNotMatch(foot[0].textContent + ' ' + foot[0].querySelector('.who-name').textContent, /@/,
+      JSON.stringify(account) + ': the footer showed an address');
+  }
 });
 
 test('a page that names no title gets no heading, not the word "undefined"', () => {
@@ -347,6 +446,229 @@ test('a title and a subtitle are both rendered when the page names them', () => 
   assert.deepEqual(doc.querySelectorAll('h1').map((e) => e.textContent), ['Right now']);
   assert.deepEqual(doc.querySelectorAll('.page-sub').map((e) => e.textContent),
     ['What is happening']);
+});
+
+test('a page that writes its own line under the title gets an empty one to write into', () => {
+  const { doc, Aria } = railDom();
+  Aria.boot({ id: 'today', title: 'Today', subSlot: true });
+  const slot = doc.getElementById('pageSub');
+  assert.ok(slot, 'subSlot drew no line for the pane to fill');
+  assert.equal(slot.textContent, '');
+  const none = railDom();
+  none.Aria.boot({ id: 'today', title: 'Today' });
+  assert.equal(none.doc.getElementById('pageSub'), null, 'a page with no subtitle got an empty line anyway');
+});
+
+/* ============================== account menu ============================ */
+
+function menuDom(cfg) {
+  const dom = railDom();
+  dom.Aria.boot({
+    id: 'today',
+    account: { name: 'Sam Patel', email: 'sam.patel@example.invalid', meta: 'Owner' },
+    lookup: { href: 'users.html' },
+    ...cfg,
+  });
+  const btn = dom.doc.getElementById('acctBtn');
+  const menu = dom.doc.getElementById('acctMenu');
+  const items = menu.querySelectorAll('[role="menuitem"]');
+  return { ...dom, btn, menu, items };
+}
+
+test('the avatar menu is closed on arrival, named by its button, and offers settings and the theme', () => {
+  const { doc, btn, menu, items } = menuDom();
+  assert.equal(menu.hidden, true, 'the menu arrived open');
+  assert.equal(btn.getAttribute('aria-expanded'), 'false');
+  assert.equal(btn.getAttribute('aria-haspopup'), 'menu');
+  assert.equal(doc.getElementById(btn.getAttribute('aria-controls')), menu, 'the button controls something else');
+  assert.equal(menu.getAttribute('role'), 'menu');
+  assert.equal(doc.getElementById(menu.getAttribute('aria-labelledby')), btn, 'the menu is named by something else');
+
+  assert.deepEqual(items.map((i) => i.querySelector('span') ? i.querySelector('span').textContent : i.textContent),
+    ['Settings', 'Administrators', 'Sessions', 'Audit', 'Light theme']);
+  assert.deepEqual(items.slice(0, 4).map((i) => i.getAttribute('href')),
+    ['settings.html', 'settings.html#administrators', 'settings.html#sessions', 'settings.html#audit']);
+  /* The one place the whole address is shown. */
+  assert.equal(menu.querySelector('.menu-name').textContent, 'Sam Patel');
+  assert.deepEqual(menu.querySelectorAll('.menu-meta').map((m) => m.textContent),
+    ['sam.patel@example.invalid', 'Owner']);
+  assert.equal(btn.querySelector('.who-av').textContent, 'SP');
+});
+
+test('the button opens the menu onto its first entry, and closes it again handing focus back', () => {
+  const { doc, btn, menu, items } = menuDom();
+  btn.dispatch('click');
+  assert.equal(menu.hidden, false, 'pressing the button did not open the menu');
+  assert.equal(btn.getAttribute('aria-expanded'), 'true');
+  assert.ok(doc.activeElement === items[0], 'the menu opened without moving focus into itself');
+
+  btn.dispatch('click');
+  assert.equal(menu.hidden, true, 'pressing the button again did not close it');
+  assert.equal(btn.getAttribute('aria-expanded'), 'false');
+  assert.ok(doc.activeElement === btn, 'closing from the button dropped focus');
+});
+
+test('Escape closes the menu and returns focus; Tab closes it and leaves focus where it goes', () => {
+  const { doc, btn, menu, items } = menuDom();
+
+  btn.dispatch('click');
+  menu.dispatch('keydown', { key: 'Escape' });
+  assert.equal(menu.hidden, true, 'Escape left the menu open');
+  assert.equal(btn.getAttribute('aria-expanded'), 'false');
+  assert.ok(doc.activeElement === btn, 'Escape did not return focus to the avatar button');
+
+  btn.dispatch('click');
+  items[2].focus();
+  menu.dispatch('keydown', { key: 'Tab' });
+  assert.equal(menu.hidden, true, 'Tab left the menu open behind the focus that had left it');
+  assert.ok(doc.activeElement === items[2], 'Tab was stolen back to the button, so focus could not move on');
+});
+
+test('the arrow keys walk the entries and wrap, Home and End jump, and disabled entries are skipped', () => {
+  const { doc, btn, menu, items } = menuDom();
+  btn.dispatch('click');
+  const press = (key) => menu.dispatch('keydown', { key });
+
+  press('ArrowDown');
+  assert.ok(doc.activeElement === items[1], 'ArrowDown did not move to the next entry');
+  press('End');
+  assert.ok(doc.activeElement === items[items.length - 1], 'End did not reach the last entry');
+  press('ArrowDown');
+  assert.ok(doc.activeElement === items[0], 'ArrowDown off the last entry did not wrap to the first');
+  press('ArrowUp');
+  assert.ok(doc.activeElement === items[items.length - 1], 'ArrowUp off the first entry did not wrap to the last');
+  press('Home');
+  assert.ok(doc.activeElement === items[0], 'Home did not reach the first entry');
+
+  items[1].disabled = true;
+  press('ArrowDown');
+  assert.ok(doc.activeElement === items[2], 'a disabled entry took focus');
+});
+
+test('ArrowDown on the closed button opens the menu, and on the open one does nothing more', () => {
+  const { doc, btn, menu, items } = menuDom();
+  btn.focus();
+  btn.dispatch('keydown', { key: 'ArrowDown' });
+  assert.equal(menu.hidden, false, 'ArrowDown on the button did not open the menu');
+  assert.ok(doc.activeElement === items[0]);
+
+  items[3].focus();
+  btn.dispatch('keydown', { key: 'ArrowDown' });
+  assert.ok(doc.activeElement === items[3], 'ArrowDown on the open button yanked focus back to the first entry');
+});
+
+test('a press outside the menu closes it; a press inside does not', () => {
+  const { doc, btn, menu, items } = menuDom();
+  btn.dispatch('click');
+  doc.dispatch('click', { target: items[0] });
+  doc.dispatch('click', { target: btn });
+  assert.equal(menu.hidden, false, 'a press inside the menu closed it');
+
+  doc.dispatch('click', { target: doc.getElementById('rail') });
+  assert.equal(menu.hidden, true, 'a press elsewhere left the menu open');
+  assert.equal(btn.getAttribute('aria-expanded'), 'false');
+});
+
+test('an entry the tour mounts closes the menu without taking focus off the dialog it opens', () => {
+  const { doc, btn, menu, items, element } = menuDom();
+  const extra = menu.querySelector('.menu-extra');
+  assert.ok(extra, 'the menu has no slot for the tour to mount into');
+  const entry = element('button');
+  entry.setAttribute('role', 'menuitem');
+  extra.appendChild(entry);
+
+  btn.dispatch('click');
+  entry.focus();
+  menu.dispatch('click', { target: entry });
+  assert.equal(menu.hidden, true, 'the menu stayed open behind the dialog');
+  assert.ok(doc.activeElement === entry, 'closing moved focus off the entry, so the dialog could not hold it');
+
+  /* The other direction: the theme entry is not one the tour mounts, and
+     leaves the menu open so the change can be seen. */
+  btn.dispatch('click');
+  menu.dispatch('click', { target: items[items.length - 1] });
+  assert.equal(menu.hidden, false, 'every press closed the menu, not only the tour entries');
+});
+
+/* ============================ the header lookup ========================= */
+
+test('the lookup hands the identifier over in sessionStorage and never in the address', () => {
+  const dom = menuDom();
+  const { doc, window, sessionData } = dom;
+  const input = doc.getElementById('lookupInput');
+  input.value = '  ath_4821  ';
+  doc.getElementById('lookupForm').dispatch('submit', {});
+
+  assert.equal(sessionData.get('ops-user-lookup'), 'ath_4821', 'the identifier was not held for the pane');
+  assert.deepEqual(window.location.assigned, ['users.html']);
+  assert.doesNotMatch(window.location.assigned[0], /ath_4821|[?#]/, 'the identifier reached the address');
+});
+
+test('a blank lookup goes nowhere and holds nothing', () => {
+  const { doc, window, sessionData, Aria } = menuDom();
+  const input = doc.getElementById('lookupInput');
+  input.value = '   ';
+  doc.getElementById('lookupForm').dispatch('submit', {});
+  assert.deepEqual(window.location.assigned, []);
+  assert.equal(sessionData.size, 0);
+  assert.equal(Aria.lookup(''), false);
+  assert.equal(Aria.lookup(undefined), false);
+  assert.equal(Aria.lookup('ath_1'), true);
+});
+
+test('on the users page a lookup tells the page instead of reloading it', () => {
+  const here = menuDom();
+  here.window.location.pathname = '/ops/users.html';
+  here.Aria.lookup('ath_9', 'users.html');
+  assert.deepEqual(here.window.sent, ['ops:lookup'], 'the page already on screen was not told');
+  assert.deepEqual(here.window.location.assigned, [], 'the page reloaded itself');
+
+  const elsewhere = menuDom();
+  elsewhere.Aria.lookup('ath_9', 'users.html');
+  assert.deepEqual(elsewhere.window.sent, [], 'another page announced a lookup nobody was listening for');
+  assert.deepEqual(elsewhere.window.location.assigned, ['users.html']);
+});
+
+test('takeLookup returns what was handed over once, then nothing', () => {
+  const { Aria, sessionData } = menuDom();
+  Aria.lookup('ath_77', 'users.html');
+  assert.equal(sessionData.get('ops-user-lookup'), 'ath_77');
+  assert.equal(Aria.takeLookup(), 'ath_77');
+  assert.equal(sessionData.size, 0, 'the identifier stayed in storage after it was read');
+  assert.equal(Aria.takeLookup(), '', 'a second read returned the same identifier again');
+});
+
+test('a browser that refuses storage still navigates, and takes nothing back', () => {
+  const dom = menuDom();
+  const refuse = () => { throw new Error('storage is disabled'); };
+  dom.window.sessionStorage = { getItem: refuse, setItem: refuse, removeItem: refuse };
+  assert.equal(dom.Aria.lookup('ath_5', 'users.html'), true);
+  assert.deepEqual(dom.window.location.assigned, ['users.html'], 'a refusing browser left the operator on the page');
+  assert.equal(dom.Aria.takeLookup(), '');
+});
+
+test('on a phone the search icon opens the field, says so, and moves focus into it', () => {
+  const { doc, Aria, window } = menuDom();
+  const open = doc.getElementById('lookupOpen');
+  const top = doc.getElementById('topbar');
+  assert.equal(doc.getElementById(open.getAttribute('aria-controls')), doc.getElementById('lookupForm'));
+  assert.equal(open.getAttribute('aria-expanded'), 'false');
+
+  open.dispatch('click');
+  assert.ok(top.classList.contains('is-searching'), 'the search row did not open');
+  assert.equal(open.getAttribute('aria-expanded'), 'true');
+  assert.ok(doc.activeElement === doc.getElementById('lookupInput'), 'the field did not take focus');
+
+  open.dispatch('click');
+  assert.equal(top.classList.contains('is-searching'), false, 'pressing again left the row open');
+  assert.equal(open.getAttribute('aria-expanded'), 'false');
+  assert.ok(Aria && window, 'the harness lost its handles');
+});
+
+test('a page that passes no lookup draws no search', () => {
+  const { doc } = menuDom({ lookup: undefined });
+  assert.equal(doc.getElementById('lookupForm'), null);
+  assert.equal(doc.getElementById('lookupOpen'), null);
 });
 
 /* ================================= states ============================== */
