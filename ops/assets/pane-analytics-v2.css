@@ -45,7 +45,6 @@
 .g-head .sec-title, .g-title {
   font-size: 20px; font-weight: 600; letter-spacing: -.015em; color: var(--ink);
 }
-.g-caption { font-size: 14px; color: var(--ink-3); }
 
 .g-main .big.num { margin-top: 10px; font-size: 92px; line-height: .95; letter-spacing: -.05em; }
 .g-main .big.words { margin-top: 14px; }
@@ -93,6 +92,7 @@
 .g-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .g-card { min-width: 0; min-height: 300px; padding: 22px 26px 24px; gap: 0; }
 .g-title { margin-bottom: 8px; }
+.g-head.g-card-head { min-height: 0; }
 
 .g-sub {
   display: flex; align-items: center; gap: 6px;

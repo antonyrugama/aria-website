@@ -10,6 +10,14 @@
        never a drop to zero; "Week high" is printed only when it is earned; a
        line on other days than the lead's is neither drawn nor named;
      - an app that sent nothing is named, never drawn as a row of zeroes;
+     - the reporting floor is about rates: every count is drawn on both sides of
+       the 50-person floor (49 and 50 draw the same page), and an answer that is
+       not reporting draws none;
+     - the change against last week is drawn only from a previous count and a
+       comparison the route sent, never from a fallback to zero or to a week;
+     - sessions are summed from stored days, so a window with none says "not
+       reported" and never "0 sessions", and a window that covers part of the
+       week names the days it covers;
      - features and the signup weeks are counts of people, never shares; a week
        that has not happened yet is a dash, never a zero;
      - the store's state is written in words and a state nobody can name is
@@ -68,6 +76,16 @@ const recently = () => new Date(Date.now() - 3600000).toISOString();
 const MOBILE_WEEK = [17, 19, 16, 22, 24, 27, 31];
 const COACHES_WEEK = [4, 5, 5, 6, 5, 7, 8];
 
+/* Aria today: fewer than fifty people active, so the route answers
+   `insufficient` for every window it is asked, with the sentence it really
+   writes, and still sends every count. The floor is about rates. */
+const FLOOR = 50;
+const below = (people, days) => ({
+  state: 'insufficient',
+  detail: people + ' people were active in the last ' + days + ' days, which is under the ' + FLOOR + ' we report rates from.',
+});
+const READY = { state: 'ready', detail: '' };
+
 const edit = (make, over) => {
   const base = make();
   if (!over) return base;
@@ -87,7 +105,7 @@ function summaryFixture(over) {
       ],
       window: WEEK,
       comparison: { days: 7, label: 'the 7 days before' },
-      reportingFloor: 5,
+      reportingFloor: FLOOR,
       environment: 'production',
     },
   }), over);
@@ -108,8 +126,8 @@ function appFixture(app, label, people, sessions, coverage, values) {
 
 function weekFixture(over) {
   return edit(() => ({
-    window: { range: '7d', ...WEEK, rollupsComputedAt: recently(), daysMissingRollups: [] },
-    availability: { state: 'ready', detail: '' },
+    window: { range: '7d', ...WEEK, rollupsComputedAt: recently(), reportingStart: '2026-10-25', daysCovered: 7, daysMissingRollups: [] },
+    availability: below(44, 7),
     apps: [
       appFixture('mobile', 'Mobile', 39, 86, 9400, MOBILE_WEEK.slice()),
       appFixture('coaches', 'Coaches Web', 9, 21, 10000, COACHES_WEEK.slice()),
@@ -132,8 +150,8 @@ function weekFixture(over) {
 
 function monthFixture(over) {
   return edit(() => ({
-    window: { range: '30d', ...MONTH, rollupsComputedAt: recently(), daysMissingRollups: [] },
-    availability: { state: 'ready', detail: '' },
+    window: { range: '30d', ...MONTH, rollupsComputedAt: recently(), reportingStart: '2026-10-02', daysCovered: 30, daysMissingRollups: [] },
+    availability: below(47, 30),
     apps: [],
     notReporting: [],
     cohorts: [
@@ -322,16 +340,79 @@ test('the headline is the platform count and the change is people, not the apps 
     'the headline was the two apps added together (39 + 9 = 48) or something else');
   assert.match(allText(people), /\+12 vs last week/);
   assert.doesNotMatch(allText(people), /%/, 'the change was drawn as a percentage');
-  assert.match(allText(people), /Opt-in activity/);
 });
 
-test('a people figure that is not ready is words and never a numeral', async () => {
+test('"Opt-in activity" is the info tip, not a caption beside the heading', async () => {
+  const dom = await boot();
+  const people = section(dom, 'people');
+  assert.equal(withClass(people, 'g-caption').length, 0, 'a visible caption sits beside the heading');
+  const bubble = dom.doc.getElementById('growth-people-scope');
+  assert.ok(bubble && bubble.getAttribute('role') === 'tooltip', 'the headline has no info tip');
+  assert.match(allText(bubble), /^Opt-in activity: only people who turned on usage analytics are counted/);
+  const holders = findAll(people, (n) => allText(n).includes('Opt-in activity') &&
+    !findAll(n, (k) => k !== n && allText(k).includes('Opt-in activity')).length);
+  assert.deepEqual(holders.map((n) => n.getAttribute('role')), ['tooltip'],
+    'the words are printed somewhere other than the tip');
+});
+
+/* The change against last week is a difference of two counts the route sent.
+   A count it did not send, or a comparison it did not describe, is "No
+   comparison yet": a missing previous is not a previous of nothing, and a
+   comparison nobody described is not a week. The cases are one each because
+   each is its own way to invent a figure: a fallback to 0 turns an absent
+   previous into "+44", and a fallback to a seven day span turns an absent
+   comparison into "vs last week". */
+test('the change is drawn only from a previous count and a comparison the route sent', async () => {
+  const change = async (over) => allText(section(await boot({ summary: summaryFixture(over) }), 'people'));
+
+  assert.match(await change(), /\+12 vs last week/, 'the sent previous and comparison were not drawn');
+
+  for (const [name, over] of [
+    ['previousActive absent', (s) => { delete s.people.platform.previousActive; }],
+    ['previousActive null', (s) => { s.people.platform.previousActive = null; }],
+    ['comparison absent', (s) => { delete s.people.comparison; }],
+    ['comparison null', (s) => { s.people.comparison = null; }],
+    ['both absent', (s) => { delete s.people.platform.previousActive; delete s.people.comparison; }],
+  ]) {
+    const text = await change(over);
+    assert.match(text, /No comparison yet/, name + ': no comparison was not said');
+    assert.doesNotMatch(text, /vs last week|\+\d+|\u2212\d+/, name + ': a change was invented');
+  }
+
+  assert.match(await change((s) => { s.people.platform.previousActive = 0; }), /\+44 vs last week/,
+    'a previous count of zero the route did measure was treated as absent');
+  assert.match(await change((s) => { s.people.comparison = { label: 'the days before' }; }), /\+12 vs last week/,
+    'a comparison with no day count was treated as absent');
+});
+
+test('a people figure that is not reporting is words and never a numeral', async () => {
   const dom = await boot({
-    summary: summaryFixture((s) => { s.people.availability = { state: 'insufficient', detail: 'Too few.' }; }),
+    summary: summaryFixture((s) => { s.people.availability = { state: 'not_reporting', detail: 'No app has sent anything.' }; }),
   });
   const people = section(dom, 'people');
-  assert.deepEqual(wordsOf(people, 'big'), ['Too few to report']);
+  assert.deepEqual(wordsOf(people, 'big'), ['No reading']);
   assert.doesNotMatch(allText(people), /\d/, 'a figure was drawn for an answer that is not ready');
+
+  const unknown = await boot({
+    summary: summaryFixture((s) => { s.people.availability = { state: 'something_new' }; }),
+  });
+  assert.deepEqual(wordsOf(section(unknown, 'people'), 'big'), ['Not reported'],
+    'a state nobody can name was guessed at');
+
+  /* The summary does not send this state for people today. If it ever does,
+     the floor is about rates, so the count it sends is still the headline. */
+  const floor = await boot({
+    summary: summaryFixture((s) => { s.people.availability = below(44, 7); }),
+  });
+  assert.deepEqual(wordsOf(section(floor, 'people'), 'big'), ['44'],
+    'a count the route sent was withheld for sitting under the reporting floor');
+  assert.match(allText(section(floor, 'people')), /\+12 vs last week/);
+
+  const nothing = await boot({
+    summary: summaryFixture((s) => { s.people.availability = below(0, 7); delete s.people.platform.active; }),
+  });
+  assert.deepEqual(wordsOf(section(nothing, 'people'), 'big'), ['Not reported'],
+    'a count the route did not send was drawn');
 });
 
 /* =============================== the lines ============================== */
@@ -397,7 +478,7 @@ test('a window that is not ready is words in place of the chart, never an empty 
 
 /* ============================== the app rows ============================ */
 
-test('each app is a row of people, sessions and coverage, and an app with no reading is named not zeroed', async () => {
+test('each app is a row of people, sessions and reporting, and an app with no reading is named not zeroed', async () => {
   const dom = await boot({
     week: weekFixture((w) => {
       w.apps[1].coverageBasisPoints = null;
@@ -407,10 +488,153 @@ test('each app is a row of people, sessions and coverage, and an app with no rea
   });
   const rows = withClass(section(dom, 'apps'), 'g-app').map(allText);
   assert.equal(rows.length, 3);
-  assert.match(rows[0], /Mobile.*1 person.*86 sessions.*94% coverage/);
-  assert.match(rows[1], /Coaches Web.*9 people.*21 sessions.*Coverage not reported/);
+  assert.match(rows[0], /Mobile.*1 person.*86 sessions.*94% reporting/);
+  assert.match(rows[1], /Coaches Web.*9 people.*21 sessions.*Reporting unknown/);
   assert.match(rows[2], /Kiosk.*No reading/);
   assert.doesNotMatch(rows[2], /\d/, 'an app that sent nothing was drawn with a figure');
+  assert.doesNotMatch(rows.join(' '), /coverage/i, 'the app rows still say coverage');
+});
+
+/* ===================== the floor is about rates, not counts =============== */
+
+/* What the route draws from, and everything the page prints from it. The route
+   answers `insufficient` under 50 active people and still sends every count;
+   Aria has fewer than 50 active people, so this is the shape it really gets. */
+const counts = (dom) => ({
+  lines: leadLines(dom).length + alsoLines(dom).length,
+  chart: withClass(section(dom, 'chart'), 'tchart').length,
+  apps: withClass(section(dom, 'apps'), 'g-app').map(allText),
+  features: withClass(section(dom, 'features'), 'g-item').map(allText),
+  back: findAll(section(dom, 'back'), (n) => n.tagName === 'TR').map(allText),
+});
+
+test('the real fifty-person boundary: 49 and 50 draw the same counts, and not reporting draws none', async () => {
+  const at = (people, state) => ({
+    week: weekFixture((w) => { w.availability = state === 'ready' ? READY : below(people, 7); }),
+    month: monthFixture((m) => { m.availability = state === 'ready' ? READY : below(people, 30); }),
+    summary: summaryFixture((s) => { s.people.platform.active = people; }),
+  });
+
+  const under = counts(await boot(at(49, 'insufficient')));
+  const over = counts(await boot(at(50, 'ready')));
+  assert.deepEqual(under, over, 'the counts changed across the floor, so the floor withheld a count');
+  assert.equal(under.chart, 1, 'the daily lines were not drawn under the floor');
+  assert.equal(under.apps.length, 2, 'the app rows were not drawn under the floor');
+  assert.equal(under.features.length, 5, 'feature use was not drawn under the floor');
+  assert.equal(under.back.length, 4, 'the signup weeks were not drawn under the floor');
+  assert.match(under.apps[0], /Mobile.*39 people.*86 sessions/);
+
+  const small = await boot(at(49, 'insufficient'));
+  assert.deepEqual(wordsOf(section(small, 'people'), 'big'), ['49'], 'the headline count was withheld under the floor');
+  assert.doesNotMatch(all(small), /Too few to report|Not enough/, 'the floor was drawn as an absence of counts');
+  assert.doesNotMatch((allText(section(small, 'features')) + allText(section(small, 'back')) +
+    allText(section(small, 'apps'))).replace(/\d+% reporting/g, ''), /%/, 'a rate the floor protects was drawn');
+
+  const gone = await boot({
+    week: weekFixture((w) => { w.availability = { state: 'not_reporting', detail: 'No app reported.' }; }),
+    month: monthFixture((m) => { m.availability = { state: 'not_reporting', detail: 'No app reported.' }; }),
+  });
+  const none = counts(gone);
+  assert.equal(none.chart, 0, 'a chart was drawn for nothing');
+  assert.deepEqual(none.apps, [], 'app rows were drawn for nothing');
+  assert.deepEqual(none.features, [], 'feature counts were drawn for nothing');
+  assert.deepEqual(none.back, [], 'signup weeks were drawn for nothing');
+  assert.match(allText(section(gone, 'features')), /No reading/);
+  assert.match(allText(section(gone, 'back')), /No reading/);
+});
+
+/* ======================== sessions and the days they cover ================ */
+
+const SESSIONS_NOT_REPORTED = /Sessions not reported/;
+
+test('a window with no stored days says sessions are not reported, never zero sessions', async () => {
+  const dom = await boot({
+    week: weekFixture((w) => {
+      w.window.daysCovered = 0;
+      w.window.reportingStart = null;
+      w.window.rollupsComputedAt = null;
+      for (const app of w.apps) {
+        for (const m of app.metrics) if (m.label === 'Sessions' || m.label === 'Sessions per person') m.value = 0;
+      }
+    }),
+  });
+  const rows = withClass(section(dom, 'apps'), 'g-app').map(allText);
+  assert.equal(rows.length, 2);
+  assert.match(rows[0], /Mobile.*39 people.*Sessions not reported/);
+  assert.match(rows[1], /Coaches Web.*9 people.*Sessions not reported/);
+  assert.doesNotMatch(rows.join(' '), /\b0 sessions?\b/, 'no stored days was drawn as a measured zero');
+  assert.deepEqual(wordsOf(section(dom, 'apps'), 'g-note'), [], 'a covered-days note was drawn for a window that covers none');
+  assert.match(all(dom), SESSIONS_NOT_REPORTED);
+
+  /* The people are read live, so they are drawn whatever the days say. */
+  assert.deepEqual(wordsOf(section(dom, 'people'), 'big'), ['44']);
+});
+
+test('only a zero that no stored day explains is withheld: a measured session count survives, and so does a real zero', async () => {
+  const unsure = await boot({
+    week: weekFixture((w) => { w.window.daysCovered = 0; w.window.reportingStart = null; }),
+  });
+  assert.match(withClass(section(unsure, 'apps'), 'g-app').map(allText)[0], /86 sessions/,
+    'a session count that was sent was withheld because the days say none were stored');
+
+  const real = await boot({
+    week: weekFixture((w) => { w.apps[1].metrics.find((m) => m.label === 'Sessions').value = 0; }),
+  });
+  assert.match(withClass(section(real, 'apps'), 'g-app').map(allText)[1], /Coaches Web.*0 sessions/,
+    'a measured zero, with stored days behind it, was called not reported');
+
+  const silent = await boot({
+    week: weekFixture((w) => { delete w.window.daysCovered; delete w.window.reportingStart; w.apps[1].metrics.find((m) => m.label === 'Sessions').value = 0; }),
+  });
+  assert.match(withClass(section(silent, 'apps'), 'g-app').map(allText)[1], /0 sessions/,
+    'an answer that does not say what it covers had its zero withheld on a guess');
+});
+
+test('a window whose stored days cover part of the week says which, once, and a full week says nothing', async () => {
+  const partial = await boot({
+    week: weekFixture((w) => { w.window.daysCovered = 4; w.window.reportingStart = '2026-10-28'; }),
+  });
+  assert.deepEqual(wordsOf(section(partial, 'apps'), 'g-note'), ['Sessions cover 4 of 7 days, from Oct 28'],
+    'the days the sessions cover were not named');
+  assert.match(withClass(section(partial, 'apps'), 'g-app').map(allText)[0], /86 sessions/,
+    'the part that exists was not drawn');
+
+  const full = await boot();
+  assert.deepEqual(wordsOf(section(full, 'apps'), 'g-note'), [], 'a note was drawn for a week fully covered');
+
+  const noStart = await boot({
+    week: weekFixture((w) => { w.window.daysCovered = 3; w.window.reportingStart = null; }),
+  });
+  assert.deepEqual(wordsOf(section(noStart, 'apps'), 'g-note'), ['Sessions cover 3 of 7 days'],
+    'a start that was not sent was made up');
+});
+
+test('the shell reads a usage window once, for Growth and Usage detail alike', async () => {
+  const dom = await boot();
+  const win = dom.window.OpsPaneShell.usageWindow;
+  const ans = (over) => ({ window: Object.assign({ days: 7, daysCovered: 7, reportingStart: '2026-10-25', daysMissingRollups: [] }, over) });
+
+  assert.equal(win.span({}), null, 'an answer with no window was given a span');
+  assert.equal(win.span({ window: { days: 7 } }), null, 'an answer that does not say what it covers was given a span');
+  assert.deepEqual(JSON.parse(JSON.stringify(win.span(ans({ daysMissingRollups: ['2026-10-27', 5] })))),
+    { covered: 7, days: 7, start: '2026-10-25', missing: ['2026-10-27'] });
+
+  assert.equal(win.noStoredDays(ans({ daysCovered: 0, reportingStart: null })), true);
+  assert.equal(win.noStoredDays(ans({ daysCovered: 1 })), false);
+  assert.equal(win.noStoredDays({}), false, 'an answer that says nothing was called empty');
+
+  assert.equal(win.partial(ans({ daysCovered: 4 })).covered, 4);
+  assert.equal(win.partial(ans({ daysCovered: 0 })), null, 'no stored days is its own state, not a partial');
+  assert.equal(win.partial(ans()), null, 'a full week was called partial');
+  assert.equal(win.partial(ans({ days: null, daysCovered: 4 })), null, 'a window of no length was called partial');
+
+  const sessions = { label: 'Sessions', value: 0 };
+  assert.equal(win.storedDayGap(sessions, true), true);
+  assert.equal(win.storedDayGap(sessions, false), false, 'a zero was withheld in a window with stored days');
+  assert.equal(win.storedDayGap({ label: 'Sessions', value: 3 }, true), false, 'a measured count was withheld');
+  assert.equal(win.storedDayGap({ label: 'Active people', value: 0 }, true), false,
+    'a figure that is read live was withheld for a gap in the stored days');
+  assert.equal(win.storedDayGap({ label: 'Sessions per person', value: 0 }, true), true);
 });
 
 /* ============================= feature use ============================== */
@@ -423,6 +647,12 @@ test('feature use is the people, grouped by app in the order sent, with no perce
     'Training plan 21', 'Aria chat 16', 'Workout logging 13', 'Program builder 7', 'Athlete roster 6',
   ]);
   assert.doesNotMatch(allText(card), /%/, 'a share of people was drawn');
+
+  const tip = dom.doc.getElementById('growth-features-reporting');
+  assert.ok(tip && tip.getAttribute('role') === 'tooltip', 'the Feature use heading has no info tip');
+  assert.match(allText(tip), /Reporting, beside each app above, is the share of its sessions that do\./,
+    'the tip does not say what Reporting means');
+  assert.deepEqual(wordsOf(card, 'g-title'), ['Feature use']);
 
   const unsure = await boot({
     week: weekFixture((w) => { w.features.rows[1].users = null; }),
@@ -444,16 +674,17 @@ test('coming back is people by signup week, with a week that has not happened a 
   assert.deepEqual(heads, ['Cohort', 'Joined', 'Week 1', 'Week 2']);
 
   const rows = findAll(card, (n) => n.tagName === 'TR').slice(1).map((tr) =>
-    findAll(tr, (n) => n.tagName === 'TH' || n.tagName === 'TD').map((c) => allText(c).replace(/Not aged yet|Not reported/, '').trim()));
+    findAll(tr, (n) => n.tagName === 'TH' || n.tagName === 'TD').map((c) => allText(c).replace(/Too early to tell|Not reported/, '').trim()));
   assert.deepEqual(rows, [['Oct 5', '10', '6', '5'], ['Oct 12', '12', '7', '\u2014'], ['Oct 19', '6', '\u2014', '\u2014']],
     'the signup weeks were not written as dates, or a week that has not happened was drawn as a number');
-  assert.match(allText(card), /People \u00b7 \u2014 not yet aged/);
+  assert.match(allText(card), /People \u00b7 \u2014 too early to tell/);
+  assert.doesNotMatch(allText(card), /not yet aged|not aged/i, 'the dash was explained in the words the brief replaced');
   assert.doesNotMatch(allText(card), /%/, 'a share of people was drawn');
 
   const aged = await boot({
     month: monthFixture((m) => { m.cohorts[0].rows = [m.cohorts[0].rows[0]]; }),
   });
-  assert.doesNotMatch(allText(section(aged, 'back')), /not yet aged/,
+  assert.doesNotMatch(allText(section(aged, 'back')), /too early to tell/,
     'a footnote explained a dash that is not on the card');
 
   const none = await boot({ month: monthFixture((m) => { m.cohorts = []; }) });
@@ -558,7 +789,8 @@ test('every class the pane writes is one a loaded sheet styles', async () => {
       releases: releasesFixture((r) => { r.platforms[0].tracks[1].state = 'rejected'; r.platforms[1].tracks[1].state = 'in_review'; }),
     }),
     await boot({ week: boom('x'), month: boom('y'), releases: boom('z') }),
-    await boot({ summary: summaryFixture((s) => { s.people.availability = { state: 'insufficient', detail: 'x' }; }), week: weekFixture((w) => { w.availability = { state: 'insufficient' }; w.features = null; }), month: monthFixture((m) => { m.cohorts = []; }) }),
+    await boot({ summary: summaryFixture((s) => { s.people.availability = { state: 'not_reporting', detail: 'x' }; }), week: weekFixture((w) => { w.availability = { state: 'not_reporting' }; w.features = null; }), month: monthFixture((m) => { m.cohorts = []; }) }),
+    await boot({ week: weekFixture((w) => { w.window.daysCovered = 4; w.window.reportingStart = '2026-10-28'; }) }),
   ];
   for (const dom of states) walk(section(dom, 'people') ? section(dom, 'people').parentNode.parentNode.parentNode : dom.doc.body);
 

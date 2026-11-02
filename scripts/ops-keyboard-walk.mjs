@@ -96,7 +96,10 @@ const server = http.createServer(async (req, res) => {
       body = JSON.parse(text);
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname, url.search, { body })));
+    /* usage: 'ready' keeps Usage detail's tables and charts in the walk. The
+       stub's default is Aria's real small population, which that page answers
+       with a card. Growth draws the same controls from either. */
+    res.end(JSON.stringify(stub(url.pathname, url.search, { body, usage: 'ready' })));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));

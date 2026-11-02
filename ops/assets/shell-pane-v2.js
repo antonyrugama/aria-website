@@ -54,6 +54,8 @@
      delta(active, before, comparison)
                              the change in people against the window before
      tip(id, text)           an info icon that carries what a figure counts
+     usageWindow             what a usage answer's window covers: span,
+                             noStoredDays, storedDayGap, partial
      sections(opts)          a page of independent reads that degrade one
                              section at a time, each with its own Try again
      read(source)            a pane's own read, with the local fixture hook
@@ -1071,6 +1073,76 @@
     ]);
   }
 
+  /* What a usage answer's window covers, read once for every pane that prints
+     figures from GET /api/ops/usage. Usage detail and Growth both ask it, so a
+     figure the route could not have measured is withheld the same way on both.
+
+     Three separate facts, kept separate because they are answered differently.
+     `days` is what the operator asked for. `daysCovered` is how much of it the
+     pipeline has ever been able to write, because the nightly aggregation
+     started on a particular day and a window opened today can reach back past
+     its own lifetime. `daysMissingRollups` is the real gap: days at or after
+     the first covered one that carry no stored figures.
+
+       span(data)        { covered, days, start, missing }, or null when the
+                         answer does not say how much it covers
+       noStoredDays(d)   not one day of the window has been aggregated. The
+                         route reports it as `reportingStart: null` with
+                         `daysCovered: 0` and still calls itself ready, because
+                         the people figures are read live from accounts while
+                         nothing at all has been rolled up
+       storedDayGap(metric, noStored)
+                         a figure counted from the stored day grain that reads
+                         zero only because no day was stored: withheld, not a
+                         measured zero
+       partial(data)     the span when it covers some of the window but not all
+                         of it, else null. Not an availability state: the part
+                         that exists is still drawn
+
+     storedDayGap matches on the label because that is the only signal there
+     is: the metric union carries a kind and, for anything over a group, a
+     denominator, and neither says where the number came from. Named exactly
+     rather than by substring, and consulted only when the window has no stored
+     days AND the value is zero, so a relabelled metric fails towards showing
+     the figure rather than towards hiding one. Where this belongs is a
+     provenance field in the payload. */
+  var usageWindow = (function () {
+    var FROM_STORED_DAYS = ['Sessions', 'Sessions per person'];
+
+    function span(data) {
+      var w = data && data.window;
+      if (!w || typeof w !== 'object') return null;
+      if (!isNum(w.daysCovered)) return null;
+      return {
+        covered: w.daysCovered,
+        days: isNum(w.days) ? w.days : null,
+        start: typeof w.reportingStart === 'string' ? w.reportingStart : null,
+        missing: (Array.isArray(w.daysMissingRollups) ? w.daysMissingRollups : []).filter(function (day) {
+          return typeof day === 'string';
+        })
+      };
+    }
+
+    function noStoredDays(data) {
+      var s = span(data);
+      return !!s && s.covered === 0;
+    }
+
+    function storedDayGap(metric, noStored) {
+      return !!noStored && !!metric && typeof metric.label === 'string' &&
+        FROM_STORED_DAYS.indexOf(metric.label) !== -1 && metric.value === 0;
+    }
+
+    function partial(data) {
+      var s = span(data);
+      if (!s || s.days === null) return null;
+      if (s.covered <= 0 || s.covered >= s.days) return null;
+      return s;
+    }
+
+    return { span: span, noStoredDays: noStoredDays, storedDayGap: storedDayGap, partial: partial };
+  })();
+
   /* What a figure counts, carried by an info icon rather than a label. Hover and
      keyboard focus show it; Escape puts it away again. The id is the page's
      own, so two tips on one page describe their own figure. */
@@ -1567,6 +1639,7 @@
     trendChart: trendChart,
     delta: delta,
     tip: tip,
+    usageWindow: usageWindow,
     sections: sections
   };
 

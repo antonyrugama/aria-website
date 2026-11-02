@@ -361,7 +361,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname, url.search)));
+    /* Usage detail's drawn state, whose tables and charts this sweep repaints,
+       needs a population over the floor: the stub's default, Aria's real small
+       one, is a card. Growth draws the same elements from either. */
+    res.end(JSON.stringify(stub(url.pathname, url.search, { usage: 'ready' })));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));

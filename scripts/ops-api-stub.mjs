@@ -162,7 +162,7 @@ const SUMMARY = {
     ],
     window: WEEK_WINDOW,
     comparison: PREVIOUS_WEEK,
-    reportingFloor: 5,
+    reportingFloor: 50,
     environment: 'production'
   },
   aiRuns: {
@@ -768,18 +768,29 @@ const usageWindow = (range, days) => ({
   daysCovered: days, daysMissingRollups: []
 });
 
+/* The real small-population shape. The route answers `insufficient` under
+   fifty active people, the sentence is the route's own, and every count still
+   arrives beside it: the floor is about rates, not counts. Aria has fewer than
+   fifty active people, so this is the state every pane meets in practice. */
+const USAGE_FLOOR = 50;
+const insufficientAnswer = (people, days) => ({
+  state: 'insufficient',
+  detail: `${people} people were active in the last ${days} days, which is under the ${USAGE_FLOOR} we report rates from.`
+});
+
 const USAGE_BASE = {
   asOf: ago(HOUR),
   filters: { app: 'all', env: 'production' },
-  reportingFloor: 5,
+  reportingFloor: USAGE_FLOOR,
   consent: { enforcedAt: 'ingest',
     detail: 'Only accounts that turned usage analytics on are counted.' },
-  availability: { state: 'ready', detail: '' },
+  availability: insufficientAnswer(44, 7),
   notReporting: []
 };
 
 /* The thirty day answer: the signup weeks and who came back to them. */
 const USAGE = Object.assign({}, USAGE_BASE, {
+  availability: insufficientAnswer(47, 30),
   window: usageWindow('30d', 30),
   apps: [APP_MOBILE(false), APP_COACHES(false)],
   cohorts: [
@@ -798,6 +809,17 @@ const USAGE_WEEK = Object.assign({}, USAGE_BASE, {
   apps: [APP_MOBILE(true), APP_COACHES(true)],
   cohorts: []
 });
+
+/* The same two answers over a population that clears the floor, which Aria
+   does not have today. Usage detail withholds everything but a card for
+   `insufficient`, so a sweep that has to lay out that page's tables asks for
+   these with options.usage = 'ready'. Growth draws the same counts from either,
+   and scripts/ops-growth-v2.test.mjs holds that at 49 against 50 people. */
+const ready = (answer) => Object.assign({}, answer, {
+  availability: { state: 'ready', detail: '' }
+});
+const USAGE_READY = ready(USAGE);
+const USAGE_WEEK_READY = ready(USAGE_WEEK);
 
 /* The subscriber history, as GET /api/ops/growth sends it: this reading, the
    one a week before it, and eight weekly readings behind that. Thirty-one is
@@ -1043,7 +1065,8 @@ const MODERATION_REPORTS = [
 
 /* `search` is optional. Only /api/ops/costs reads it: `?stub=not_published`
    answers with the period that has not published yet instead of the billed
-   month. */
+   month. `options.usage = 'ready'` answers /api/ops/usage over a population
+   above the reporting floor; the default is the small one Aria really has. */
 function stub(pathname, search, options = {}) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
@@ -1122,7 +1145,9 @@ function stub(pathname, search, options = {}) {
   }
   if (pathname.startsWith('/api/ops/usage')) {
     const range = new URLSearchParams(search || '').get('range');
-    return { data: range === '7d' ? USAGE_WEEK : USAGE };
+    const populated = options.usage === 'ready';
+    if (range === '7d') return { data: populated ? USAGE_WEEK_READY : USAGE_WEEK };
+    return { data: populated ? USAGE_READY : USAGE };
   }
   if (pathname.startsWith('/api/ops/growth')) return { data: GROWTH };
   if (pathname.startsWith('/api/ops/costs')) {
@@ -1159,5 +1184,5 @@ function stub(pathname, search, options = {}) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, USAGE_WEEK, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, USAGE_WEEK, USAGE_READY, USAGE_WEEK_READY, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

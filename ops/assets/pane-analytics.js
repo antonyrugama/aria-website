@@ -41,12 +41,22 @@
         highest.
      4. **Counts, never shares of people.** A share over a small group moves
         several points on one person, and the reporting floor withholds exactly
-        that, so features and the signup weeks show the people themselves.
+        that, so features and the signup weeks show the people themselves. The
+        floor is about those shares and nothing else: below it the route still
+        sends every count, and this page draws all of them. Aria's own answer
+        is below the floor, so a page that waited for `ready` would be blank.
      5. **A week that has not happened yet is a dash, not a zero.** A signup
-        week that has not aged into a return week is shown as not aged.
+        week that has not aged into a return week is shown as too early to tell.
      6. **How old the answer is travels with it** when it is old: the recount is
         nightly, and a window whose last recount is past STALE_AFTER_HOURS says
-        when it last ran. */
+        when it last ran.
+     7. **Sessions are counted from stored days, and a window with none is not
+        zero sessions.** The people are read live and the sessions are summed
+        from the nightly rollups, so a window nothing has been rolled up for
+        has people and no sessions reading. The app rows say "not reported"
+        for it, and name the days the sessions cover when that is only part of
+        the week. Both come from the shell's usageWindow, the reading Usage
+        detail makes of the same answer. */
 (function (global) {
   'use strict';
 
@@ -79,10 +89,20 @@
 
   var UNAVAILABLE_WORDS = {
     not_reporting: 'No reading',
-    insufficient: 'Too few to report',
     not_collected: 'Not collected',
     not_reported: 'Not reported'
   };
+
+  /* The answers that carry figures. `insufficient` is the reporting floor, and
+     the floor is about rates over people: it keeps a share of a small group
+     from being drawn. This page draws counts of people and sessions and never
+     a rate, so it draws under the floor too. At Aria's size that is the only
+     state the route answers in. */
+  var DRAWN = { ready: true, insufficient: true };
+
+  function drawn(block) {
+    return DRAWN[stateOf(block)] === true;
+  }
 
   /* The store states the Releases page words, as short as they go. Anything
      else is not guessed at. */
@@ -129,8 +149,12 @@
     return textOf(app && app.label) || textOf(app && app.app) || 'App';
   }
 
+  function metricOf(app, label) {
+    return list(app && app.metrics).filter(function (m) { return m && m.label === label; })[0] || null;
+  }
+
   function metric(app, label) {
-    var found = list(app && app.metrics).filter(function (m) { return m && m.label === label; })[0];
+    var found = metricOf(app, label);
     return found ? num(found.value) : null;
   }
 
@@ -322,11 +346,10 @@
       node.appendChild(h('div', { className: 'g-head' }, [
         h('h2', { className: 'sec-title', text: 'Active people' }),
         S.tip('growth-people-scope',
-          'Only people who turned on usage analytics are counted. Someone who uses both apps counts once.'),
-        h('span', { className: 'g-caption', text: 'Opt-in activity' })
+          'Opt-in activity: only people who turned on usage analytics are counted. Someone who uses both apps counts once.')
       ]));
 
-      if (stateOf(people) !== 'ready' || active === null) {
+      if (!drawn(people) || active === null) {
         node.appendChild(h('p', { className: 'big words', text: wordsFor(people) }));
         var why = detailOf(people);
         if (why) node.appendChild(h('p', { className: 'hp-note', text: why }));
@@ -340,7 +363,7 @@
        The first is the lead; the rest share its scale. */
     function trended() {
       var usage = data('week');
-      if (!usage || stateOf(usage) !== 'ready') return [];
+      if (!usage || !drawn(usage)) return [];
       return list(usage.apps).filter(function (app) {
         return app && app.trend && Array.isArray(app.trend.values);
       });
@@ -430,27 +453,46 @@
       return n === null ? null : (n === 1 ? '1 ' + one : fmt.int(n) + ' ' + many);
     }
 
-    function appRow(app) {
+    /* Sessions are summed from stored days. A window with none has no sessions
+       reading, and the route's zero for it is the absence of one. */
+    function sessionsOf(app, noStored) {
+      var sessions = metricOf(app, 'Sessions');
+      if (!sessions || S.usageWindow.storedDayGap(sessions, noStored)) return null;
+      return num(sessions.value);
+    }
+
+    function appRow(app, noStored) {
       var people = plain(metric(app, 'Active people'), 'person', 'people');
-      var sessions = plain(metric(app, 'Sessions'), 'session', 'sessions');
-      var coverage = num(app.coverageBasisPoints);
+      var sessions = plain(sessionsOf(app, noStored), 'session', 'sessions');
+      var reporting = num(app.coverageBasisPoints);
       return h('div', { className: 'g-app' }, [
         h('span', { className: 'g-tile', 'aria-hidden': 'true', text: labelOf(app).charAt(0).toUpperCase() }),
         h('span', { className: 'g-app-name', text: labelOf(app) }),
         h('span', { className: 'g-figs' }, [
           h('span', { className: 'g-fig num', text: people || 'People not reported' }),
           h('span', { className: 'g-fig num', text: sessions || 'Sessions not reported' }),
-          h('span', { className: 'g-fig num', text: coverage === null
-            ? 'Coverage not reported' : Math.round(coverage / 100) + '% coverage' })
+          h('span', { className: 'g-fig num', text: reporting === null
+            ? 'Reporting unknown' : Math.round(reporting / 100) + '% reporting' })
         ])
       ]);
     }
 
+    /* Which of the week the sessions are summed over, when that is not all of
+       it. Only the sessions: the people are read live. */
+    function coveredNote(usage) {
+      var span = S.usageWindow.partial(usage);
+      if (!span) return null;
+      var from = span.start ? parseDay(span.start) : null;
+      return 'Sessions cover ' + span.covered + ' of ' + span.days + ' days' +
+        (from ? ', from ' + monthDay(from) : '');
+    }
+
     function drawApps(node) {
       var usage = data('week');
-      if (!usage || stateOf(usage) !== 'ready') return;
+      if (!usage || !drawn(usage)) return;
+      var noStored = S.usageWindow.noStoredDays(usage);
       list(usage.apps).filter(Boolean).forEach(function (app) {
-        node.appendChild(appRow(app));
+        node.appendChild(appRow(app, noStored));
       });
       /* An app that reported nothing in the window is named, never drawn as a
          row of zeroes. */
@@ -461,6 +503,8 @@
           h('span', { className: 'g-figs' }, [h('span', { className: 'g-fig', text: 'No reading' })])
         ]));
       });
+      var covered = coveredNote(usage);
+      if (covered) node.appendChild(h('p', { className: 'g-note', text: covered }));
     }
 
     /* ------------------------------------------------------ feature use */
@@ -469,18 +513,30 @@
       return h('h2', { className: 'sec-title g-title', text: text });
     }
 
+    /* "Reporting" beside each app is the share of its sessions that come from
+       app versions able to report feature use, and it is only said once, here,
+       where the counts it limits are drawn. */
+    function featuresTitle() {
+      return h('div', { className: 'g-head g-card-head' }, [
+        h('h2', { className: 'sec-title g-title', text: 'Feature use' }),
+        S.tip('growth-features-reporting',
+          'Feature counts only include sessions on app versions that report feature use. ' +
+          'Reporting, beside each app above, is the share of its sessions that do.')
+      ]);
+    }
+
     function drawFeatures(node) {
-      node.appendChild(title('Feature use'));
+      node.appendChild(featuresTitle());
       if (results.week.error) {
         node.appendChild(failedLine('Feature use could not be read', results.week.error, ['week'], 'features'));
         return;
       }
       var usage = data('week');
-      var rows = stateOf(usage) === 'ready'
+      var rows = drawn(usage)
         ? list(usage.features && usage.features.rows).filter(function (r) { return r && textOf(r.label); })
         : [];
       if (!rows.length) {
-        node.appendChild(h('p', { className: 'g-empty', text: stateOf(usage) === 'ready' ? 'No feature use reported' : wordsFor(usage) }));
+        node.appendChild(h('p', { className: 'g-empty', text: drawn(usage) ? 'No feature use reported' : wordsFor(usage) }));
         return;
       }
 
@@ -549,7 +605,7 @@
           if (returned === null) {
             tr.appendChild(h('td', { className: 'r g-dash' }, [
               h('span', { 'aria-hidden': 'true', text: '\u2014' }),
-              h('span', { className: 'sr', text: cell && cell.state === 'not_aged' ? 'Not aged yet' : 'Not reported' })
+              h('span', { className: 'sr', text: cell && cell.state === 'not_aged' ? 'Too early to tell' : 'Not reported' })
             ]));
             return;
           }
@@ -567,11 +623,11 @@
         return;
       }
       var usage = data('month');
-      var cohorts = stateOf(usage) === 'ready'
+      var cohorts = drawn(usage)
         ? list(usage.cohorts).filter(function (c) { return c && list(c.rows).length > 0; })
         : [];
       if (!cohorts.length) {
-        node.appendChild(h('p', { className: 'g-empty', text: stateOf(usage) === 'ready' ? 'No full signup weeks yet' : wordsFor(usage) }));
+        node.appendChild(h('p', { className: 'g-empty', text: drawn(usage) ? 'No full signup weeks yet' : wordsFor(usage) }));
         return;
       }
       var span = S.dates.dayRange(usage.window && usage.window.start, usage.window && usage.window.endExclusive);
@@ -586,7 +642,7 @@
         if (note) sub.appendChild(S.tip('growth-back-note-' + i, maskContactDetails(note)));
         node.appendChild(h('div', { className: 'g-group' }, [sub, built.table]));
       });
-      node.appendChild(h('p', { className: 'g-foot', text: 'People' + (anyUnaged ? ' \u00b7 \u2014 not yet aged' : '') }));
+      node.appendChild(h('p', { className: 'g-foot', text: 'People' + (anyUnaged ? ' \u00b7 \u2014 too early to tell' : '') }));
     }
 
     /* --------------------------------------------------------- releases */

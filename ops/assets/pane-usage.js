@@ -148,36 +148,12 @@
 
   /* ----------------------------------------------------------- the window */
 
-  /* Three separate facts, kept separate because they are answered differently.
-     `days` is what the operator asked for. `daysCovered` is how much of it this
-     pipeline has ever been able to write, because the nightly aggregation
-     started on a particular day and a 90 day window opened today reaches back
-     past its own lifetime. `daysMissingRollups` is the real gap: days at or
-     after the first covered one that carry no stored figures. */
-  function windowSpan(data) {
-    var w = data.window;
-    if (!w || typeof w !== 'object') return null;
-    var covered = num(w.daysCovered);
-    if (covered === null) return null;
-    return {
-      covered: covered,
-      days: num(w.days),
-      start: typeof w.reportingStart === 'string' ? w.reportingStart : null,
-      missing: list(w.daysMissingRollups).filter(function (day) {
-        return typeof day === 'string';
-      })
-    };
-  }
-
-  /* Not one day of the chosen window has been aggregated. Its own question
-     rather than a shade of the one above: the route reports this as
-     `reportingStart: null` with `daysCovered: 0` and still calls itself ready,
-     because the people figures are read live from accounts and can clear the
-     floor while nothing at all has been rolled up. */
-  function hasNoStoredDays(data) {
-    var span = windowSpan(data);
-    return !!span && span.covered === 0;
-  }
+  /* What the window covers, and which stored-day figures that withholds, is
+     read through the shell (S.usageWindow), the same reading Growth makes of
+     the same answer. */
+  var windowSpan = S.usageWindow.span;
+  var hasNoStoredDays = S.usageWindow.noStoredDays;
+  var storedDayGap = S.usageWindow.storedDayGap;
 
   function windowPhrase(data) {
     var span = windowSpan(data);
@@ -198,28 +174,6 @@
     });
     var rest = days.length - shown.length;
     return shown.join(', ') + (rest > 0 ? ', and ' + fmt.int(rest) + ' more' : '');
-  }
-
-  /* Which figures are counted from the stored day grain.
-
-     Matched on the label because that is the only signal there is: the metric
-     union carries a kind and, for anything over a group, a denominator, and
-     neither says where the number came from. Named exactly rather than by
-     substring, so a future figure that merely mentions sessions in its label is
-     not silently withheld. Consulted only when the window has no stored days at
-     all AND the value is zero, so a relabelled metric fails towards showing the
-     figure rather than towards hiding one. Where this belongs is a provenance
-     field in the payload, and that is the change to make when a third such
-     figure arrives. */
-  var FROM_STORED_DAYS = ['Sessions', 'Sessions per person'];
-
-  function fromStoredDays(metric) {
-    return typeof metric.label === 'string' &&
-      FROM_STORED_DAYS.indexOf(metric.label) !== -1;
-  }
-
-  function storedDayGap(metric, noStoredDays) {
-    return noStoredDays && fromStoredDays(metric) && metric.value === 0;
   }
 
   /* Whether this figure is withheld, and why, in one answer so that the tile,
@@ -616,9 +570,8 @@
      in this pill makes those three slots contradict each other by exactly the
      gap count, and the pill is the one that would be wrong. */
   function windowCoverage(data) {
-    var span = windowSpan(data);
-    if (!span || span.days === null) return null;
-    if (span.covered <= 0 || span.covered >= span.days) return null;
+    var span = S.usageWindow.partial(data);
+    if (!span) return null;
     var text = fmt.int(span.covered) + ' of ' + fmt.plural(span.days, 'day') + ' covered';
     var from = span.start ? fmt.utcDay(span.start) : null;
     return h('span', { className: 'pill' }, [
