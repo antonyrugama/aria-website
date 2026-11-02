@@ -46,6 +46,12 @@
   display: flex; align-items: center; gap: 11px;
   min-width: 0;
 }
+.status-health { flex-wrap: wrap; row-gap: 2px; }
+/* What the calm line leaves out, beside it in the secondary ink, so the claim
+   stays a claim about problems only. It wraps under the claim rather than
+   widening the row. */
+.health-notes { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
+.health-note { font-size: 13.5px; color: var(--ink-3); }
 .status-line .sec-title { font-size: 15.5px; font-weight: 500; color: var(--ink); }
 /* The line can say a long thing ("At least 100 open problems", "No alert
    destination set") on a 360px phone beside a dot, so it wraps rather than
@@ -145,9 +151,12 @@
 
 /* The scope of the figure, in an info icon. */
 .tip { position: relative; display: inline-flex; }
+/* The button is 44x44 so a thumb can find it, and the negative margin hands
+   the extra 11px each side back, so the 22px the glyph has always occupied is
+   what the layout still sees and the bubble below it does not move. */
 .tip-btn {
   display: grid; place-items: center;
-  width: 22px; height: 22px; padding: 0;
+  width: 44px; height: 44px; margin: -11px; padding: 0;
   border: 0; border-radius: 50%;
   background: transparent; color: var(--ink-3);
   cursor: help;

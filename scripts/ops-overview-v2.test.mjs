@@ -12,7 +12,8 @@
      - "No critical issues" is a claim, printed only after a complete, readable
        problems result, and only when something was in a position to notice;
      - a moment in "This week" is earned by its own rule or it is not drawn,
-       and a failed growth read removes its tile and says nothing about it;
+       the strip draws only the tiles that were earned, and there is no paying
+       tile at all;
      - the person on a problem is never named, because the session layer
        withholds the address and the pane must not rebuild a name from one.
 
@@ -114,15 +115,6 @@ function usageFixture(over) {
   }), over);
 }
 
-function growthFixture(over) {
-  return edit(() => ({
-    payingSubscribers: {
-      current: { count: 31 },
-      weeks: [20, 21, 22, 23, 24, 25, 27, 29].map((count) => ({ count })),
-    },
-  }), over);
-}
-
 function problemsFixture(rows) {
   const list = rows === undefined ? [{
     id: 'p1', reference: 'PRB-104', severity: 'critical', status: 'open',
@@ -181,7 +173,6 @@ function costsFixture(over) {
 const ENDPOINTS = {
   summary: '/api/ops/summary',
   usage: '/api/ops/usage',
-  growth: '/api/ops/growth',
   problems: '/api/ops/alerts/problems',
   rules: '/api/ops/alerts/rules',
   jobs: '/api/ops/jobs',
@@ -220,7 +211,6 @@ async function boot(options) {
   const answers = {
     [ENDPOINTS.summary]: opts.summary === undefined ? summaryFixture() : opts.summary,
     [ENDPOINTS.usage]: opts.usage === undefined ? usageFixture() : opts.usage,
-    [ENDPOINTS.growth]: opts.growth === undefined ? growthFixture() : opts.growth,
     [ENDPOINTS.problems]: opts.problems === undefined ? problemsFixture() : opts.problems,
     [ENDPOINTS.rules]: opts.rules === undefined ? rulesFixture() : opts.rules,
     [ENDPOINTS.jobs]: opts.jobs === undefined ? jobsFixture() : opts.jobs,
@@ -297,12 +287,12 @@ const lines = (dom) => withClass(section(dom, 'charts'), 'tc-line');
 
 /* =========================== the problems read ========================== */
 
-test('the pane asks for the eight reads it draws from, with the questions it means to ask', async () => {
+test('the pane asks for the seven reads it draws from, with the questions it means to ask', async () => {
   const dom = await boot();
   const asked = (endpoint) => dom.calls.filter((c) => c.endpoint === endpoint);
 
   assert.deepEqual(Object.values(ENDPOINTS).sort(), [...new Set(dom.calls.map((c) => c.endpoint))].sort(),
-    'Today should ask for exactly these eight reads and no others');
+    'Today should ask for exactly these seven reads and no others');
   for (const endpoint of Object.values(ENDPOINTS)) {
     assert.equal(asked(endpoint).length, 1, endpoint + ' should be asked once on load');
   }
@@ -555,14 +545,14 @@ for (const state of ['not_reporting', 'insufficient', 'unconfigured', 'not_somet
 /* ============================== the moments ============================= */
 
 test('the best mobile day is earned by a strict maximum over a fortnight with no missing rollup', async () => {
-  const dom = await boot({ growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }) });
+  const dom = await boot({ summary: summaryFixture((s) => { s.aiRuns.runs = 1; }) });
   assert.deepEqual(moments(dom), [
     { value: '37', label: 'Best Mobile day', sub: 'in 30 days', tone: 'is-cyan' },
   ]);
 
   const none = async (mutate, why) => {
     const d = await boot({
-      growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
+      summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
       usage: usageFixture(mutate),
     });
     assert.deepEqual(moments(d), [], why);
@@ -581,7 +571,7 @@ test('the best mobile day is earned by a strict maximum over a fortnight with no
 
 test('a null day among the earlier ones does not stop the best day being earned', async () => {
   const dom = await boot({
-    growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
+    summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
     usage: usageFixture((u) => { u.apps[0].trend.values[5] = null; }),
   });
   assert.equal(moments(dom).length, 1, 'a gap was read as a day that beat the latest');
@@ -589,50 +579,14 @@ test('a null day among the earlier ones does not stop the best day being earned'
 
 test('the best day is named for the line that earned it', async () => {
   const dom = await boot({
-    growth: new Error('gone'), summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
+    summary: summaryFixture((s) => { s.aiRuns.runs = 1; }),
     usage: usageFixture((u) => { u.apps[0].label = '  Aria Mobile  '; }),
   });
   assert.equal(moments(dom)[0].label, 'Best Aria Mobile day');
 });
 
-test('most paying is earned only by a count above all eight weekly readings', async () => {
-  const quiet = { summary: summaryFixture((s) => { s.aiRuns.runs = 1; }), usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
-  const dom = await boot({ ...quiet });
-  assert.deepEqual(moments(dom), [{ value: '31', label: 'Most paying', sub: 'in 8 weeks', tone: 'is-cyan' }]);
-
-  const none = async (mutate, why) => {
-    const d = await boot({ ...quiet, growth: growthFixture(mutate) });
-    assert.deepEqual(moments(d), [], why);
-  };
-  await none((g) => { g.payingSubscribers.weeks[3].count = 31; }, 'level with a week is not a record');
-  await none((g) => { g.payingSubscribers.weeks[3].count = 35; }, 'a higher week before');
-  await none((g) => { g.payingSubscribers.weeks = g.payingSubscribers.weeks.slice(1); }, 'seven weeks of eight');
-  await none((g) => { g.payingSubscribers.weeks[0].count = null; }, 'a week with no count');
-  await none((g) => { g.payingSubscribers.weeks.push({ count: 1 }); }, 'nine weeks of eight');
-  await none((g) => { delete g.payingSubscribers.current; }, 'no current reading');
-  await none((g) => { g.payingSubscribers.current.count = '31'; }, 'a count that is not a number');
-  await none((g) => { delete g.payingSubscribers; }, 'no subscriber history at all');
-});
-
-test('a growth read that fails or is missing removes its tile and says nothing about it', async () => {
-  const quiet = { summary: summaryFixture((s) => { s.aiRuns.runs = 1; }), usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
-  for (const growth of [Object.assign(new Error('Not found'), { code: 'http_404' }), boom('Growth fell over.')]) {
-    const dom = await boot({ ...quiet, growth });
-    assert.deepEqual(moments(dom), []);
-    const page = allText(dom.doc.getElementById('content'));
-    assert.ok(!/paying|growth|Growth fell over/i.test(page), 'the failed growth read is mentioned: ' + page);
-    assert.equal(withClass(dom.doc.getElementById('content'), 'fail-line').length, 0, 'the growth failure drew a failure');
-    assert.ok(!findAll(dom.doc.getElementById('content'), (n) => n.getAttribute('data-retry') !== null
-      && /paying|growth/i.test(n.getAttribute('data-retry'))).length, 'growth has a retry');
-    /* The rest of the page is not degraded by it: nothing anywhere asks to be
-       retried. */
-    assert.equal(findAll(dom.doc.getElementById('content'), (n) => n.getAttribute('data-retry') !== null).length, 0,
-      'a retry is on the page for a pane that read what it needs');
-  }
-});
-
 test('more AI runs is earned only when both weeks are fully reported and the count rose', async () => {
-  const lone = { growth: new Error('gone'), usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
+  const lone = { usage: usageFixture((u) => { u.window.daysCovered = 3; }) };
   const dom = await boot({ ...lone });
   assert.deepEqual(moments(dom), [{ value: '+410', label: 'More AI runs', sub: 'vs last week', tone: 'is-violet' }]);
 
@@ -652,13 +606,26 @@ test('more AI runs is earned only when both weeks are fully reported and the cou
   await none((s) => { delete s.aiRuns.daysMissing; }, 'no list of the days that are missing');
 });
 
-test('all three moments sit under one label, in order, and none drawn is no strip', async () => {
+test('the strip draws only the moments that were earned, under one label, in order', async () => {
   const dom = await boot();
   assert.deepEqual(wordsOf(section(dom, 'moments'), 'sec-label'), ['This week']);
-  assert.deepEqual(moments(dom).map((m) => m.label), ['Best Mobile day', 'Most paying', 'More AI runs']);
+  assert.deepEqual(moments(dom).map((m) => m.label), ['Best Mobile day', 'More AI runs']);
+  assert.equal(withClass(section(dom, 'moments'), 'moment-row').length, 1);
+  assert.ok(!/paying/i.test(allText(dom.doc.getElementById('content'))), 'a paying tile is on the page');
+
+  /* One earned moment is a strip of one: its label and no gap where the other
+     would have been. */
+  const aiOnly = await boot({ usage: usageFixture((u) => { u.window.daysCovered = 3; }) });
+  assert.deepEqual(moments(aiOnly).map((m) => m.label), ['More AI runs']);
+  assert.equal(withClass(one(section(aiOnly, 'moments'), 'moment-row'), 'moment').length, 1);
+  assert.deepEqual(wordsOf(section(aiOnly, 'moments'), 'sec-label'), ['This week']);
+
+  const bestOnly = await boot({ summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }) });
+  assert.deepEqual(moments(bestOnly).map((m) => m.label), ['Best Mobile day']);
+  assert.equal(withClass(one(section(bestOnly, 'moments'), 'moment-row'), 'moment').length, 1);
 
   const empty = await boot({
-    growth: new Error('gone'), usage: usageFixture((u) => { u.window.daysCovered = 3; }),
+    usage: usageFixture((u) => { u.window.daysCovered = 3; }),
     summary: summaryFixture((s) => { s.aiRuns.previous.runs = 9999; }),
   });
   assert.equal(section(empty, 'moments').childNodes.length, 0, 'a strip was drawn with nothing earned');
@@ -735,6 +702,102 @@ test('critical issues are counted and a closed one is not', async () => {
   });
   assert.equal(healthText(dom), '2 critical issues');
   assert.equal(healthTone(dom), 'is-crit');
+});
+
+/* ====================== the checks beside the calm line ================== */
+
+const notesOf = (dom) => wordsOf(section(dom, 'health'), 'health-note');
+const calm = { problems: problemsFixture([]) };
+const oldStamp = '2020-01-01T00:00:00.000Z';
+const threeRules = (edit) => rulesFixture((r) => {
+  r.rules.push({ key: 'spend', label: 'Spend', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok', lastFiredAt: null });
+  if (edit) edit(r.rules);
+});
+
+test('every check reporting and recent leaves the calm line with nothing beside it', async () => {
+  const dom = await boot(calm);
+  assert.equal(healthText(dom), OK);
+  assert.deepEqual(notesOf(dom), []);
+  assert.equal(withClass(section(dom, 'health'), 'health-notes').length, 0, 'an empty note row is drawn');
+  /* A rule that is switched off was never going to report. */
+  const off = await boot({ ...calm, rules: threeRules((rules) => {
+    rules[2].enabled = false; rules[2].lastEvaluationStatus = 'insufficient_data';
+  }) });
+  assert.deepEqual(notesOf(off), []);
+});
+
+test('checks that are not reporting are counted beside the claim, never inside it', async () => {
+  const cases = [
+    ['one short of data', (rules) => { rules[1].lastEvaluationStatus = 'insufficient_data'; }, '1 check not reporting'],
+    ['one whose own check failed', (rules) => { rules[1].lastEvaluationStatus = 'error'; }, '1 check not reporting'],
+    ['one that never ran', (rules) => { rules[1].lastEvaluatedAt = null; rules[1].lastEvaluationStatus = null; }, '1 check not reporting'],
+    ['one with a stamp nobody can read', (rules) => { rules[1].lastEvaluatedAt = 'sometime'; }, '1 check not reporting'],
+    ['two of three', (rules) => {
+      rules[1].lastEvaluationStatus = 'insufficient_data'; rules[2].lastEvaluationStatus = 'error';
+    }, '2 checks not reporting'],
+  ];
+  for (const [name, mutate, words] of cases) {
+    const dom = await boot({ ...calm, rules: threeRules(mutate) });
+    assert.equal(healthText(dom), OK, name + ': the problems claim changed');
+    assert.equal(healthTone(dom), 'is-ok', name);
+    assert.deepEqual(notesOf(dom), [words], name);
+    assert.ok(!allText(one(section(dom, 'health'), 'health-text')).includes('check'),
+      name + ': the check count is inside the claim');
+  }
+});
+
+test('verdicts older than the evaluator would leave them are dated beside the claim', async () => {
+  const ranAt = (stamp) => rulesFixture((r) => { r.rules.forEach((x) => { x.lastEvaluatedAt = stamp; }); });
+
+  const fresh = await boot({ ...calm, rules: ranAt(minutesAgo(14)) });
+  assert.deepEqual(notesOf(fresh), [], 'fourteen minutes is inside the cadence');
+
+  const late = await boot({ ...calm, rules: ranAt(minutesAgo(16)) });
+  assert.deepEqual(notesOf(late), ['Checks last ran 16 minutes ago']);
+  assert.equal(healthText(late), OK);
+
+  const hours = await boot({ ...calm, rules: ranAt(minutesAgo(3 * 60)) });
+  assert.deepEqual(notesOf(hours), ['Checks last ran 3 hours ago']);
+
+  const years = await boot({ ...calm, rules: ranAt(oldStamp) });
+  assert.equal(healthText(years), OK);
+  assert.equal(notesOf(years).length, 1);
+  assert.match(notesOf(years)[0], /^Checks last ran \d+ days ago$/);
+});
+
+test('the age is the newest verdict, not the newest run that reached none', async () => {
+  const rules = rulesFixture((r) => {
+    r.rules[0].lastEvaluatedAt = oldStamp;
+    r.rules[1].lastEvaluationStatus = 'insufficient_data';
+  });
+  const dom = await boot({ ...calm, rules });
+  const notes = notesOf(dom);
+  assert.equal(notes.length, 2, notes.join(' | '));
+  assert.equal(notes[0], '1 check not reporting');
+  assert.match(notes[1], /^Checks last ran \d+ days ago$/, 'a run that reached no verdict made the verdicts look current');
+});
+
+test('the coverage line is one clause each, and only ever beside the calm claim', async () => {
+  const both = await boot({ ...calm, rules: threeRules((rules) => {
+    rules.forEach((x) => { x.lastEvaluatedAt = minutesAgo(40); });
+    rules[2].lastEvaluationStatus = 'insufficient_data';
+  }) });
+  assert.deepEqual(notesOf(both), ['1 check not reporting', 'Checks last ran 40 minutes ago']);
+  for (const note of notesOf(both)) assert.ok(!/[.,;:]/.test(note), 'the note is a sentence: ' + note);
+
+  /* Every other line already says something about the checks or the queue. */
+  const elsewhere = [
+    ['a critical issue', { rules: threeRules((rules) => { rules[2].lastEvaluationStatus = 'insufficient_data'; }) }],
+    ['checks not running', { ...calm, rules: rulesFixture((r) => { r.rules.forEach((x) => { x.lastEvaluationStatus = 'insufficient_data'; }); }) }],
+    ['checks unread', { ...calm, rules: boom('down') }],
+    ['no destination', { ...calm, rules: threeRules((rules) => { rules[2].lastEvaluationStatus = 'error'; }) }],
+  ];
+  elsewhere[3][1].rules.channels[0].configured = false;
+  for (const [name, options] of elsewhere) {
+    const dom = await boot(options);
+    assert.ok(!allText(section(dom, 'health')).includes(OK), name);
+    assert.deepEqual(notesOf(dom), [], name + ' carries the coverage line');
+  }
 });
 
 test('every status dot is decoration, because the health line says it in words', async () => {
@@ -1196,7 +1259,6 @@ test('nothing on the page says undefined, null or NaN when most of every answer 
   const dom = await boot({
     summary: { people: { availability: { state: 'ready' }, platform: {}, apps: [{}, null, { active: 'x' }], window: {} }, aiRuns: {} },
     usage: { availability: { state: 'ready' }, window: {}, apps: [{ trend: { values: [null, 'a', undefined] } }, null] },
-    growth: {},
     problems: { problems: [{}, { status: 'open' }, { status: 'open', severity: 'critical', title: null }] },
     rules: {},
     jobs: { queue: { byState: [null, {}] }, attention: {} },

@@ -96,7 +96,6 @@ const GOOD = {
     availability: { state: 'ready' },
     apps: [{ app: 'mobile', label: 'Mobile', trend: { values: [3, 4, 5, 6, 7, 8, 9] } }],
   }),
-  growth: () => ({ payingSubscribers: { current: { count: 3 }, weeks: [] } }),
   problems: () => ({ problems: [], total: 0 }),
   rules: () => ({
     rules: [{ key: 'q', enabled: true, lastEvaluatedAt: minutesAgo(5), lastEvaluationStatus: 'ok' }],
@@ -120,7 +119,7 @@ const GOOD = {
 };
 
 const URL_OF = {
-  summary: '/api/ops/summary', usage: '/api/ops/usage', growth: '/api/ops/growth',
+  summary: '/api/ops/summary', usage: '/api/ops/usage',
   problems: '/api/ops/alerts/problems', rules: '/api/ops/alerts/rules',
   jobs: '/api/ops/jobs', runs: '/api/ops/runs', costs: '/api/ops/costs',
 };
@@ -224,14 +223,26 @@ async function boot(failing) {
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  /* Every time the shell re-seats the pane's content. It takes the content out
+     of the document and puts it back, which is what drops a browser's focus,
+     so a read that is not allowed to touch the page must not cause one. */
+  const states = [];
+  const applyState = dom.window.Aria.applyState;
+  dom.window.Aria.applyState = function (state) {
+    states.push(String(state));
+    return applyState.call(dom.window.Aria, state);
+  };
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
 
   await settle();
   const hold = (...endpoints) => endpoints.forEach((e) => held.add(e));
-  const release = async (batch) => {
-    const mine = waiting.filter((w) => w.batch === batch);
+  /* `endpoints` narrows the release to those reads, for two retries of
+     different sections whose reads are each in their own batch zero. */
+  const release = async (batch, ...endpoints) => {
+    const mine = waiting.filter((w) => w.batch === batch
+      && (!endpoints.length || endpoints.includes(w.endpoint)));
     assert.ok(mine.length, 'nothing is waiting in batch ' + batch);
     mine.forEach((w) => {
       waiting.splice(waiting.indexOf(w), 1);
@@ -241,7 +252,7 @@ async function boot(failing) {
   };
   const repair = (...keys) => keys.forEach((k) => { answers[URL_OF[k]] = GOOD[k](); });
   const breakAgain = (...keys) => keys.forEach((k) => { answers[URL_OF[k]] = boom(k); });
-  return Object.assign(dom, { answers, calls, settle, hold, release, waiting, repair, breakAgain });
+  return Object.assign(dom, { answers, calls, states, settle, hold, release, waiting, repair, breakAgain });
 }
 
 /* ---------------------------------------------------------- what is drawn */
@@ -553,7 +564,7 @@ test('a superseded whole-pane retry does not draw over a newer one or take focus
   tap(button);
   tap(button);
   await dom.settle();
-  assert.equal(dom.waiting.length, 16, 'two batches of eight reads are in flight');
+  assert.equal(dom.waiting.length, 14, 'two batches of seven reads are in flight');
 
   /* The newer press is answered with a healthy system, the older one lands
      last and is answered with a failure. Whatever it carries must not reach
@@ -583,6 +594,104 @@ test('a superseded press that finishes first draws nothing, and the newer one dr
   assert.equal(host(dom, 'health'), null, 'the older press drew while a newer one was still in flight');
   await dom.release(1);
   assert.ok(host(dom, 'health'), 'the newer press did not draw');
+});
+
+/* ============================= a late section answer ===================== */
+
+/* The same race on the path a keyboard operator actually reaches: a section's
+   own Try again, pressed twice, or two sections' retries overlapping. The
+   whole-pane tests above never touch it. */
+
+test('a superseded section retry does not draw over a newer one, take focus back or speak', async () => {
+  const dom = await boot({ summary: boom('summary') });
+  dom.hold(URL_OF.summary);
+  const button = retryFor(dom, 'Active people could not be read')[0];
+  tap(button);
+  tap(button);
+  await dom.settle();
+  assert.equal(dom.waiting.length, 2, 'two reads of the summary are in flight');
+
+  dom.repair('summary');
+  await dom.release(1);
+  assert.ok(allText(host(dom, 'people')).includes('1,102'), 'the newer answer did not draw');
+  assert.equal(retriesIn(shownPanel(dom)).length, 0);
+  const focused = dom.doc.activeElement;
+  assert.ok(inside(focused, host(dom, 'people')), 'the newer answer did not land focus on its section');
+  const redrawn = dom.states.length;
+
+  dom.breakAgain('summary');
+  await dom.release(0);
+  assert.ok(allText(host(dom, 'people')).includes('1,102'), 'an older failure replaced the newer reading');
+  assert.equal(retriesIn(shownPanel(dom)).length, 0, 'an older failure drew a failure over a healthy page');
+  assert.equal(dom.doc.activeElement, focused, 'an older answer took focus');
+  assert.equal(announcement(dom), 'Active people was read again.', 'an older answer spoke');
+  assert.equal(dom.states.length, redrawn, 'an older answer re-seated the page');
+});
+
+test('a superseded section retry that finishes first draws nothing, and the newer one draws when it lands', async () => {
+  const dom = await boot({ summary: boom('summary') });
+  dom.hold(URL_OF.summary);
+  const button = retryFor(dom, 'Active people could not be read')[0];
+  tap(button);
+  tap(button);
+  await dom.settle();
+
+  dom.repair('summary');
+  await dom.release(0);
+  assert.ok(!allText(host(dom, 'people')).includes('1,102'), 'the older press drew while a newer one was still in flight');
+  assert.equal(retryFor(dom, 'Active people could not be read').length, 1, 'the failure the operator pressed was taken away');
+  assert.equal(announcement(dom), '', 'the older press spoke while a newer one was still in flight');
+  const before = dom.states.length;
+
+  await dom.release(1);
+  assert.ok(allText(host(dom, 'people')).includes('1,102'), 'the newer press did not draw');
+  assert.ok(inside(dom.doc.activeElement, host(dom, 'people')));
+  assert.equal(announcement(dom), 'Active people was read again.');
+  assert.ok(dom.states.length > before);
+});
+
+test('two buttons for one read supersede each other the same way, and the section that did not ask is redrawn', async () => {
+  const dom = await boot({ summary: boom('summary') });
+  dom.hold(URL_OF.summary);
+  tap(retryFor(dom, 'Active people could not be read')[0]);
+  tap(retryFor(dom, 'AI runs could not be read')[0]);
+  await dom.settle();
+  assert.equal(dom.waiting.length, 2);
+
+  dom.repair('summary');
+  await dom.release(1);
+  dom.breakAgain('summary');
+  await dom.release(0);
+  assert.ok(allText(host(dom, 'people')).includes('1,102'), 'the older retry took the people figure away');
+  assert.equal(retriesIn(shownPanel(dom)).length, 0, 'the older retry drew a failure over a healthy page');
+  assert.ok(inside(dom.doc.activeElement, host(dom, 'ai')), 'focus went to the retry that lost');
+  assert.equal(announcement(dom), 'Aria AI was read again.');
+});
+
+test('retries of different sections overlap without discarding each other, in either order', async () => {
+  for (const first of ['jobs', 'costs']) {
+    const second = first === 'jobs' ? 'costs' : 'jobs';
+    const headline = { jobs: 'Jobs could not be read', costs: 'Cloud spend could not be read' };
+    const spoken = { jobs: 'Happening now was read again.', costs: 'Cloud spend was read again.' };
+    const dom = await boot({ jobs: boom('jobs'), costs: boom('costs') });
+    dom.hold(URL_OF.jobs, URL_OF.costs);
+    tap(retryFor(dom, headline[first])[0]);
+    tap(retryFor(dom, headline[second])[0]);
+    await dom.settle();
+    assert.equal(dom.waiting.length, 2, 'one read of each is in flight');
+
+    dom.repair('jobs', 'costs');
+    /* The press made second answers first; the one made first answers last.
+       Neither read was asked for again, so both are the newest of their own. */
+    await dom.release(0, URL_OF[second]);
+    assert.equal(retryFor(dom, headline[second]).length, 0, second + ' did not draw');
+    assert.equal(retryFor(dom, headline[first]).length, 1, first + ' drew before it was answered');
+    await dom.release(0, URL_OF[first]);
+    assert.equal(retriesIn(shownPanel(dom)).length, 0, first + ' was discarded by the other section\'s retry');
+    const sectionOf = { jobs: 'jobs', costs: 'spend' };
+    assert.ok(inside(dom.doc.activeElement, host(dom, sectionOf[first])), 'focus is not on the last answer to land');
+    assert.equal(announcement(dom), spoken[first]);
+  }
 });
 
 /* ================================= a throw =============================== */

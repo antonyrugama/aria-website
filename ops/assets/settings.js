@@ -578,6 +578,9 @@
       if (!target || !/^(administrators|sessions|audit)$/.test(id)) return;
       scrolledTo = true;
       if (target.scrollIntoView) target.scrollIntoView();
+      /* The band is already focusable, so the jump lands the keyboard there
+         too. Focusing it does not scroll again: it is on screen already. */
+      target.focus();
     }
 
     /* The account list goes through the shell's loader and the other two go

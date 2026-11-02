@@ -12,7 +12,6 @@
 
      GET /api/ops/summary           the people figure and the AI run count
      GET /api/ops/usage             the daily lines, and one earned moment
-     GET /api/ops/growth            paying subscribers, one earned moment
      GET /api/ops/alerts/problems   the queue
      GET /api/ops/alerts/rules      whether anything is in a position to notice
      GET /api/ops/jobs              what is running, queued and stuck
@@ -39,9 +38,8 @@
         position to notice. A failed or capped read, or checks that are not
         running, say so instead.
      5. **A moment is earned or it is not drawn.** Each tile in "This week" has
-        one rule, below, and renders only when its own reads prove it. The
-        growth read in particular fails silently: a 404 or an error removes
-        the paying tile and draws nothing in its place. */
+        one rule, below, and renders only when its own reads prove it. A read
+        that fails removes its tile and draws nothing in its place. */
 (function (global) {
   'use strict';
 
@@ -56,7 +54,6 @@
   var ENDPOINT = {
     summary: '/api/ops/summary',
     usage: '/api/ops/usage',
-    growth: '/api/ops/growth',
     problems: '/api/ops/alerts/problems',
     rules: '/api/ops/alerts/rules',
     jobs: '/api/ops/jobs',
@@ -64,8 +61,7 @@
     costs: '/api/ops/costs'
   };
 
-  /* Reads whose failure leaves the pane degraded. Growth is not one of them:
-     its absence is a tile that is not drawn, not a failure to report. */
+  /* Reads whose failure leaves the pane degraded. */
   var CORE = ['summary', 'usage', 'problems', 'rules', 'jobs', 'runs', 'costs'];
 
   var ROWS_LISTED = 3;
@@ -73,7 +69,9 @@
   /* The days a usage window must cover before "best day in N days" says
      anything. A fortnight is two of the weeks the chart compares. */
   var BEST_DAY_MIN_DAYS = 14;
-  var PAYING_WEEKS = 8;
+  /* Alert rules are evaluated every five minutes, so a verdict three times
+     that old means the evaluator is not running. */
+  var CHECKS_STALE_MS = 15 * 60 * 1000;
 
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -193,9 +191,17 @@
     usage: function () {
       return get(ENDPOINT.usage, { scope: 'all', range: '30d', env: 'production' });
     },
-    growth: function () { return get(ENDPOINT.growth); },
+    /* A reply with no readable list is a failed read. An absent list passed
+       on as an empty one would let "No critical issues" be printed over a
+       queue nobody has seen. */
     problems: function () {
-      return get(ENDPOINT.problems, { status: 'open', limit: model.PAGE });
+      return get(ENDPOINT.problems, { status: 'open', limit: model.PAGE }).then(function (open) {
+        var rows = open && open.problems;
+        if (!Array.isArray(rows) || rows.some(function (p) { return !p || typeof p !== 'object'; })) {
+          throw new Error('The problems list came back in a form this page cannot read.');
+        }
+        return open;
+      });
     },
     rules: function () { return get(ENDPOINT.rules); },
     jobs: function () { return get(ENDPOINT.jobs); },
@@ -217,6 +223,11 @@
   S.definePane('overview', function (content) {
     var region = S.region(content);
     var loadToken = 0;
+    /* One counter per read. Asking for a read advances its counter, and an
+       answer may be used only while its counter is still the one it was asked
+       under, so the newest ask of a read wins whatever order the answers come
+       back in, and a read nobody asked again is never disturbed. */
+    var generation = {};
     var results = {};
     var wrap = null;
     var hosts = {};
@@ -311,16 +322,35 @@
       S.announce(message);
     }
 
-    /* Re-read these reads and nothing else, then redraw the sections that
-       draw from them. Resolves to whether this answer is the one on screen. */
-    function retry(keys) {
-      var mine = loadToken;
+    /* Ask for these reads. Each answer says whether its read has been asked
+       for again since, judged when the last of them is in. */
+    function ask(keys) {
+      var stamp = {};
+      keys.forEach(function (key) {
+        generation[key] = (generation[key] || 0) + 1;
+        stamp[key] = generation[key];
+      });
       return Promise.all(keys.map(function (key) {
         return settled(key).then(function (one) { return { key: key, one: one }; });
       })).then(function (answers) {
-        if (mine !== loadToken || !wrap) return false;
-        answers.forEach(function (a) { results[a.key] = a.one; });
-        redraw(keys);
+        answers.forEach(function (a) { a.current = generation[a.key] === stamp[a.key]; });
+        return answers;
+      });
+    }
+
+    /* Re-read these reads and nothing else, then redraw the sections that
+       draw from them. Only an answer nobody has since asked for again is
+       used: an older answer that arrives late draws nothing and moves nothing,
+       and the retry that replaced it is the one that lands. Resolves to
+       whether this retry drew, which is the only one that may move focus or
+       speak. Every Try again asks for one read, so an answer is either the
+       newest of its read or it is not. */
+    function retry(keys) {
+      return ask(keys).then(function (answers) {
+        var used = answers.filter(function (a) { return a.current; });
+        if (!used.length) return false;
+        used.forEach(function (a) { results[a.key] = a.one; });
+        redraw(used.map(function (a) { return a.key; }));
         syncState();
         return true;
       });
@@ -336,10 +366,11 @@
         { type: 'tiles', count: 3 },
         { type: 'block', height: 140 }
       ]);
-      var keys = Object.keys(READ);
-      return Promise.all(keys.map(settled)).then(function (all) {
+      /* Asking advances every read, so a retry still out when the page is
+         read again can no longer draw over the new page. */
+      return ask(Object.keys(READ)).then(function (answers) {
         if (mine !== loadToken) return false;
-        keys.forEach(function (key, i) { results[key] = all[i]; });
+        answers.forEach(function (a) { results[a.key] = a.one; });
         render();
         return true;
       }).catch(function (err) {
@@ -362,7 +393,7 @@
       { id: 'live', reads: ['jobs'], draw: drawLive },
       { id: 'people', reads: ['summary'], draw: drawPeople },
       { id: 'charts', reads: ['usage'], draw: drawCharts },
-      { id: 'moments', reads: ['usage', 'growth', 'summary'], draw: drawMoments },
+      { id: 'moments', reads: ['usage', 'summary'], draw: drawMoments },
       { id: 'problems', reads: ['problems'], draw: drawProblems },
       { id: 'jobs', reads: ['jobs'], draw: drawJobs },
       { id: 'ai', reads: ['summary', 'runs'], draw: drawAi },
@@ -491,6 +522,22 @@
       return { tone: 'ok', text: 'No critical issues' };
     }
 
+    /* What the calm line does not say. "No critical issues" is a claim about
+       the problems; whether every check is reporting, and how old the verdicts
+       are, is a different fact and is printed beside it rather than folded
+       into it. Two words of each, never a sentence. */
+    function checkNotes() {
+      var armed = model.armedState(data('rules') || {});
+      var notes = [];
+      var silent = armed.enabled - armed.checking;
+      if (silent > 0) notes.push(fmt.plural(silent, 'check') + ' not reporting');
+      var judged = armed.lastJudgedAt ? Date.parse(armed.lastJudgedAt) : NaN;
+      if (isFinite(judged) && Date.now() - judged > CHECKS_STALE_MS) {
+        notes.push('Checks last ran ' + fmt.ago(armed.lastJudgedAt));
+      }
+      return notes;
+    }
+
     function drawHealth(node) {
       if (results.problems.error) {
         var title = h('span', { className: 'sec-title health-text', text: 'Problems unread' });
@@ -504,6 +551,12 @@
       node.appendChild(h('span', { className: 'dot is-' + line.tone, 'aria-hidden': 'true' }));
       node.appendChild(text);
       if (line.retry) node.appendChild(retryButton(text, line.retry, 'health'));
+      var notes = line.tone === 'ok' ? checkNotes() : [];
+      if (notes.length) {
+        node.appendChild(h('span', { className: 'health-notes' }, notes.map(function (note) {
+          return h('span', { className: 'health-note', text: note });
+        })));
+      }
     }
 
     function jobFigures() {
@@ -872,9 +925,6 @@
          best day    the latest finished UTC day is the strict maximum of
                      every reading the mobile line has, over at least a
                      fortnight with no missing rollup. N is the days covered.
-         paying      the verified paying count now is strictly higher than
-                     every one of the eight weekly readings, all eight of
-                     which exist.
          AI runs     more runs than the week before, both weeks fully
                      reconciled. The number is the difference. */
     function bestMobileDay() {
@@ -898,21 +948,6 @@
       };
     }
 
-    function mostPaying() {
-      var growth = data('growth');
-      var paying = growth && growth.payingSubscribers;
-      var now = num(paying && paying.current && paying.current.count);
-      var weeks = list(paying && paying.weeks);
-      if (now === null || weeks.length !== PAYING_WEEKS) return null;
-      var counts = weeks.map(function (w) { return num(w && w.count); });
-      if (counts.some(function (c) { return c === null; })) return null;
-      if (counts.some(function (c) { return c >= now; })) return null;
-      return {
-        tone: 'cyan', icon: 'trophy', value: fmt.int(now),
-        label: 'Most paying', sub: 'in ' + fmt.plural(PAYING_WEEKS, 'week')
-      };
-    }
-
     function moreAiRuns() {
       var ai = data('summary') && data('summary').aiRuns;
       if (!ai || stateOf(ai) !== 'ready') return null;
@@ -930,7 +965,7 @@
     }
 
     function drawMoments(node) {
-      var earned = [bestMobileDay(), mostPaying(), moreAiRuns()].filter(Boolean);
+      var earned = [bestMobileDay(), moreAiRuns()].filter(Boolean);
       if (!earned.length) return;
       node.appendChild(h('h2', { className: 'sec-label', text: 'This week' }));
       var row = h('div', { className: 'moment-row' });

@@ -99,12 +99,6 @@ const GOOD = {
       { app: 'coaches', label: 'Coaches Web', trend: { values: COACHES_DAILY.slice() } },
     ],
   }),
-  growth: () => ({
-    payingSubscribers: {
-      current: { count: 31 },
-      weeks: [20, 21, 22, 23, 24, 25, 27, 29].map((count) => ({ count })),
-    },
-  }),
   /* One warning nobody is on, so a healthy render has a queue row to lose and
      a health line that is still "No critical issues" for the rules read to
      change. A critical one would make the rules read irrelevant to the line. */
@@ -141,7 +135,7 @@ const GOOD = {
 };
 
 const ENDPOINTS = {
-  summary: '/api/ops/summary', usage: '/api/ops/usage', growth: '/api/ops/growth',
+  summary: '/api/ops/summary', usage: '/api/ops/usage',
   problems: '/api/ops/alerts/problems', rules: '/api/ops/alerts/rules',
   jobs: '/api/ops/jobs', runs: '/api/ops/runs', costs: '/api/ops/costs',
 };
@@ -154,7 +148,7 @@ const DRAWN_FROM = {
   live: ['jobs'],
   people: ['summary'],
   charts: ['usage'],
-  moments: ['usage', 'growth', 'summary'],
+  moments: ['usage', 'summary'],
   problems: ['problems'],
   jobs: ['jobs'],
   ai: ['summary', 'runs'],
@@ -200,7 +194,8 @@ async function boot(options) {
     state: { admin: { displayName: 'Owner', email: 'owner@example.invalid', role: 'owner' } },
     boot: () => Promise.resolve({ admin: dom.window.OpsSession.state.admin }),
     call: (endpoint) => {
-      const answer = answers[endpoint];
+      let answer = answers[endpoint];
+      if (typeof answer === 'function') answer = answer();
       if (answer instanceof Error) return Promise.reject(answer);
       if (answer === undefined) return Promise.reject(new Error('no stub for ' + endpoint));
       return Promise.resolve({ data: answer });
@@ -214,11 +209,19 @@ async function boot(options) {
   vm.createContext(dom.window);
   vm.runInContext(REGISTRY_SRC, dom.window, { filename: 'pane-registry.js' });
   vm.runInContext(ARIA_SRC, dom.window, { filename: 'aria.js' });
+  /* The states the shell put the pane in, in order, so a test can tell the
+     degraded pane from the live one: both are shown by the same box. */
+  const states = [];
+  const applyState = dom.window.Aria.applyState;
+  dom.window.Aria.applyState = function (state) {
+    states.push(String(state));
+    return applyState.call(dom.window.Aria, state);
+  };
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
-  return dom;
+  return Object.assign(dom, { states });
 }
 
 /* ------------------------------------------------------------- reading it */
@@ -271,14 +274,6 @@ test('the pane goes down as a whole only when every read it cannot do without ha
     assert.ok(section(dom, 'health'), `with only ${survivor} readable the page was taken down`);
     assert.ok(!allText(shownPanel(dom)).includes(WHOLE), `with only ${survivor} readable the pane said it was unreadable`);
   }
-});
-
-test('the growth read is not one the pane cannot do without', async () => {
-  const dom = await boot(failing(...CORE));
-  assert.ok(allText(shownPanel(dom)).includes(WHOLE), 'a readable growth answer kept a pane with nothing else on its feet');
-  const withoutGrowth = await boot(failing('growth'));
-  assert.ok(!allText(shownPanel(withoutGrowth)).includes(WHOLE));
-  assert.equal(retries(shownPanel(withoutGrowth)).length, 0, 'growth failing drew a failure of its own');
 });
 
 /* ========================= what a failed section says ===================== */
@@ -401,6 +396,52 @@ test('an unreadable problems read is never read as a quiet queue', async () => {
   assert.ok(!everything.includes(OK), 'a queue nobody could read was reported as nothing being wrong');
   assert.ok(!everything.includes('Nobody on it') && !everything.includes('Since'), 'a row was drawn from a read that failed');
   assert.equal(withClass(section(down, 'problems'), 'prob-row').length, 0);
+});
+
+/* A reply that is not an error but carries no list is no more a queue than a
+   failure is. `list()` turns anything that is not an array into an empty one,
+   and an empty queue over healthy checks is the one input that prints the
+   claim, so each of these has to be a failed read before it gets that far. */
+const UNREADABLE_PROBLEMS = [
+  ['an answer with no list in it', { total: 0 }],
+  ['an empty answer', {}],
+  ['no answer body', null],
+  ['a list that is null', { problems: null, total: 0 }],
+  ['an object where the list should be', { problems: {}, total: 0 }],
+  ['a string where the list should be', { problems: 'none', total: 0 }],
+  ['a number where the list should be', { problems: 0, total: 0 }],
+  ['a row that is null', { problems: [null], total: 1 }],
+  ['a row that is a string', { problems: ['PRB-1'], total: 1 }],
+];
+
+test('a problems answer with no readable list is a failed read, never a quiet queue', async () => {
+  const quiet = await boot({ problems: { problems: [], total: 0 } });
+  assert.ok(allText(section(quiet, 'health')).includes(OK),
+    'an empty, readable queue over healthy checks did not claim ' + OK + ', so the cases below prove nothing');
+
+  for (const [name, answer] of UNREADABLE_PROBLEMS) {
+    const dom = await boot({ problems: answer });
+    const everything = allText(shownPanel(dom));
+    assert.ok(!everything.includes(OK), name + ' was reported as nothing being wrong');
+    assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), 'Problems unread', name);
+    assert.equal(retries(section(dom, 'health')).length, 1, name + ': the failed read has no retry');
+    assert.equal(withClass(section(dom, 'problems'), 'prob-row').length, 0, name + ' drew a queue row');
+    assert.equal(dom.states[dom.states.length - 1], 'degraded', name + ': the pane is not marked degraded');
+    assert.deepEqual(
+      findAll(dom.doc.body, (n) => n.getAttribute && n.getAttribute('data-badge-key') === 'alerts')
+        .flatMap((l) => withClass(l, 'nav-badge').map(allText)), [], name + ' set a badge');
+  }
+});
+
+test('an unreadable problems list that is retried and comes back readable draws the claim', async () => {
+  let answer = { total: 0 };
+  const dom = await boot({ problems: () => answer });
+  assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), 'Problems unread');
+  answer = { problems: [], total: 0 };
+  retries(section(dom, 'health'))[0].dispatchEvent({ type: 'click' });
+  for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
+  assert.equal(allText(withClass(section(dom, 'health'), 'health-text')[0]), OK);
+  assert.equal(dom.states[dom.states.length - 1], 'live');
 });
 
 test('one unreadable read does not mask the problem list with a failure of the checks', async () => {

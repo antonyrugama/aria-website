@@ -116,12 +116,6 @@ function everything() {
         { app: 'coaches', label: 'Coaches Web', trend: { values: COACHES_DAILY.slice() } },
       ],
     },
-    growth: {
-      payingSubscribers: {
-        current: { count: 31 },
-        weeks: [20, 21, 22, 23, 24, 25, 27, 29].map((count) => ({ count })),
-      },
-    },
     problems: {
       problems: [
         { id: 'p1', reference: 'PRB-104', severity: 'warning', status: 'open',
@@ -170,7 +164,7 @@ function withNotes() {
 }
 
 const ENDPOINTS = {
-  summary: '/api/ops/summary', usage: '/api/ops/usage', growth: '/api/ops/growth',
+  summary: '/api/ops/summary', usage: '/api/ops/usage',
   problems: '/api/ops/alerts/problems', rules: '/api/ops/alerts/rules',
   jobs: '/api/ops/jobs', runs: '/api/ops/runs', costs: '/api/ops/costs',
 };

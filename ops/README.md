@@ -601,13 +601,15 @@ it reads the live problems and alert rules, takes a problem on, closes it with a
 rule where the role allows it, and states whether the alerting is armed and where what it finds
 is sent. **Today** answers its three questions from live reads — how many people used the app this
 week, is it working, and is anything wrong — and owns no detail: every figure on it is a doorway
-into the page that owns the question. It makes eight reads, each on its own terms: the people
+into the page that owns the question. It makes seven reads, each on its own terms: the people
 figure and the AI run count from `GET /api/ops/summary`; the daily lines from `/api/ops/usage`;
-paying subscribers from `/api/ops/growth`; the queue from `/api/ops/alerts/problems`; whether
+the queue from `/api/ops/alerts/problems`; whether
 anything is in a position to notice from `/api/ops/alerts/rules`; what is running, queued and
 stuck from `/api/ops/jobs`; how the last 24 hours went from `/api/ops/runs`; and the latest billed
 day from `/api/ops/costs`. Every read is carried as a value, so a read that is down takes only its
-own section off the screen and gives it a Try again that re-reads only that read. An operator who
+own section off the screen and gives it a Try again that re-reads only that read. Each read has its
+own generation, so overlapping retries of one section are superseded and the newest answer wins in
+whichever order they come back, while another section's retry is left alone. An operator who
 cannot see spend can still act on a critical problem.
 
 Five things about that pane are rules rather than styling, and each one is a rule about not
@@ -618,12 +620,18 @@ figure is the platform's own distinct count rather than the sum of the two, beca
 used both is one person, and the change in active people is an absolute difference rather than a
 rate. **Nothing absent is filled in**: a day with no reading is a gap in the line. **"No critical
 issues" is a claim**, printed only after a complete, readable problems result and only when
-something was in a position to notice; a failed or capped read, or checks that are not running,
-say so instead, and the health line carries a state of its own for "no alert destination set".
+something was in a position to notice; a failed, capped or unreadable problems list (one with no
+list in it at all is a failed read, never an empty queue), or checks that are not running, say so
+instead, and the health line carries a state of its own for "no alert destination set". The claim
+is about the problems and nothing else, so what it leaves out is printed beside it in the
+secondary ink: "N checks not reporting" for enabled rules that have not reached a verdict, and
+"Checks last ran <age>" once the newest verdict is more than fifteen minutes old (the rules are
+evaluated every five).
 And **a moment is earned or it is not drawn**: each tile under "This week" has one rule and
-renders only when its own reads prove it. The growth read fails silently — a 404 or an error
-removes the paying tile and draws nothing in its place — and the paying tile appears only when
-the current count is strictly greater than every one of the eight weekly readings.
+renders only when its own reads prove it, and the strip draws only the tiles that were earned, so
+it can hold two, one, or none and then is not drawn at all. A read that fails removes its tile.
+There are two moments, the best mobile day and more AI runs than the week before. A "most paying"
+moment is not drawn at all.
 
 The cost tile draws no budget bar and no forecast. Nothing in the platform records a cloud budget,
 so there is no target to draw a track against, and only billed usage to date is stored.
@@ -1143,7 +1151,7 @@ pane-analytics.js = /api/ops/usage
 pane-data.js = (no route literal)
 pane-evaluations.js = /api/ops/seval/admin/datasets/, /api/ops/seval/admin/overview, /api/ops/seval/admin/scenarios/, /api/ops/seval/operations
 pane-jobs-live-v2.js = /api/ops/jobs
-pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/costs, /api/ops/growth, /api/ops/jobs, /api/ops/runs, /api/ops/summary, /api/ops/usage
+pane-overview.js = /api/ops/alerts/problems, /api/ops/alerts/rules, /api/ops/costs, /api/ops/jobs, /api/ops/runs, /api/ops/summary, /api/ops/usage
 pane-registry.js = (no route literal)
 pane-releases.js = /api/ops/releases
 pane-review-admin.js = /api/ops/seval/admin/reviews/adjudications, /api/ops/seval/admin/reviews/items/, /api/ops/seval/admin/reviews/labels, /api/ops/seval/admin/reviews/queue
@@ -1592,12 +1600,14 @@ writes its words from the answers, so wording, exact dates and the chart ceiling
 places than are listed here. The list is the departures that carry a decision, read as "these are
 on purpose and here is why", not as "everything else is identical".
 
-1. **The weekly rule for the paying tile.** It appears only when the current paying count is
-   strictly greater than every one of the eight weekly readings. A tile that said "most ever" on a
-   tie would be a claim the data does not make.
+1. **There is no "Most paying" tile.** The mock's third moment needs fifty-six daily snapshots of
+   the verified paying count, and the backend exposes only weekly samples, so the rule cannot be
+   proved from what the page can read. It is not drawn, and not approximated from the weeks. The
+   "This week" strip draws the tiles that are earned, so it can be two wide, one wide, or absent.
 2. **The health line has a state the mock does not.** "No alert destination set" is drawn when
    nothing is in a position to notice, before "No critical issues" can be claimed. The order is
-   critical, capped, rules unread ("Checks unread"), untrusted, no destination, then none.
+   critical, capped, rules unread ("Checks unread"), untrusted, no destination, then none. Only
+   the last of those carries the check-coverage line beside it.
 3. **Health is a pulse glyph and Money is a coin**, where the mock draws a heart and a database.
    The brand mark is the existing arrow glyph rather than the mock's cyan dot.
 4. **No drawer.** The phone navigation is the bottom bar. Growth, Health and Aria AI each carry a
