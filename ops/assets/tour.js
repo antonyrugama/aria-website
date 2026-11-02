@@ -118,7 +118,7 @@
      missing   what to say when the anchor is not on screen, where the state
                of the pane is not the whole reason */
 
-  var BAND_TITLES = '.band-title, .card-title, .kpi-label, .hero-title, .hunt-title, .state-title, .u-soon-title';
+  var BAND_TITLES = '.band-title, .card-title, .kpi-label, .hero-title, .state-title, .u-soon-title';
 
   var TOUR = {
     overview: [
@@ -897,10 +897,12 @@
     users: [
       {
         id: 'users-find', kind: 'action', title: 'Find one account',
-        anchor: { selector: '.hunt' },
+        anchor: { selector: '.u-find' },
         action: {
-          does: 'Finds one account by an exact identifier. There is no browsing, no list and no ' +
-            'near match, so a wrong guess tells you nothing about who has an account.',
+          does: 'Finds one account by an exact reference or email. There is no browsing, no list ' +
+            'and no near match, so a wrong guess tells you nothing about who has an account. ' +
+            'More than one match is listed to pick from; one is opened for you. Filters ' +
+            'narrows by app, state and tier.',
           who: 'Anybody who can open this pane. The server can still refuse.',
           audited: 'Every lookup is recorded with the reason you type, in a form that would be ' +
             'safe to show the athlete.',
@@ -908,22 +910,15 @@
         }
       },
       {
-        id: 'users-matches', kind: 'section', title: 'Matches',
-        anchor: { selector: 'section', title: 'Matches' },
-        body: 'The accounts matching exactly what you typed. Personal details are masked.',
-        missing: 'Nothing has been looked up yet, so there are no matches to point at. They ' +
-          'appear here after a lookup.'
-      },
-      {
         id: 'users-account', kind: 'section', title: 'One account',
-        anchor: { selector: 'section', title: 'One account' },
+        anchor: { selector: '.card', title: 'Account' },
         body: 'The account you opened. Personal fields are hidden for every role, the owner ' +
           'included, and a missing flag is read as hidden.',
         missing: 'No account is open, so there is nothing to point at yet.'
       },
       {
         id: 'users-reveal', kind: 'action', title: 'Reveal a personal field',
-        anchor: { selector: '.card', title: 'Revealing a personal field' },
+        anchor: { selector: '.card', title: 'Account' },
         roles: ['owner'],
         action: {
           does: 'Shows one hidden field in the clear for a short time, then hides it again. ' +
@@ -938,31 +933,23 @@
       },
       {
         id: 'users-activity', kind: 'section', title: 'Recent activity',
-        anchor: { selector: 'section', title: 'Recent activity' },
+        anchor: { selector: '.card', title: 'Recent activity' },
         body: 'What the account has done, as a list of events. What anybody wrote or was told ' +
           'is never shown here, at any role.',
         missing: 'No account is open, so there is no activity to point at yet.'
       },
       {
-        id: 'users-subscription', kind: 'section', title: 'Subscription and devices',
-        anchor: { selector: 'section', title: 'Subscription and devices' },
-        body: 'The plan the account is on and the devices it has used.',
+        id: 'users-subscription', kind: 'section', title: 'Subscription',
+        anchor: { selector: '.card', title: 'Subscription' },
+        body: 'The plan the account is on, and how and where it is billed.',
         missing: 'No account is open, so there is nothing to point at yet.'
       },
       {
         id: 'users-access', kind: 'section', title: 'Who has looked',
-        anchor: { selector: 'section', title: 'Access record' },
+        anchor: { selector: '.card', title: 'Access history' },
         body: 'Every lookup and reveal of this account, with who did it and why. It outlives ' +
           'every reveal and nothing on this page can remove an entry.',
         missing: 'No account is open, so there is no record to point at yet.'
-      },
-      {
-        id: 'users-danger', kind: 'section', title: 'Danger zone',
-        anchor: { selector: 'section', title: 'Danger zone' },
-        body: 'Actions that cannot be reversed are named here, not performed here. Deleting an ' +
-          'account or wiping its data runs through the account deletion process, which needs ' +
-          "the athlete's own confirmation.",
-        missing: 'No account is open, so there is nothing to point at yet.'
       }
     ],
 

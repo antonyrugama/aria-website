@@ -239,7 +239,12 @@ const datedSub = (iso) => {
    the longest header the pane draws is the one measured at 320px. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
-  spend: () => datedSub(COSTS.asOf)
+  spend: () => datedSub(COSTS.asOf),
+  /* Look up a user carries the UTC date of the day and nothing else, on the
+     page's own clock, so it is computed here the same way. */
+  users: () => new Date().toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  })
 };
 const PAGES = Object.keys(DECLARED).map((key) => ({
   key,

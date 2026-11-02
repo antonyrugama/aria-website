@@ -116,6 +116,10 @@ const HONOURED = {
   history: { range: 'read' },
   alerts: { range: 'answer' },
   analytics: { scope: 'read', range: 'read', env: 'read' },
+  /* The App control is the pane's own, drawn in its search form (the registry's
+     `scopeInPane`), so the shell has no segment for the sweep to click. What
+     this proves is the part that is not about where a control is drawn: a link
+     or reload carrying ?scope= must reach the lookup. */
   users: { scope: 'read' },
 };
 
@@ -372,7 +376,7 @@ const PAGES = {
     act: async (dom) => {
       dom.doc.getElementById('lookupIdentifier').value = 'ath_2277';
       dom.doc.getElementById('lookupReason').value = 'SUP-4471';
-      dom.doc.querySelector('.hunt-form').dispatch('submit');
+      dom.doc.querySelector('.u-find').dispatch('submit');
       await settle();
     },
   },

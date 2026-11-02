@@ -575,6 +575,7 @@ and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 | `definePane(id, render)` | register what a pane draws. `render(content, pane)` gets the pane's `<main>` and its registry entry, after parsing and after the session is confirmed |
 | `init()` | boot this page. Automatic on a page whose `<body data-pane>` names a registered pane |
 | `filters()` / `resetRange()` | the current selection; put the range back to the pane's default |
+| `setScope(scope)` | for a pane that draws its own App control (`scopeInPane`): set the App, write it to the address, tell the other listeners |
 | `paneFilters(nodes)` | the pane's own controls, in the shared filter bar, replacing any it put there before |
 | `paneHref(paneId)` | a link to another pane, carrying only the filters that pane has |
 | `setBadge(paneId, badge)` | a count beside every place the navigation names that pane, or `null` to remove it |
@@ -781,7 +782,7 @@ set of constraints:
   you nothing about who has an account.
 - **Every lookup is recorded**, with the reason the form makes you type, and the record is
   built so it would be safe to show the athlete. It is on the page, per account, under
-  **Who looked**. A response that does not confirm a record says so on screen rather than
+  **Access history**. A response that does not confirm a record says so on screen rather than
   looking identical to one that does, because a promise nobody can falsify is not a promise.
 - **Masked by default, and a missing flag is masked.** Masking happens in the operations API,
   not here, and this directory never derives a mask from a real value. Only an explicit
@@ -1547,7 +1548,6 @@ those panes now.
     pane-run-history-v2.css .rh-content-region = position: relative
     pane-run-history-v2.css .tbl-wrap = position: relative
     pane-settings-v2.css .tbl-wrap = position: relative
-    pane-users-v2.css .tbl-wrap = position: relative
     ```
 
     `.table-wrap` is the **v1** wrapper, declared in `ops.css`, which since the remodel only
@@ -1565,9 +1565,9 @@ those panes now.
     ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-overview.js, pane-releases.js, pane-spend.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
     ```
 
-    `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
-    and `pane-releases.js` do the same inside `div.tbl-wrap` and `div.tbl-scroll`. Of those three
-    wrappers, Releases' and People's are now positioned and Alerts' `.scrollx` is still static in
+    `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-releases.js`
+    does the same inside `div.tbl-scroll`, and `pane-users.js` puts one on its access table, which
+    sits in no wrapper at all. Of those wrappers, Releases' is positioned and Alerts' `.scrollx` is still static in
     the block above, so for that one the containing block of the caption is not the wrapper. Nothing is broken on screen anyway, for a reason this item had never stated: a
     1px-wide clipped caption's static position is the table's left edge, so resolving past the
     wrapper adds no scroll width to the right of anything. That is a claim about layout, not
@@ -1716,71 +1716,73 @@ overrides of shared stylesheets that this change is not allowed to edit; both na
 
 ### Look up a user on v2: where the pane departs from the mock
 
-`docs/mocks/ops-dashboard-v2/users.html` in the Aria monorepo is the approved design. The pane
-follows its structure — the lookup panel, the match list, the account card, the reveal card, the
-activity table, subscription and devices, the access record, the danger zone.
+The approved design is the Look up a user screen in the R54 set, `U-desktop`. The pane follows
+its structure and its colours: one search strip, a result head naming the account, then flat
+cards for the account, the subscription, the devices, the recent activity and the access history.
+It is drawn on the same tokens as Today, with no custom property of its own. The mock is a still
+picture with hand-written sample text and the pane writes its words from the answers, so wording
+and exact dates differ in more places than are listed here. The list is the departures that carry
+a decision.
 
-As above, this is **not a complete diff**. It names the departures that carry a decision.
+Six promises are made to the athlete on this pane, and each is a mechanism rather than only a
+sentence. They are the constraint every departure below is measured against: personal fields are
+hidden for every role including the owner until a reveal is recorded; a reveal is owner only and
+needs a written reason; it is recorded by field name, never by value; the athlete can see that it
+happened and who did it; the record outlives the reveal and a reveal cannot erase one; and
+request and reply content is not shown here at any role. The one sentence on the page,
+"Owner only · Reason required · Logged", sits under the Account card, and
+`scripts/ops-users-v2.test.mjs` asserts the mechanism behind each word and not the sentence.
 
-Six promises are made to the athlete on this pane, and each is a sentence on screen rather than
-a property of the code. They are the constraint every departure below is measured against:
-personal fields are hidden for every role including the owner until a reveal is recorded; a
-reveal is owner only and needs a written reason; it is recorded by field name, never by value;
-the athlete can see that it happened and who did it; the record outlives the reveal and a reveal
-cannot erase one; and request and reply content is not shown here at any role.
-`assets/pane-users.js` names where each one is drawn, and `scripts/ops-users-v2.test.mjs`
-asserts the sentence and the mechanism behind it separately, because a sentence that outlives
-the thing it describes is the worse of the two failures.
-
-1. **The drawer is gone.** The mock holds the fuller field list, the devices, the billing record
-   and the access record behind a "Full record" button with four tabs. They are bands on the page
-   now. The access record is the one thing on this pane that makes the rest of it defensible, and
-   a promise the athlete is given should not be one click further away than the reveal it covers.
-2. **The danger zone is stated and not drawn as controls.** The mock carries account actions
-   behind re-authentication with live buttons. `GET`/`POST /api/ops/users/*` is unchanged by this
-   remodel and answers no action route, so the pane names each action the response reports, keeps
-   "Re-authentication required" on the head, and draws no button. A control that cannot succeed
-   is the filter problem in another costume; hiding the band would only make people ask whether
-   the actions exist.
-3. **The privilege strip is in the pane body, not the filter bar.** The mock puts "Owner",
-   "Personal fields hidden until revealed" and "Every reveal is visible to the athlete" among the
-   filters. `assets/pane-registry.js` is the one table both shells read and is not this change's
-   to edit; it gives this pane a scope control and no room for three pills. Two of the six
-   promises are carried there, so they went into the pane rather than nowhere.
-4. **No support-context card.** The mock shows an open ticket with its subject, its state, its
-   age and the run behind it. `supportActions.available[]` is what the contract carries and it is
-   a list of action names; nothing in the response holds a ticket. Drawing the card would also
-   put a request's subject line on a pane whose sixth promise is that request content is not
-   shown here.
-5. **No consent card.** Four consent rows with their grant dates are the clearest thing in the
-   mock and there is no field behind any of them: the detail response carries state, tier,
-   memberSince, summary, record, activity, devices, billing, access and supportActions, and
-   nothing about consent. A consent grid invented on the page is worse than none, because it
-   would be read as the record.
-6. **The mock's "Not granted means not collected" is dropped, and nothing on this pane replaces
-   it.** It belongs to the card in 5 that has no source, and the fact it carries has no home
-   here: it is a statement about **consent** — nothing was collected, so there is nothing behind
-   the mask to unlock — and on this pane a mask is the opposite, a value the owner *can* unlock
-   with a recorded reason. The account card's foot says that
-   plainly, "Hidden for every role, including this one, until a reveal is recorded", and reading
-   it as the mock's sentence in a new place would get it backwards. Nothing replaces the mock's
-   sentence, because the pane has no consent input to state it from: the API tells this pane
-   whether a field can be *shown*, never whether it was collected. Both notes it prints are
-   about showability — `neverShownNote` for a field that is never shown here at all
-   (health readings and any field the API marks `reveal: 'never'`)
-   and `unavailableNote` for one that cannot be revealed right now. Neither claims a
-   value does or does not exist behind the mask, and the pane does not author that claim.
-7. **The mock's `why` blocks are not reproduced.** They argue for the design rather than state a
-   fact about the account, and the mocks' own rule is one fact per slot. What they carried that
-   is a fact is on screen: the reveal card says what is recorded, the access band says how long
-   it is kept, the activity card says what is not shown.
-8. **No "Recently looked up" row.** This one is a privacy decision and not an editorial one. The
-   mock keeps the coded references this browser has opened and offers them back as shortcuts;
-   the pane keeps none, in any store, for any length of time. A list of the accounts an
-   administrator has recently opened is a small standing record of who was looked at, sitting on
-   the device rather than in the access record where the athlete can see it — and the access
-   record is the thing that makes the rest of this pane defensible. Typing the reference again
-   costs a few seconds and leaves the only copy in the place that is auditable.
+1. **The rail highlights nothing.** The mock marks Today. Look up a user is a search, not a
+   destination, so its registry entry has `destination: null` and no rail item or tab carries
+   `aria-current` while it is open.
+2. **The App filter is one level deeper.** The mock's shell bar carries no App control, and a
+   lookup reads one account. App, State and Tier sit in a "Filters" disclosure under the search
+   strip, and the link says how many are narrowed ("Filters · 2"). They are sent with the lookup
+   exactly as before. Changing one clears any open reveal and asks for the search again rather
+   than re-running it, because a lookup is audited. Only where the App control is DRAWN moved:
+   the registry entry says `scope: true, scopeInPane: true`, so the shell still reads `?scope=`
+   (`/ops/users.html?scope=coaches` searches Coaches, as it does on main), writes a pick back
+   to the address through `setScope`, and carries the App on every link to this pane
+   (`paneHref('users')`). The account and the reason are never put in the address.
+3. **A single match opens itself.** The mock's "Matches" card is drawn only when the lookup
+   returns more than one account, and nothing is selected until you pick one. The picker marks
+   the choice four ways: a wash, `aria-current`, `aria-pressed` and the word "Selected". The one
+   exception is a result whose `matchCount` is larger than the rows sent: that draws the card
+   for a single row as well, with "1 of 9 accounts shown" and the warning, because the
+   contradiction does not depend on whether there is anything to pick. The account is still
+   opened. The reason typed at Search travels on the opened account's request
+   (`GET /api/ops/users/{reference}?reason=`), whether the account was opened for you or picked.
+4. **The avatar is one letter from the API's own mask, or a person glyph.** The mock shows two
+   initials. Initials of a real name would need the real name, and this pane never derives
+   anything from a value the API masked; the letter is drawn only when the Name field's own
+   mask carries one, and never when it is plain, absent or not a letter.
+5. **Reveal is a text link at the end of the row.** It asks for a reason in place, then shows the
+   value with "Hides in 60 seconds · Logged", the time taken from the server's expiry, and says
+   "(page limit)" when the API sent none and the pane applied its own ceiling. A response with no
+   confirmed record says "No record confirmed" instead of "Logged". A role that cannot reveal sees
+   a disabled link and "Owner action".
+6. **Fields the mock does not show sit behind "More".** Account type, minor, guardian email with
+   its own Reveal, and any other field the API sends are in a collapsed list on the Account card,
+   under the same reveal rules.
+7. **Health data and fields the API says are never shown have no row at all.** The mock has no
+   such rows, and a control or a note for a value that cannot be shown tells an operator it is
+   within reach.
+8. **The mock's danger zone, "reveal rules" card, "on the record" banner and footers are
+   dropped.** The operations API answers no account-action route, so a control would be a
+   promise it cannot keep, and the Access history already shows what is on the record. A lookup
+   that wrote no access record is still said, once, as a warning above the result.
+9. **The Who column shows the administrator as the API sent it,** not a first name, and Recent
+   activity labels link only when the API gave a reference with a same-origin address.
+10. **No phone glyph in Devices, no "2 min" in the Account line,** and the date under the title is
+    the real UTC date, not the mock's.
+11. **The tour has no Matches or danger-zone step.** The Matches card exists only with several
+    matches, and the tour's coverage rule needs every anchor drawn after one lookup.
+12. **No "Recently looked up" row.** This is a privacy decision, not an editorial one. The mock
+    keeps the references this browser has opened; the pane keeps none, in any store. A list of
+    the accounts an administrator has recently opened is a small standing record of who was
+    looked at, sitting on the device rather than in the access record where the athlete can see
+    it.
 
 Two additions the mock does not have, both because the pane reads a live answer where the mock
 reads its own sample text:
@@ -1992,7 +1994,6 @@ pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .rh-content-region = outline-offset: -2px
 pane-run-history-v2.css .tbl-wrap = outline-offset: -2px
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
-pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 ```
 
 ### People and usage on v2: where the pane departs from the mock
@@ -2773,11 +2774,11 @@ lines short — which is why none of them are typed any more.
 scripts/check-ops-contrast.mjs "NOT COVERED, on purpose — this is the list of exclusions decided, not an" = line 2582
 scripts/check-ops-shell-v2.mjs "What it does NOT measure: an ink that resolves to a real colour but is too" = line 584
 ops/assets/pane-analytics.js "`features.coverageNote` carries two facts" = line 1077
-ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 150
+ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs" = line 157
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
-ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
-ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 118
+ops/assets/pane-users.js "Health data has no reveal control at all, and no row. Not a disabled" = line 21
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 122
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 660
 ```
 

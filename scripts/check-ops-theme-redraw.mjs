@@ -250,7 +250,12 @@ const datedSub = (iso) => {
    server collected the bill. */
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
-  spend: () => datedSub(stub('/api/ops/costs').data.asOf)
+  spend: () => datedSub(stub('/api/ops/costs').data.asOf),
+  /* Look up a user carries the UTC date of the day and nothing else, on the
+     page's own clock, so it is computed here the same way. */
+  users: () => new Date().toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  })
 };
 const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   key,
