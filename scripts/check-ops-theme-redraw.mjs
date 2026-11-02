@@ -238,15 +238,19 @@ const DECLARED = readRegistry();
 /* Today carries the date and when its figures were read under the title, not
    its registry question. The sub is still asserted to the character, off the
    stub's own summary stamp. */
+const datedSub = (iso) => {
+  const t = new Date(iso);
+  const two = (n) => String(n).padStart(2, '0');
+  const day = t.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  });
+  return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+};
+/* Money carries the same line, off the stub's own cost answer: the time the
+   server collected the bill. */
 const LIVE_SUB = {
-  overview: () => {
-    const t = new Date(SUMMARY.generatedAt);
-    const two = (n) => String(n).padStart(2, '0');
-    const day = t.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-    });
-    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  }
+  overview: () => datedSub(SUMMARY.generatedAt),
+  spend: () => datedSub(stub('/api/ops/costs').data.asOf)
 };
 const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   key,

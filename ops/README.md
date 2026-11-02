@@ -270,7 +270,7 @@ ops/
   run-history.html      What happened
   alerts.html           Problems
   analytics.html        People and usage
-  spend.html            Cloud costs
+  spend.html            Money
   evaluations.html      Aria quality: dataset declarations, quarantine, approval and admission
   releases.html         App releases
   users.html            Look up a user
@@ -296,7 +296,7 @@ ops/
     pane-data.js        v1 plumbing for the understand panes: source, formatting,
                         states, charts — no page loads it; likewise
     pane-analytics.js   People and usage
-    pane-spend.js       Cloud costs
+    pane-spend.js       Money
     pane-evaluations.js dataset validation, private quarantine import, approval handoffs and admission
     pane-releases.js    App releases
     pane-users.js       Look up a user
@@ -322,7 +322,7 @@ ops/
     job-actions-v2.js        Shared cancel and retry confirmations
     pane-evaluations-v2.css  Aria quality's own shapes
     pane-analytics-v2.css  People and usage's own shapes
-    pane-spend-v2.css     Cloud costs' own shapes
+    pane-spend-v2.css     Money's own shapes
     tour.js               the guided tour: "About this page" and "Take the
                           tour", built from the registry and the page on screen
     tour-v2.css           the tour's own shapes
@@ -830,9 +830,9 @@ on. A control that moves and changes nothing is worse than no control: it leaves
 in the bar over production figures. Problems says so where the control would have been, and gets
 its controls back when something can carry them.
 
-People and usage and Cloud costs keep the controls the registry gives them, and now every one of
-those controls is carried into the read: People and usage sends `scope`, `range` and `env`, and
-Cloud costs sends `range`. That is not automatic. Both read APIs answer a request with no
+People and usage keeps the controls the registry gives it, and every one of them is carried
+into the read: it sends `scope`, `range` and `env`. Money (Cloud costs) declares none in the
+shell's bar and owns its month picker, which sends `range`. That is not automatic. Both read APIs answer a request with no
 querystring rather than refusing it, so a pane that pointed at an endpoint and forgot the query
 would draw confident figures for every app over thirty days on production, with the operator's
 own selection sitting in the bar above them.
@@ -843,8 +843,8 @@ rule exists:
 - **Cloud costs no longer offers Custom.** This bar carries a range name and no bounds, so a
   custom window reaches the cost API with no start and no end and is refused
   (`ops_cost_range_unsupported`). Left in the list it would be a selectable option whose only
-  outcome is a failure card with a retry that cannot succeed. It comes back when the bar grows
-  date controls to fill it.
+  outcome is a failure card with a retry that cannot succeed. Money's own picker offers four
+  named windows and no Custom for the same reason.
 - **App releases no longer offers a range.** `ops_release_snapshots` is upserted per track, so it
   holds current state and no history; the route accepts a range and echoes it, and not one field
   in the response varies by it. The control is removed rather than labelled, and a `filterNote`
@@ -883,11 +883,10 @@ cannot be reached through the URL — is deliberately not asserted there: the sh
 undeclared filter before a pane sees one, so no mutation of a pane can turn that claim red. The
 narrower shell-level claim that can fail — that a pane is offered exactly the filters it
 declared and never one more — is held in `scripts/ops-shell-pane-v2.test.mjs`, and what the two
-pane suites hold instead is what their own bar draws. Cloud costs is the single exclusion: that file does not boot it, so
-nothing there proves its windows. The lock pins the exact claim it is excused for by name **and
-by value**, so a filter or a window added to it is red as well. The pane itself is on the v2
-bootstrap like every other — the `panes` block above is what says so — and the exclusion is now
-about what that file boots rather than about which shell the pane is on.
+pane suites hold instead is what their own bar draws. Money is the single exclusion: its picker is the pane's own and not a
+shell filter, so that file cannot bind it, and what the picker offers is proved in
+`scripts/ops-spend-v2.test.mjs`, where the control is. The pane itself is on the v2 bootstrap
+like every other — the `panes` block above is what says so.
 
 Role differences surface in navigation affordances only at this stage. Settings is owner only,
 so a non-owner sees it marked in the avatar menu and lands on a state that names the role it needs
@@ -952,8 +951,9 @@ registry behind it, so a tour there would describe numbers that mean nothing.
 ### Where their figures come from
 
 Both panes read a live endpoint: Cloud costs reads `GET /api/ops/costs?range=`, and People and
-usage reads `GET /api/ops/usage?scope=&range=&env=`. Each builds its query from the shell's
-filter state at the moment of the call, so the request and the bar cannot disagree.
+usage reads `GET /api/ops/usage?scope=&range=&env=`. Each builds its query from the control's
+state at the moment of the call — the shell's bar for People and usage, Money's own picker for
+Cloud costs — so the request and what the operator chose cannot disagree.
 
 The query is as load bearing as the path, and easier to leave off. Neither route refuses a
 request that arrives without one: costs falls back to this month and usage to every app over
@@ -1547,7 +1547,6 @@ those panes now.
     pane-run-history-v2.css .rh-content-region = position: relative
     pane-run-history-v2.css .tbl-wrap = position: relative
     pane-settings-v2.css .tbl-wrap = position: relative
-    pane-spend-v2.css .sp-scroll = position: relative
     pane-users-v2.css .tbl-wrap = position: relative
     ```
 
@@ -1563,7 +1562,7 @@ those panes now.
 
     ```claims id=sr-span-classes
     absolutely positioned screen-reader classes = aria.css .sr, ops.css .sr-only
-    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-overview.js, pane-releases.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
+    ops assets drawing one = aria.js, operate.js, pane-alerts.js, pane-analytics.js, pane-data.js, pane-overview.js, pane-releases.js, pane-spend.js, pane-users.js, settings.js, shell-pane-v2.js, shell.js
     ```
 
     `pane-alerts.js` puts a `caption.sr` inside `table.tbl` inside `div.scrollx`; `pane-users.js`
@@ -1993,7 +1992,6 @@ pane-releases-v2.css .tbl-scroll = border-radius: 0; outline-offset: -2px
 pane-run-history-v2.css .rh-content-region = outline-offset: -2px
 pane-run-history-v2.css .tbl-wrap = outline-offset: -2px
 pane-settings-v2.css .tbl-wrap = outline-offset: -2px
-pane-spend-v2.css .sp-scroll = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 pane-users-v2.css .tbl-wrap = (no rule of its own; aria.css's ring, outline-offset: 2px; outline: 2px solid var(--cyan-ink))
 ```
 
@@ -2171,67 +2169,69 @@ print. It also sets `overflow-wrap: anywhere`, which is about `app_version` bein
 free-text column: `Mobile 1.4.2+0a1b2c3d4e5f6a7b8c9d0e1f` holds one break opportunity, and the
 version token alone otherwise sets the column's minimum width and takes the page sideways.
 
-### Cloud costs on v2: where the pane departs from the mock
+### Money: where the pane departs from the mock
 
-`docs/mocks/ops-dashboard-v2/spend.html` in the Aria monorepo is the approved design.
-`ops/spend.html` follows its structure and the rules its README calls normative, and reads
-`GET /api/ops/costs` unchanged: this is a surface remodel, and no field moved to make it.
+`ops/spend.html` is the Money destination's page, rebuilt in R54 to the approved desktop mock
+(with its phone and light-theme variants). It keeps the shell and the page
+furniture Today's rebuild put in place, and reads `GET /api/ops/costs` and the optional
+`GET /api/ops/summary` unchanged: this is a surface remodel, and no field moved to make it. The
+registry label is **Money**; the page and its pane are still called `spend` in the code, so the
+URL, the module and the stylesheet keep their names.
 
 The list below is **not a complete diff against the mock**. It names the departures that carry a
 decision.
 
-1. **No budget hero and no budget meter.** The mock's largest object is spend against a budget,
-   with a forecast marker on the same bar. No budget is configured anywhere behind this route
-   and none is in the response, so the bar would have been drawn against a number this codebase
-   invented. What survives is the half that is real: the period total, and the forecast to
-   period end when the period is open.
-2. **No anomalies card and no unit costs strip.** The Problems pane watches unusual service
-   spend with the live `service_cost_anomaly` rule and links those problems back to Cloud costs.
-   What this pane can draw is the cost breakdown by category, resource group, service and day;
-   it does not draw an anomaly list yet. Unit costs are also absent because `unitCosts` is not a
-   field the route sends.
-3. **No per-service category column, so the second card is the table and not a switch state.**
-   The service view's rows carry no category key, so the mock's `Top services` column would
-   have had to be reconstructed by matching a service name against the category view — a join
-   this pane is not the right place to perform and would silently get wrong for any service the
-   two views name differently. Without that column the top-N table and the service grouping are
-   the same rows, so the switch offers the two **allocation** cuts only (category, resource
-   group) and the per-service rows are drawn once, by the table. Offering all three drew two
-   cards with the same title, the same rows and the same reconciliation line.
+1. **The picker offers four windows, not the mock's six.** This month, last month, 3 months and
+   12 months. The pane owns the picker (`select#fPeriod`, `S.paneFilters`) and declares no shell
+   filter, because the shell's own range control would offer windows the route refuses. A month
+   nobody has chosen opens on the newest month that has a bill: when "this month" is still
+   waiting on the export, the pane falls back to last month, and a month somebody **did** choose
+   is never replaced. A waiting month shows its own empty state with a "Show last month" button.
+2. **The previous period is the average line, not a second dashed series.** The mock draws last
+   month's line under this month's. The route's own comparison stretch is a different length
+   whenever the month is open, so the pane draws the one fact that reads the same either way — the
+   daily average, as a dashed line with its label — and prints the comparison as words under the
+   total (`+$X vs Aug 1–19 · 12.7%`), with the dollar figure drawn only when the page can
+   reproduce the route's own percentage from the two totals.
+3. **The bars are exact shares of the bill.** Each is the row's `shareBasisPoints` as a width, so
+   the longest bar is not stretched to fill the track. A row with no amount draws words, not a
+   zero and not a bar.
+4. **The budget and the forecast are stats that appear only when the server has them.** The mock
+   shows a budget block and a refusal sentence for when there is none; the pane draws a figure
+   when the summary route sends a target for the same month, in the target's own currency, and
+   nothing otherwise. Month-end forecast appears for an open month only.
+5. **The anomalies band, the statement card and the footer are not drawn.** The Problems pane
+   watches unusual service spend with the live `service_cost_anomaly` rule. Nothing behind this
+   route produces a statement or a footer.
+6. **The service and resource-group cuts sit behind a switch in the one "Where it goes" card**,
+   one level deeper than the mock's single list. The switch offers only the cuts the answer
+   carries, and keeps focus where the reader left it.
+7. **The chart is this pane's own.** Today's line chart is not extracted into the shell: the two
+   charts differ in what they mark, and a shared one would be a second change in a page this one
+   does not own. The scale is HTML beside the drawing rather than `<text>` inside it, for the
+   reason People and usage gives, and its top is always above the highest day (0 / 20 / 40 where
+   the mock shows 0 / 15 / 30), so the line never touches the frame. The figure's accessible name
+   carries the range, the lowest, highest and latest day and the daily average.
+8. **Category keys are shown by short names** — Compute, AI & models, Data, CI & build,
+   Platform — and the AI row is the only violet one. `ungrouped` is real, and drawn with its own
+   words (`Unmapped: no category covers these services yet`), because it is inside the sum.
+9. **The header reads "Sun, Nov 1, 2026 / Updated 09:00 UTC" from the answer's own `asOf`**, in
+   UTC, not the mock's local time. It is drawn only for a bill to date or a period waiting on the
+   export; a period with no single bill has no collection to report.
+10. **`7d` and Custom are not offered.** The route refuses an unbounded range with
+    `ops_cost_range_unsupported`, and `pane-registry.js` does not offer `7d`; the picker's four
+    windows are the ones the route answers.
 
-   Each reconciliation line names what it added up — `5 categories`, `3 resource groups`,
-   `5 services` — rather than `N rows`, so two cards on one page never end in the same
-   sentence.
-4. **No Export button.** Nothing behind the pane produces a file.
-5. **`ungrouped` is real, and drawn.** The mock states there is no uncategorised bucket. The
-   route has six category keys and one of them is `ungrouped`, so the pane draws it and marks
-   the row in its own words — `Unmapped: no category covers these services yet`. Drawing zero
-   rows would have been the mock's claim; hiding a non-zero one would have broken the only
-   arithmetic this pane exists to show, because the unmapped row is inside the sum.
-6. **The reconciliation line is a row under the grouping, not a card.** The pane's main claim is
-   that the categories add up to the invoice exactly. It is one line — a glyph, the row count,
-   and the two figures — and it states both directions: it says the rows reconcile when they do,
-   and names the gap when they do not. It also has a third form, for when the sum cannot be
-   checked at all, which is not the same statement as a gap of zero.
-7. **The chart's scale is HTML beside the drawing rather than `<text>` inside it**, for the
-   reason People and usage gives: `role="img"` is `children-presentational`, so a `<text>`
-   element inside the figure is announced to nobody. The figure's accessible name carries the
-   series, their billed-day counts, and each one's low, high and closing figure.
-8. **One caption per card.** The mock captions the grouping card above the rows and again
-   beneath them. The lower caption is gone wherever it restated the upper one; what stayed is
-   the route's own `daily.note`, which says either that there is no comparison line and why, or
-   that the two stretches are different lengths — both facts that appear nowhere else and that
-   change how the picture should be read.
-9. **`7d` is absent from the range control** because `pane-registry.js` does not offer it, and
-   **Custom is absent** because the route refuses an unbounded range with
-   `ops_cost_range_unsupported`: offering it would put a control on screen whose only outcome is
-   a failure card with a retry that cannot succeed. Neither is this pane's decision to revisit.
+Every figure is drawn from the answer, never defaulted: a day or a row with no value is a gap or
+the words "Not reported", and a headline that cannot be computed is words rather than `$0`.
+When the rows do not add up to the total, or one has no amount, a line under them says so; when
+they do, the pane says nothing.
 
 This pane's invariants are held by `scripts/ops-spend-v2.test.mjs` and by measurement in review.
 Browser guards **do** render `ops/spend.html` — `check-ops-shell-v2.mjs` names every page in
 `ops/`, and the registry-driven sweeps reach every pane the registry declares, which includes
 this one; the `browser-guards` block below derives that reach rather than asserting it here. The
-sweeps that import `scripts/ops-api-stub.mjs` lay out a *populated* Cloud costs pane: the stub
+sweeps that import `scripts/ops-api-stub.mjs` lay out a *populated* Money pane: the stub
 answers `/api/ops/costs` with `payload()` from `scripts/ops-spend-fixture.mjs`, the builder this
 pane's suite asserts against, and returns the unpublished period only to a caller that passes
 `?stub=not_published` as `stub()`'s second argument
@@ -2240,26 +2240,23 @@ passes the query through today, so a served page always gets the billed month.
 `scripts/check-ops-narrow-overflow.mjs` and `scripts/check-ops-result-view.mjs` still carry
 their own costs fixtures.
 
-### Where Cloud costs departs from the shared page furniture
+### Where Money departs from the shared page furniture
 
-`assets/pane-spend-v2.css` carries this pane's own shapes. Three rules in it reach past this
-pane's own classes, each because a shared rule assumes content this pane does not have:
+`assets/pane-spend-v2.css` carries this pane's own shapes, every colour a token. Four rules in it
+reach past this pane's own `mn-` classes, each because a shared rule assumes content this pane
+does not have:
 
-- `.band-end .pill { white-space: normal; }`. A `.pill` is `nowrap` and the poller-failure pill
-  carries a whole sentence, so `.band-end` grows to hold it on one line and takes the page
-  sideways. Re-measured in the poller-failure state with the declaration deleted through CSSOM
-  and nothing else, naming each node: `.band-end` `offsetWidth` is 288 / 343 / 736 with the rule
-  at 320 / 375 / 768 and 926 at all three without it, and `document.scrollWidth` is 320 / 375 /
-  768 with and 942 without. It is not inside a media query because the pill is as long as the
-  failure text, so no viewport is wide enough by construction.
-- `.card-head { flex-wrap: wrap }` and `.card-end { width: 100% }` under 720px, so the view
-  switch gets its own row rather than squeezing the card title beside it. Re-measured on the
-  grouping card: at 375px the rule holds the title block at 127.02px against 125.13px without it
-  and keeps its note on one line rather than two, and at 320px it holds 127.02px against 102.27px.
-  At 700px the two buttons still fit beside the title, so there the rule only moves the switch
-  down a row.
-- `.grid > .card { min-width: 0 }`, so a grid track may be narrower than the table inside it and
-  the table scrolls in its own card rather than widening the page.
+- `#pageSub`, `.sub-date` and `.sub-updated`. The shell's sub-line is a single text run; here it
+  is the date and the collection time, set side by side and wrapping on a phone.
+- `.filters { border-bottom: 0; background: transparent; padding-bottom: 0; }` and
+  `.filters-pane { flex: 1 1 auto; }`. The shell's filter bar is a toolbar over the page; for
+  this pane the month is a control sitting on the page, so the bar's rule and tint come off.
+- `.mn-layout` is a two-column grid whose tracks are `minmax(0, 2fr) minmax(0, 1fr)`, and one
+  `minmax(0, 1fr)` column at 980px and under. A track that is not `minmax(0, …)` sizes to its
+  content, so one long Azure name would take the page sideways instead of wrapping inside its own
+  card; `.mn-row-name` carries `overflow-wrap: anywhere` for the same reason.
+- No rule hides a figure for width. At 390px and 320px the chart keeps its scale, the stats wrap
+  to a second row and the row amounts stay beside their names.
 
 ### Known contrast debt, inherited — a historical record
 
@@ -2521,7 +2518,7 @@ retention horizon refused, a day with no stored reading.
 | `scripts/ops-jobs-live-v2.test.mjs` | That the pane reads `/api/ops/jobs` and nothing else, carrying no querystring because it declares no filter; that a count the route could not produce is drawn as absent rather than as zero, that an idle queue says which of the two it is, and that a queue scope the route leaves unstated reads unread rather than complete; that a run whose worker stopped reporting in reads given up on and one still reporting in but past its kind’s usual duration reads overdue, each counted and flagged in its own right so neither half of that band rests on the other being non-empty, with the multiple printed from the response rather than from the sentence; that a lane whose contents cannot be read is not drawn as an empty one; that a truncated working set says so; that a rate travels as its own numerator and denominator and a period figure publishes its window; that the refresh chain arms exactly one timer, never overlaps two reads, cancels when the tab is hidden or the page is left, arms nothing when a read lands after the operator paused as well as after they left, re-arms on return, and gives up after five failures with a way back; that a refresh keeps the operator’s focus and the table’s scroll position rather than rewinding either; that a failed refresh leaves the last reading on screen and says how stale it is, while a failed first read takes the pane; that the job table’s scroll box is named, focusable and reachable; that no class the pane draws is one only the retired v1 sheet defines — read off the DOM the pane actually builds across six states, one of them driven to a stopped chain by interaction rather than by a fixture, rather than parsed out of its source, because three successive parsers were each green over a delivery shape nobody had taught them, and a sweep of what was built has no shapes left to miss; the source parse is kept, pointed the other way, so a class literal the sweep never saw names a branch no state boots, which narrows the remaining state axis without closing it — it reaches such a branch only when no other node in the swept panel carries that class, **including nodes the shell wrote**, which is how `btn-primary` looked reached while the pane's own branch was not; and a literal DELETED from the source is outside it entirely, which is why the way back from a stopped chain asserts its own primary class; it matches selector text, so the resolved proof against the rules reaching each node stays `scripts/check-ops-result-view.mjs`; that a job id which looks like an address is masked; and that the pane loads neither the retired awaiting-data module nor the alerting model it used to fall back to. |
 | `scripts/ops-alerts-v2.test.mjs` | That taking a problem on and closing it stay two different calls and that a close carries the note it was written with; that an unacknowledged problem says nobody has it; that a read which came back full reads as a floor and names the recent problems it is missing; that severity is filtered by the API and category on what came back, and a scoped figure says so; that the same problem in two answers is one problem; that an empty page proves which kind of empty it is, including over a failed **rules** read, where the pane has not got the fact that tells the two kinds apart and states neither; that a capped closed read is disclosed, never reported as a zero, and on a window hedges the queue's own count as well as the closed list, while leaving the count it cannot shorten alone; that one failed read degrades rather than blanks the pane; that no reading is printed without the unit its rule gives it; that the rail count comes from the read and goes when the read cannot see it; that a rule switch is the owner's and everybody else sees the true state; and that every severity is a word, not only a colour; that picking a severity leaves the operator standing on the same button rather than replacing it; that every control which is destroyed or disabled by being used hands focus back — the five re-reads and all four of the re-reads a write starts to the content region, the three refused writes to the control itself, the record retry to the Details button that owns its region, and the first read, which destroys nothing, to nowhere — measured from focus parked on `<body>`, which is where a browser puts it when a control is disabled or removed, and in the other direction from focus parked on a control that survives, which must not be moved; and that a refused close and an unreadable record are announced rather than written where nobody is told to look; and that a problem already closed is offered neither of the two controls the server would refuse. |
 | `scripts/ops-analytics-v2.test.mjs` | That a rate over a group under the reporting floor is withheld with its reason and that a ratio delivered as a decimal goes through the same floor, that a window with no stored days prints its stored-day figures as not reported rather than as zero, that the two apps are never added, that a day with no reading breaks the line rather than being joined across, that the age of the answer comes from the rollup recompute rather than from the window's end — the field that makes the stale path reachable at all — and says how far behind it is once a nightly run has been missed, and that every picture of data is either named with its data or hidden. |
-| `scripts/ops-spend-v2.test.mjs` | That each of the three cuts of the bill — the two the switch offers and the per-service table — adds up to the billed total exactly and that the line says so in both directions — reconciled, and the gap named when they do not — and that a sum which cannot be checked says that instead of reporting a gap of zero; that the `ungrouped` row is drawn and marked rather than hidden and is inside the sum; that a row with no figure prints words and is not added up as a zero; that the change pill's chevron follows the figure's own sign and that a rise and a fall are not the same glyph; that the per-service rows are drawn once and no state of the switch draws them again; that activating the switch hands focus back to the button that was activated, and only when focus was there to begin with; that a forecast is drawn only when the route sent one; that the age of the answer is printed beside the total once the poller is behind — the stale path — and against the answer's own publish lag rather than a constant in the pane; that the day line breaks on a day past the end of a stretch instead of joining across it; that each of the five availability states gets its own words and an unknown sixth still gets some; that the chart is named with its data and draws no `<text>` inside the figure; that the day chart carries the dates the route labelled under it and names both of its lines, so the dashed one is not just a texture; that a period billed only part way through says how far and to which day, and one billed to its own end does not repeat what the range name says; that the way out of an empty period travels to the closed month rather than back to the period it escapes — read from the link's `href`, not from its words; that no view button is offered for a grouping the answer did not carry; that the box holding the per-service table is reachable from a keyboard and names itself from the answer's own label, because at 320px the whole Change column is past its visible edge; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup. **Not covered**: that money is divided once at display and never summed as a float — every figure in the fixture is a whole number of dollars, so rounding each row to cents before summing changes no output and no mutation can make it red; it becomes testable when a fixture row carries a fraction of a cent. In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Which exotic ways to write markup or a style attribute walk through the module guard, and whether the module writes any of them, is the `spend-write-gate` block below — run against the guard's own two patterns rather than counted in a sentence here, which is how this row came to say "none of the four" about a list of three. |
+| `scripts/ops-spend-v2.test.mjs` | That the picker offers the four windows and each one reaches the read as `range`, with the newest pick winning when two reads cross; that a month nobody chose falls back to the closed month and one somebody chose never does; that the headline figures are the bill's own — the daily average over the days actually billed, the latest billed day, the forecast for an open month only — and that the dollar change beside the percentage is printed only when the page can reproduce the route's own basis points from the two totals; that a day, a row or a total with no source is a gap or words and never a zero; that the rows are re-summed on the page and the line under them appears only when they differ from the bill, a row with no amount being its own reason; that the `ungrouped` row is drawn with its own words and the AI row is the only violet one; that the chart's scale always tops the highest day, the chart is named with its data and draws no `<text>`, and switching the cut redraws from the answer already in hand and returns focus only to a button that held it; that no view is offered that the answer did not carry; that the budget is drawn only against the same month, from the route's own ratio and in its own currency, and its read failing is not the pane failing; that the age of the answer is printed once the poller is behind — against the answer's own publish lag rather than a constant in the pane — and a missing collection time is said; that the poller's own words are used and masked; that the date line under the title is the collection time in UTC and only when there is a bill to date; that each availability state gets its own title and the route's own sentence, an unknown state is not read as the nearest known one, and a failed read says so and its retry reads again; that the two columns stack on a narrow screen with `minmax(0, …)` tracks, a long name wraps inside its own card and no rule hides a figure for width; that the page loads the v2 sheet and no v1 one under a strict policy; that the sheet states no colour of its own, checked twice over — an allowlist over declaration values, which sees a named colour, an `oklch()` and a `color-mix()` carrying a raw one, beside the spelling match it once replaced, which sees a hex or an `rgb()` family wherever it stands including an all-numeric `#333`, a `var()` fallback, a `@keyframes` body and a property no list names; and that nothing in the module writes markup or a style attribute, that its ten CSSOM contacts set only `width`, `top` or `left`, and that the rendered pane carries no other inline property, each on the element it belongs to. **Not covered**: In a property whose name carries none of the colour-bearing words the value scan gates on — `text-decoration`, `text-emphasis` and `mask-image` are the three shapes — **anything the spelling clause cannot read** is seen by neither clause: a named colour, an `oklch()`, a `lab()`, a `color-mix()`. Not only the named colour `text-decoration: underline crimson` names (`Stadiora/Aria#10663`). The gate is what decides it: the same named colour in `border-bottom` is caught, and a hex or an `RGB()` in `text-decoration` is caught. Both clauses are case-blind, so no spelling here is covered in one case and uncovered in the other. Which properties are gated and which spellings are read is the `spend-colour-gate` block below, produced by running the guard's own two matchers rather than by reading them. Which exotic ways to write markup or a style attribute walk through the module guard, and whether the module writes any of them, is the `spend-write-gate` block below — run against the guard's own two patterns rather than counted in a sentence here, which is how this row came to say "none of the four" about a list of three. |
 | `node scripts/check-ops-result-view.mjs` | Whether a state the JavaScript can enter is one a loaded stylesheet can **paint**. It drives every pane the registry declares past its landing state to a result view, proves it arrived by a string only that view draws, and then asks two things in real Chrome with no pointer over the page: that every class the pane wrote is reached by at least one rule from a sheet that page loads, and that every positive `aria-current`/`-selected`/`-pressed`/`-checked`/`-expanded` is painted differently from the same shape without it. `Stadiora/Aria#10456` is the shape: `pane-users.js` wrote `is-selected` on the picked match, no sheet `users.html` loads had a rule for it, and every other guard stayed green for the life of the defect. Known failures are enumerated in `KNOWN_UNPAINTED` and `KNOWN_UNPAINTED_STATE`, and each entry must still reproduce. **Not covered**: what its own docblock says it cannot see, each bullet's opening heading is carried in the `guard-blind-spots` block below rather than summarised here — summarising is how this row came to list seven of that docblock's nine. The bullets themselves stay in the guard; the block binds their headings and, where a bullet hides a second blind spot behind a second bold span, the count of the spans beyond the first, summed over its bullets. |
 | `node scripts/check-ops-shell-v2.mjs` | Whether the custom properties resolve at all; whether all 33 of them, plus `color-scheme`, hold the exact value the design writes, per theme; whether any chart shape **or any icon on `/ops/shell-v2.html`** reaches that page with no paint; whether a shown `<tr>` is still `table-row`; and — with `aria.js` and then all scripting blocked — what paints **before** any of this runs. All of that is measured on that one page, which is the only page in the repository that draws `aria.js`'s charts and its icon gallery. It does load every other page in `ops/` afterwards, in both themes, but only to catch a console error or a page that rendered nothing: a pane shipping an unpainted icon is **not** seen here. |
 | `node scripts/check-ops-contrast.mjs` | Whether the colours a rule actually **asks for** can be read where they land: the resolved ink over the topmost paint at each run of text, as a WCAG ratio, at every rendered text site in both themes and all four states. Token pinning cannot see this — a rule asking for the wrong token leaves every token defined and correct. |
