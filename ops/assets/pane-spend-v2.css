@@ -45,8 +45,15 @@
   display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end;
   gap: 8px 14px;
   font-size: 14.5px; color: var(--ink-3);
+  min-width: 0;
 }
-.mn-meta .pill { font-size: 13.5px; }
+/* The poller's own sentence rides in this pill, and a sentence has to wrap:
+   the shared pill is one unbreakable line, which at 390px took the page and
+   the picker 150px sideways. */
+.mn-meta .pill {
+  font-size: 13.5px; line-height: 1.35; padding: 4px 10px;
+  white-space: normal; border-radius: 14px;
+}
 
 /* --------------------------------------------------------------- layout */
 

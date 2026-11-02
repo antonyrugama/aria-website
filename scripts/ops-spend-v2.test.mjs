@@ -1083,6 +1083,14 @@ test('the two columns stack on a narrow screen, and a long Azure name cannot wid
     assert.ok(name, 'the row name is styled');
     assert.match(name.body, /overflow-wrap:\s*anywhere/,
       'Azure names the service and some of the names have no space to break at');
+
+    /* The shared pill is one unbreakable line, and the poller's own sentence
+       rides in this one: at 390px a sentence of that length took the page and
+       the picker 150px sideways. */
+    const note = RULES.filter((r) => !r.media && r.targets(/^\.mn-meta \.pill$/))[0];
+    assert.ok(note, 'the pill in the meta line is styled');
+    assert.match(note.body, /white-space:\s*normal/,
+      'the route sends the poller a whole sentence, and a pill that cannot wrap widens the page');
   });
 
 test('nothing that carries a figure is dropped from the narrow layout', () => {
