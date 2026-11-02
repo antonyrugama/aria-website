@@ -559,6 +559,27 @@
 
     /* ---------------------------------------------------------------- reads */
 
+    /* The avatar menu links to three of the bands (settings.html#sessions and
+       the like). The bands are drawn after a read, so the browser's own jump
+       to a fragment has nothing to land on when it runs. They are given ids as
+       they are drawn, and the page scrolls to the one named once, on the first
+       draw that has it, so a later reload does not pull the page back. */
+    var scrolledTo = false;
+    function anchored(id, band) {
+      band.id = id;
+      band.setAttribute('tabindex', '-1');
+      return band;
+    }
+    function scrollToAnchor() {
+      if (scrolledTo) return;
+      var id = (global.location && global.location.hash || '').replace(/^#/, '');
+      if (!id) return;
+      var target = document.getElementById(id);
+      if (!target || !/^(administrators|sessions|audit)$/.test(id)) return;
+      scrolledTo = true;
+      if (target.scrollIntoView) target.scrollIntoView();
+    }
+
     /* The account list goes through the shell's loader and the other two go
        straight to session.call. The loader's local fixture hook is one file
        per pane, so it can stand in for exactly one read; this is the read that
@@ -651,14 +672,15 @@
 
       var stack = h('div', { className: 'stack' });
       stack.appendChild(hero(admins, sessions, sessionResult.error));
-      stack.appendChild(administratorsBand(admins, sessions, sessionResult));
-      stack.appendChild(sessionsBand(admins, sessions, sessionResult));
-      stack.appendChild(recordBand(recordResult));
+      stack.appendChild(anchored('administrators', administratorsBand(admins, sessions, sessionResult)));
+      stack.appendChild(anchored('sessions', sessionsBand(admins, sessions, sessionResult)));
+      stack.appendChild(anchored('audit', recordBand(recordResult)));
       stack.appendChild(keepBand(sessionSettingsResult, retentionResult, costResult));
       stack.appendChild(integrationsBand(integrationResult));
 
       if (degraded) region.degraded(stack);
       else region.show(stack);
+      scrollToAnchor();
       restoreSessionSettingsFocus(stack);
       restoreRetentionFocus(stack);
       restoreCostFocus(stack);

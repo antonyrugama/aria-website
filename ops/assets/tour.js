@@ -2,15 +2,14 @@
    its figures and controls means.
 
    Two ways in, both mounted by this file once the shell says the page is up
-   (the ops:ready event), so the pane shell itself carries no tour code:
+   (the ops:ready event), so the pane shell itself carries no tour code. Both
+   sit in the avatar menu, in the slot aria.js leaves for them:
 
-     "What am I looking at?"  a button in the top bar. Opens the steps for the
-                              pane on screen, at any time.
-     "Take the tour"          a block at the foot of the rail, which is the
-                              drawer on a phone. Walks every pane the registry
-                              declares, in the order it declares them, and
-                              carries on to the next pane's page at the end of
-                              each one.
+     "About this page"        opens the steps for the pane on screen, at any
+                              time.
+     "Take the tour"          walks every pane the registry declares, in the
+                              order it declares them, and carries on to the
+                              next pane's page at the end of each one.
 
    The steps are one table, TOUR below, keyed by the registry's pane keys. Each
    step names an anchor inside that pane's real markup: a selector the pane
@@ -1337,7 +1336,7 @@
 
   var active = null;
   var guideButton = null;
-  var railBlock = null;
+  var tourBlock = null;
 
   function currentPane() {
     return document.body ? document.body.getAttribute('data-pane') : null;
@@ -1486,15 +1485,15 @@
     p.tour = { pane: null, step: 0, open: false, dismissed: false, finished: true };
     saveProgress(p);
     teardown(true);
-    refreshRail();
+    refreshTour();
   }
 
   /* Close and Escape. The tour is dismissed rather than forgotten: its place
-     is kept, and the rail offers to resume it. */
+     is kept, and the menu offers to resume it. */
   function dismiss() {
     remember(false);
     teardown(true);
-    refreshRail();
+    refreshTour();
   }
 
   function teardown(restoreFocus) {
@@ -1511,7 +1510,7 @@
     active = null;
     if (!restoreFocus) return;
     var back = a.opener && a.opener.parentNode && typeof a.opener.focus === 'function'
-      ? a.opener : guideButton;
+      ? a.opener : menuOpener(guideButton);
     if (back && typeof back.focus === 'function') back.focus();
   }
 
@@ -1583,17 +1582,12 @@
     openDialog('guide', p.guide.pane === paneId ? p.guide.step : 0, opener);
   }
 
-  /* The drawer rail traps focus and inerts the page while it is open, which
-     would fight a dialog opened from inside it. It is closed first, through its
-     own toggle, and focus then comes back to that toggle. */
-  function closeDrawer() {
-    var rail = document.getElementById('rail');
-    var toggle = document.getElementById('railToggle');
-    if (rail && toggle && rail.classList.contains('is-open') && typeof toggle.click === 'function') {
-      toggle.click();
-      return toggle;
-    }
-    return null;
+  /* The tour's two entries live in the avatar menu, which aria.js draws with an
+     empty slot for them. A menu closes the moment an entry is pressed, so the
+     avatar button is what a dialog hands focus back to: the entry that opened
+     it is hidden by then and cannot take focus. */
+  function menuOpener(fallback) {
+    return document.getElementById('acctBtn') || fallback;
   }
 
   function startTour(fromStart, opener) {
@@ -1601,8 +1595,7 @@
     var target = fromStart || p.tour.finished || !p.tour.pane ? paneOrder()[0] : p.tour.pane;
     var step = fromStart || p.tour.finished || !p.tour.pane ? 0 : p.tour.step;
     if (target === currentPane()) {
-      var back = closeDrawer();
-      openDialog('tour', step, back || opener);
+      openDialog('tour', step, menuOpener(opener));
       return;
     }
     p.tour = { pane: target, step: step, open: true, dismissed: false, finished: false };
@@ -1611,50 +1604,44 @@
     if (href) global.location.assign(href);
   }
 
-  function refreshRail() {
-    if (!railBlock) return;
+  function refreshTour() {
+    if (!tourBlock) return;
     var p = loadProgress();
-    while (railBlock.firstChild) railBlock.removeChild(railBlock.firstChild);
+    while (tourBlock.firstChild) tourBlock.removeChild(tourBlock.firstChild);
     var inProgress = p.tour.pane && !p.tour.finished;
     var main = h('button', {
-      className: 'btn btn-sm tour-start', type: 'button',
+      className: 'menu-item tour-start', type: 'button', role: 'menuitem',
       text: inProgress ? 'Resume the tour' : p.tour.finished ? 'Take the tour again' : 'Take the tour'
     });
     main.addEventListener('click', function () { startTour(false, main); });
-    var row = h('div', { className: 'tour-rail-row' }, [main]);
+    tourBlock.appendChild(main);
     if (inProgress) {
-      var over = h('button', { className: 'btn btn-sm btn-ghost', type: 'button', text: 'Start over' });
+      var over = h('button', { className: 'menu-item', type: 'button', role: 'menuitem', text: 'Start over' });
       over.addEventListener('click', function () { startTour(true, over); });
-      row.appendChild(over);
+      tourBlock.appendChild(over);
+      /* Said only when there is a place to be reminded of. The menu is not the
+         place to explain what a tour is. */
+      tourBlock.appendChild(h('p', {
+        className: 'tour-rail-note', role: 'presentation',
+        text: 'Stopped at ' + PANES[p.tour.pane].label + ', step ' + (p.tour.step + 1) + '.'
+      }));
     }
-    railBlock.appendChild(row);
-    railBlock.appendChild(h('p', {
-      className: 'tour-rail-note',
-      text: inProgress
-        ? 'Stopped at ' + PANES[p.tour.pane].label + ', step ' + (p.tour.step + 1) + '.'
-        : 'Every pane, what each figure means, and what each control does.'
-    }));
   }
 
   function mountEntries() {
-    var end = document.querySelector('.topbar-end');
-    if (end && !guideButton) {
+    var slot = document.querySelector('#acctMenu .menu-extra');
+    if (!slot) return;
+    if (!guideButton) {
       guideButton = h('button', {
-        className: 'btn btn-ghost tour-entry', type: 'button',
-        'aria-label': 'What am I looking at?'
-      }, [S.icon('info'), h('span', { className: 'tour-entry-label', text: 'What am I looking at?' })]);
-      guideButton.addEventListener('click', function () { openGuide(guideButton); });
-      var theme = document.getElementById('themeBtn');
-      if (theme && theme.parentNode === end) end.insertBefore(guideButton, theme);
-      else end.appendChild(guideButton);
+        className: 'menu-item tour-entry', type: 'button', role: 'menuitem'
+      }, [S.icon('info'), h('span', { className: 'tour-entry-label', text: 'About this page' })]);
+      guideButton.addEventListener('click', function () { openGuide(menuOpener(guideButton)); });
+      slot.appendChild(guideButton);
     }
-    var rail = document.getElementById('rail');
-    if (rail && !railBlock) {
-      railBlock = h('div', { className: 'tour-rail' });
-      var foot = rail.querySelector('.rail-foot');
-      if (foot) rail.insertBefore(railBlock, foot);
-      else rail.appendChild(railBlock);
-      refreshRail();
+    if (!tourBlock) {
+      tourBlock = h('div', { className: 'tour-rail', role: 'presentation' });
+      slot.appendChild(tourBlock);
+      refreshTour();
     }
   }
 

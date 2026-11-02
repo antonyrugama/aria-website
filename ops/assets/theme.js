@@ -6,7 +6,9 @@
    body is parsed, so the attribute is on <html> before anything is painted and
    navigating between panes never flashes the wrong theme.
 
-   With no stored choice the dashboard follows the operating system. */
+   With no stored choice the dashboard is dark: that is the house look, not a
+   guess about the operating system. A stored choice (the switch in the avatar
+   menu writes one) always wins, so light stays one click away. */
 (function () {
   'use strict';
 
@@ -18,12 +20,7 @@
 
   function resolve() {
     var t = stored();
-    if (t === 'light' || t === 'dark') return t;
-    try {
-      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    } catch (e) {
-      return 'dark';
-    }
+    return t === 'light' ? 'light' : 'dark';
   }
 
   function apply(theme) {

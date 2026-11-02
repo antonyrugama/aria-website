@@ -78,8 +78,9 @@
     badges: {
       alerts: { label: '3', tone: 'hot', description: 'sample count' },
       spend: { label: '88%', tone: 'warm', description: 'sample figure' },
-      quality: { label: 'soon', tone: 'soon' }
+      evals: { label: 'soon', tone: 'soon' }
     },
+    lookup: { href: 'users.html' },
     account: {
       name: 'Sample Admin',
       email: 'admin@example.invalid',

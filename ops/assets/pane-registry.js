@@ -15,9 +15,9 @@
    scripts/ops-shell-pane-v2.test.mjs asserts the pairing across every page in
    ops/ so that a missing tag is caught here rather than in production.
 
-   Public surface: window.OpsPaneRegistry = { PANES, GROUPS, WAVES, RANGES,
-   SCOPES, ENVS, maskContactDetails }. Everything on it is read-only by
-   convention; nothing mutates it. */
+   Public surface: window.OpsPaneRegistry = { PANES, GROUPS, DESTINATIONS,
+   panesOf, WAVES, RANGES, SCOPES, ENVS, maskContactDetails }. Everything on it
+   is read-only by convention; nothing mutates it. */
 (function (global) {
   'use strict';
 
@@ -29,12 +29,17 @@
      filterNote shown in the filter bar for a control a built pane cannot yet
                 honour, so the absence is stated rather than faked
      roles      roles allowed to open the pane at all, omitted means everyone
-     railId     the id this pane answers to in the v2 rail, which assets/aria.js
-                declares and this file cannot edit. It is written out per pane
-                rather than derived because one of them differs from the key
-                here (evals answers to quality), and a rule with an exception is
-                a lookup table wearing a disguise. scripts/ops-shell-pane-v2.test.mjs checks every one of
-                them against aria.js's own list, so the pair cannot drift.
+     destination the one of five places this pane lives under: today, growth,
+                health, money or ai, or null for a pane the navigation does not
+                carry (the users lookup is reached from the header search and
+                Settings from the avatar menu). The rail and the phone bar draw
+                the five; a pane page highlights its destination and lists its
+                siblings in a row under the title. assets/aria.js declares the
+                five itself and this file cannot edit it, so
+                scripts/ops-shell-pane-v2.test.mjs checks every value here
+                against what aria.js drew, and the pair cannot drift.
+     datedHead  the pane writes its own line under the title (a date and when
+                it last read) instead of the one-line question the others show
 
      A pane that has been built declares only the filters its own reads can act
      on. A control that changes nothing is worse than no control: picking
@@ -79,18 +84,19 @@
 
   var PANES = {
     overview: {
-      file: 'index.html', icon: 'overview', label: 'Overview', group: 'Right now',
-      railId: 'overview',
-      question: 'Are people using it, is it working, is anything urgent?',
-      /* Everything Overview draws today is the state of things right now,
-         across every app, in production. None of the three controls can be
-         carried into the read that answers it. */
-      wave: 'W2', scope: false, range: false, env: false,
-      filterNote: 'App, range and environment filters do not apply here yet'
+      file: 'index.html', icon: 'overview', label: 'Today', group: 'Right now',
+      destination: 'today', datedHead: true,
+      question: 'Is anything urgent, and are people using it?',
+      /* Everything Today draws is the state of things right now, across every
+         app, in production. None of the three controls can be carried into the
+         read that answers it, and a page that says so in a banner is a page
+         with something to apologise for: there is no control, so there is no
+         note either. */
+      wave: 'W2', scope: false, range: false, env: false
     },
     jobs: {
       file: 'jobs-live.html', icon: 'live', label: 'Happening now', group: 'Right now',
-      railId: 'jobs',
+      destination: 'health',
       question: 'What is Aria working on, and is anything stuck?',
       /* The pane now reads GET /api/ops/jobs, and none of the three controls
          survives the change either. The job lifecycle record is keyed by job
@@ -107,7 +113,7 @@
     },
     history: {
       file: 'run-history.html', icon: 'history', label: 'What happened', group: 'Right now',
-      railId: 'history',
+      destination: 'health',
       question: 'Why did this fail, and is it happening to other people?',
       /* The window is real: the route counts and lists over it, and every
          figure on the pane is labelled with it. The app and environment
@@ -129,7 +135,7 @@
     },
     alerts: {
       file: 'alerts.html', icon: 'alerts', label: 'Problems', group: 'Right now',
-      railId: 'alerts',
+      destination: 'health',
       question: 'What needs a person right now, and who is on it?',
       /* The window is real: it is applied to the problems that were read, and
          the count line under the list says so. The environment is not, because
@@ -139,7 +145,7 @@
     },
     analytics: {
       file: 'analytics.html', icon: 'analytics', label: 'People and usage', group: 'How we are doing',
-      railId: 'analytics',
+      destination: 'growth',
       question: 'Who is using the app, and is that growing?',
       /* Custom is deliberately not offered, for the same reason as Cloud costs
          below and one that bites harder here. This bar carries a range name and
@@ -153,7 +159,7 @@
     },
     spend: {
       file: 'spend.html', icon: 'spend', label: 'Cloud costs', group: 'How we are doing',
-      railId: 'spend',
+      destination: 'money',
       question: 'What are we paying for, and is anything unusual?',
       /* Custom is deliberately not offered. This bar carries a range name and
          nothing else, so a custom window arrives at the cost API with no start
@@ -166,21 +172,21 @@
     },
     evals: {
       file: 'evaluations.html', icon: 'eval', label: 'Aria quality', group: 'How we are doing',
-      railId: 'quality',
+      destination: 'ai',
       question: 'Can I validate dataset declarations or quarantine evidence?',
       wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
       filterNote: 'Browse has pane-local filters; the mutation tools use supplied declarations or evidence, not app, date or environment filters'
     },
     review: {
       file: 'review.html', icon: 'person', label: 'SEVAL review', group: 'How we are doing',
-      railId: 'review',
+      destination: 'ai',
       question: 'Which blinded SEVAL outputs need human labels or adjudication?',
       wave: 'W3', scope: false, range: false, env: false, roles: ['owner', 'operator', 'viewer'],
       filterNote: 'Review filters are pane-local because labels are bound to exact outcome and criterion digests, not app-wide windows'
     },
     releases: {
       file: 'releases.html', icon: 'release', label: 'App releases', group: 'Apps and people',
-      railId: 'releases',
+      destination: 'growth',
       question: 'Which app version is where, and is the newest one healthy?',
       /* No range. Every figure on this pane is the current state of a store
          track: ops_release_snapshots is upserted per track, so it holds what is
@@ -194,19 +200,41 @@
     },
     users: {
       file: 'users.html', icon: 'users', label: 'Look up a user', group: 'Apps and people',
-      railId: 'users',
+      destination: null,
       question: 'What is going on with this one account?',
       wave: 'W4', scope: true, range: false, env: false
     },
     settings: {
       file: 'settings.html', icon: 'settings', label: 'Settings', group: 'Apps and people',
-      railId: 'settings',
+      destination: null,
       question: 'Who can get in, what do we keep, and for how long?',
       wave: 'W5', scope: false, range: false, env: false, roles: ['owner']
     }
   };
 
   var GROUPS = ['Right now', 'How we are doing', 'Apps and people'];
+
+  /* The five places the navigation offers, in order. `home` is the pane a
+     destination opens on, and a destination's other panes follow it in the
+     order PANES declares them. */
+  var DESTINATIONS = [
+    { id: 'today',  label: 'Today',   home: 'overview' },
+    { id: 'growth', label: 'Growth',  home: 'analytics' },
+    { id: 'health', label: 'Health',  home: 'alerts' },
+    { id: 'money',  label: 'Money',   home: 'spend' },
+    { id: 'ai',     label: 'Aria AI', home: 'evals' }
+  ];
+
+  /* The panes under one destination, home first. A destination with a single
+     pane has nothing to list. */
+  function panesOf(destinationId) {
+    var home = null;
+    DESTINATIONS.forEach(function (d) { if (d.id === destinationId) home = d.home; });
+    var ids = Object.keys(PANES).filter(function (id) {
+      return PANES[id].destination === destinationId && id !== home;
+    });
+    return home ? [home].concat(ids) : ids;
+  }
 
   var SCOPES = [
     { v: 'all', l: 'All' },
@@ -233,6 +261,8 @@
   global.OpsPaneRegistry = {
     PANES: PANES,
     GROUPS: GROUPS,
+    DESTINATIONS: DESTINATIONS,
+    panesOf: panesOf,
     WAVES: WAVES,
     RANGES: RANGES,
     SCOPES: SCOPES,

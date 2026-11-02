@@ -3,8 +3,9 @@
    Ported from docs/mocks/ops-dashboard-v2/assets/aria.js in the Aria monorepo.
    Four jobs:
 
-     1. Render the rail and top bar from one page-level config, so a pane
-        declares only what makes it different.
+     1. Render the navigation (a rail on a desktop, a bottom bar on a phone) and
+        the top bar (title, the user lookup, the avatar menu) from one
+        page-level config, so a pane declares only what makes it different.
      2. Expand <i data-i="name"> placeholders into inline SVG.
      3. Draw charts as inline SVG from data-* attributes. Charts read the same
         CSS custom properties as everything else, so they re-colour with the
@@ -23,7 +24,16 @@
      - The mock hard-codes the rail badges and the account footer. Those are
        operational facts, so they are passed in by the caller and simply absent
        when the caller has none. A dashboard that invents a count is worse than
-       one that shows nothing.
+       one that shows nothing. A badge is keyed by the id of the pane it
+       counts, not by the destination: the destination wears the badge of the
+       pane it opens on.
+
+   The navigation is five destinations, not a list of panes: Today, Growth,
+   Health, Money and Aria AI. The pane shell lists the pages inside a
+   destination in a row under the title; Settings, Administrators, Sessions and
+   the audit trail live in the avatar menu, and the users lookup is the search
+   in the top bar. Nothing about the rail varies by role: a destination the role
+   cannot open still links to it and carries the badge that says why.
 
    Theme is deliberately NOT resolved here. assets/theme.js is a blocking
    script in every <head> and owns the pre-paint decision; this file reads what
@@ -70,7 +80,9 @@
     lock:    ['M8 10V7a4 4 0 0 1 8 0v3'],
     eye:     ['M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z'],
     flame:   ['M12 2s5 4.6 5 9a5 5 0 0 1-10 0c0-1.6.8-3 1.6-4 .2 1.4 1 2.3 1.9 2.3 1.2 0 1.8-1 1.8-2.6C12.3 5.2 12 3.4 12 2Z'],
-    layers:  ['m12 3 9 4.6-9 4.6-9-4.6Z', 'm3 12.4 9 4.6 9-4.6', 'm3 16.9 9 4.6 9-4.6']
+    layers:  ['m12 3 9 4.6-9 4.6-9-4.6Z', 'm3 12.4 9 4.6 9-4.6', 'm3 16.9 9 4.6 9-4.6'],
+    home:    ['M3.5 11 12 3.8l8.5 7.2', 'M5.5 9.6V19a1 1 0 0 0 1 1H10v-5.2h4V20h3.5a1 1 0 0 0 1-1V9.6'],
+    users:   ['M3.5 19.5a5.5 5.5 0 0 1 11 0', 'M15.5 5.2a3.2 3.2 0 0 1 0 6.1M17 14.2a5.5 5.5 0 0 1 3.5 5.3']
   };
 
   /* Circles and rects the path map cannot express. Split out for the same
@@ -79,6 +91,7 @@
     radio:  [[12, 12, 2.5]],
     coin:   [[12, 12, 9]],
     person: [[12, 8, 3.5]],
+    users:  [[9, 8, 3.5]],
     gear:   [[12, 12, 3]],
     info:   [[12, 12, 9]],
     search: [[11, 11, 7]],
@@ -123,28 +136,35 @@
     return svg;
   }
 
-  /* --------------------------------------------------------- pane registry */
-  /* The rail cannot drift from the pages, because neither is written twice.
-     No badge and no account are declared here: both are operational facts and
+  /* ------------------------------------------------------------ destinations */
+  /* Five places, not eleven. Every pane page belongs to one of them and the
+     registry says which; the rail and the phone's bottom bar draw only these.
+     `key` is the pane a destination opens on, and it is also the key a badge
+     for that item is filed under (data-badge-key), so a pane that reads a count
+     passes its own id and never has to know which destination wears it. No
+     badge and no account are declared here: both are operational facts and
      both arrive through boot(). */
-  var PANES = [
-    { group: 'Right now' },
-    { id: 'overview', label: 'Overview',       href: 'index.html',       icon: 'pulse' },
-    { id: 'jobs',     label: 'Happening now',  href: 'jobs-live.html',   icon: 'radio' },
-    { id: 'history',  label: 'What happened',  href: 'run-history.html', icon: 'history' },
-    { id: 'alerts',   label: 'Problems',       href: 'alerts.html',      icon: 'bell' },
-
-    { group: 'How we are doing' },
-    { id: 'analytics', label: 'People and usage', href: 'analytics.html',   icon: 'chart' },
-    { id: 'spend',     label: 'Cloud costs',      href: 'spend.html',       icon: 'coin' },
-    { id: 'quality',   label: 'Aria quality',     href: 'evaluations.html', icon: 'spark' },
-    { id: 'review',    label: 'SEVAL review',     href: 'review.html',      icon: 'person' },
-
-    { group: 'Apps and people' },
-    { id: 'releases', label: 'App releases',   href: 'releases.html', icon: 'ship' },
-    { id: 'users',    label: 'Look up a user', href: 'users.html',    icon: 'person' },
-    { id: 'settings', label: 'Settings',       href: 'settings.html', icon: 'gear' }
+  var DESTINATIONS = [
+    { id: 'today',  label: 'Today',   href: 'index.html',       icon: 'home',  key: 'overview' },
+    { id: 'growth', label: 'Growth',  href: 'analytics.html',   icon: 'chart', key: 'analytics' },
+    { id: 'health', label: 'Health',  href: 'alerts.html',      icon: 'pulse', key: 'alerts' },
+    { id: 'money',  label: 'Money',   href: 'spend.html',       icon: 'coin',  key: 'spend' },
+    { id: 'ai',     label: 'Aria AI', href: 'evaluations.html', icon: 'spark', key: 'evals' }
   ];
+
+  /* What the avatar menu offers. Settings is one page; the three sections the
+     brief names are anchors on it, so each is one click from anywhere. */
+  var MENU_LINKS = [
+    { key: 'settings', label: 'Settings',       href: 'settings.html',                icon: 'gear' },
+    { key: 'settings', label: 'Administrators', href: 'settings.html#administrators', icon: 'users' },
+    { key: 'settings', label: 'Sessions',       href: 'settings.html#sessions',       icon: 'clock' },
+    { key: 'settings', label: 'Audit',          href: 'settings.html#audit',          icon: 'history' }
+  ];
+
+  /* Where a header search hands an identifier to the users pane. The
+     identifier is held here and not in the URL: the lookup is audited and a
+     querystring is logged, copied and shared. It is read once and removed. */
+  var LOOKUP_KEY = 'ops-user-lookup';
 
   /* ------------------------------------------------------------- DOM helper */
   function h(tag, opts, children) {
@@ -164,66 +184,85 @@
   }
 
   /* ------------------------------------------------------------------ rail */
+  /* A badge is a bare number beside a name, which reads as part of the name
+     when it is announced. What it counts is only obvious on screen, so it is
+     said. The same function draws the badge on every surface that wears one,
+     so the rail, the phone bar, a sub-navigation link and a menu item cannot
+     disagree about what a count looks like. */
+  function appendBadge(link, badge) {
+    if (!badge || !badge.label) return;
+    link.appendChild(h('span', {
+      className: 'nav-badge' + (badge.tone ? ' ' + badge.tone : ''),
+      text: badge.label
+    }));
+    if (badge.description) {
+      link.appendChild(h('span', { className: 'sr nav-badge-sr', text: ', ' + badge.description }));
+    }
+  }
+
+  function destinationLink(dest, cfg, className) {
+    var on = dest.id === cfg.id;
+    var link = h('a', {
+      className: className + (on ? ' on' : ''),
+      href: dest.href,
+      'data-badge-key': dest.key,
+      'data-destination': dest.id
+    }, [icon(dest.icon), h('span', { className: 'nav-label', text: dest.label })]);
+    if (on) link.setAttribute('aria-current', 'page');
+    appendBadge(link, (cfg.badges || {})[dest.key]);
+    return link;
+  }
+
+  /* The wordmark is the Aria brandmark itself, drawn as a mask over a coloured
+     box so it takes the theme's cyan: the asset is a white silhouette and is
+     not redrawn or re-lettered here. */
+  function brandMark() {
+    return h('span', { className: 'brand-mark', 'aria-hidden': 'true' });
+  }
+
+  function firstName(account) {
+    var source = (account.name || account.email || '').trim().replace(/@.*$/, '');
+    var parts = source.split(/[\s._-]+/).filter(Boolean);
+    if (!parts.length) return 'Signed in';
+    return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+  }
+
   function renderRail(root, cfg) {
-    var badges = cfg.badges || {};
     clear(root);
 
-    root.appendChild(h('div', { className: 'brand' }, [
-      h('div', { className: 'brand-mark', 'aria-hidden': 'true' }, [icon('pulse')]),
-      h('div', {}, [
-        h('div', { className: 'brand-name', text: 'Aria Operations' }),
-        h('div', { className: 'brand-sub', text: 'Private \u00b7 admin only' })
-      ])
+    root.appendChild(h('a', { className: 'brand', href: 'index.html', 'aria-label': 'Aria Operations, Today' }, [
+      h('span', { className: 'brand-line' }, [
+        h('span', { className: 'brand-name', text: 'Aria' }),
+        brandMark()
+      ]),
+      h('span', { className: 'brand-sub', text: 'Operations' })
     ]));
 
     /* role="group" rather than a list, because a list wants role="listitem" on
-       its children and that would overwrite the link role on the anchors —
-       turning ten navigable links into ten list items. The group conveys the
-       same heading-to-items relationship and leaves the links alone. */
-    var group = null;
-    PANES.forEach(function (p) {
-      if (p.group) {
-        var labelId = 'railGroup' + p.group.replace(/[^A-Za-z]/g, '');
-        root.appendChild(h('div', { className: 'nav-group', id: labelId, text: p.group }));
-        group = h('div', { className: 'nav-list', role: 'group', 'aria-labelledby': labelId });
-        root.appendChild(group);
-        return;
-      }
-      var on = p.id === cfg.id;
-      var link = h('a', {
-        className: 'nav-item' + (on ? ' on' : ''),
-        href: p.href
-      }, [icon(p.icon), h('span', { text: p.label })]);
-      if (on) link.setAttribute('aria-current', 'page');
-
-      var badge = badges[p.id];
-      if (badge) {
-        link.appendChild(h('span', {
-          className: 'nav-badge' + (badge.tone ? ' ' + badge.tone : ''),
-          text: badge.label
-        }));
-        /* The badge is a bare number beside a pane name, which reads as part
-           of the name when it is announced. What it counts is only obvious on
-           screen, so it is said. */
-        if (badge.description) {
-          link.appendChild(h('span', { className: 'sr', text: ', ' + badge.description }));
-        }
-      }
-      (group || root).appendChild(link);
+       its children and that would overwrite the link role on the anchors. */
+    var list = h('div', { className: 'nav-list', role: 'group', 'aria-label': 'Destinations' });
+    DESTINATIONS.forEach(function (dest) {
+      list.appendChild(destinationLink(dest, cfg, 'nav-item'));
     });
+    root.appendChild(list);
 
     var account = cfg.account;
     if (account) {
       root.appendChild(h('div', { className: 'rail-foot' }, [
         h('div', { className: 'who' }, [
           h('div', { className: 'who-av', 'aria-hidden': 'true', text: initials(account) }),
-          h('div', {}, [
-            h('div', { className: 'who-name', text: account.email || account.name || 'Signed in' }),
-            account.meta ? h('div', { className: 'who-meta', text: account.meta }) : null
-          ])
+          h('div', { className: 'who-name', text: firstName(account) })
         ])
       ]));
     }
+  }
+
+  /* The phone's navigation: the same five destinations, at the thumb. */
+  function renderBottom(root, cfg) {
+    clear(root);
+    DESTINATIONS.forEach(function (dest) {
+      root.appendChild(destinationLink(dest, cfg, 'tab-item'));
+    });
   }
 
   function initials(account) {
@@ -245,13 +284,26 @@
 
   function renderTop(root, cfg) {
     clear(root);
+
+    /* Phone only: the wordmark above the title. On a desktop the rail carries
+       it, and this is hidden by the stylesheet rather than not drawn, so the
+       two widths share one document. */
+    root.appendChild(h('a', {
+      className: 'top-brand', href: 'index.html', 'aria-label': 'Aria Operations, Today'
+    }, [
+      h('span', { className: 'brand-name', text: 'Aria' }),
+      brandMark(),
+      h('span', { className: 'brand-sub', text: 'Operations' })
+    ]));
+
     /* Both lines are guarded the same way. h() stringifies whatever it is
        given, so an unguarded title paints the word "undefined" as the page
        heading, and an empty <h1> is its own accessibility defect. A page that
-       names no title gets no heading. */
+       names no title gets no heading. subSlot leaves an empty line for a pane
+       that writes its own (Today states a date and when it last read). */
     root.appendChild(h('div', { className: 'page-head' }, [
       cfg.title ? h('h1', { className: 'page-title', text: cfg.title }) : null,
-      cfg.sub ? h('p', { className: 'page-sub', text: cfg.sub }) : null
+      cfg.sub || cfg.subSlot ? h('p', { className: 'page-sub', id: 'pageSub', text: cfg.sub || '' }) : null
     ]));
 
     var end = h('div', { className: 'topbar-end' });
@@ -268,14 +320,166 @@
         }));
       });
       end.appendChild(seg);
-      end.appendChild(h('div', { className: 'vr' }));
     }
 
-    var themeBtn = h('button', {
-      className: 'btn btn-icon btn-ghost', type: 'button', id: 'themeBtn'
-    });
-    end.appendChild(themeBtn);
+    if (cfg.lookup) {
+      end.appendChild(lookupOpen(root));
+      end.appendChild(lookupForm(cfg.lookup));
+    }
+    end.appendChild(accountMenu(cfg));
     root.appendChild(end);
+  }
+
+  /* --------------------------------------------------------------- lookup */
+  /* "Look up a user" lives in the header on every page. It does not search:
+     it carries what was typed to the users pane, which owns the lookup and its
+     required reason. The identifier goes through sessionStorage, never the
+     URL, because the lookup is audited and an address is logged and shared. */
+  function lookup(identifier, href) {
+    var typed = String(identifier || '').trim();
+    if (!typed) return false;
+    try { global.sessionStorage.setItem(LOOKUP_KEY, typed); } catch (e) { /* the pane opens empty */ }
+    var target = href || 'users.html';
+    var here = String(global.location && global.location.pathname || '').split('/').pop();
+    if (here === target.split('?')[0]) {
+      global.dispatchEvent(new CustomEvent('ops:lookup'));
+    } else {
+      global.location.assign(target);
+    }
+    return true;
+  }
+
+  /* Takes what a search handed over, once. The users pane calls this when it
+     draws and again when ops:lookup says it is already on screen. */
+  function takeLookup() {
+    var typed = '';
+    try {
+      typed = global.sessionStorage.getItem(LOOKUP_KEY) || '';
+      global.sessionStorage.removeItem(LOOKUP_KEY);
+    } catch (e) { typed = ''; }
+    return typed;
+  }
+
+  function lookupForm(options) {
+    var input = h('input', {
+      className: 'lookup-input', id: 'lookupInput', type: 'search', name: 'identifier',
+      placeholder: 'Look up a user', 'aria-label': 'Look up a user',
+      autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'search',
+      maxlength: '254'
+    });
+    var form = h('form', { className: 'lookup', id: 'lookupForm', role: 'search' }, [icon('search'), input]);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      lookup(input.value, options && options.href);
+    });
+    return form;
+  }
+
+  /* On a phone the field is a search icon that opens a row of its own. */
+  function lookupOpen(topbar) {
+    var btn = h('button', {
+      className: 'lookup-open', type: 'button', id: 'lookupOpen',
+      'aria-label': 'Look up a user', 'aria-expanded': 'false', 'aria-controls': 'lookupForm'
+    }, [icon('search')]);
+    btn.addEventListener('click', function () {
+      var open = !topbar.classList.contains('is-searching');
+      topbar.classList.toggle('is-searching', open);
+      btn.setAttribute('aria-expanded', String(open));
+      var input = document.getElementById('lookupInput');
+      if (open && input) input.focus();
+    });
+    return btn;
+  }
+
+  /* --------------------------------------------------------- account menu */
+  function accountMenu(cfg) {
+    var account = cfg.account;
+    var wrap = h('div', { className: 'acct' });
+
+    var btn = h('button', {
+      className: 'acct-btn', type: 'button', id: 'acctBtn',
+      'aria-haspopup': 'menu', 'aria-expanded': 'false', 'aria-controls': 'acctMenu',
+      'aria-label': 'Account menu'
+    }, [account
+      ? h('span', { className: 'who-av', 'aria-hidden': 'true', text: initials(account) })
+      : icon('person')]);
+
+    var menu = h('div', {
+      className: 'menu', id: 'acctMenu', role: 'menu', 'aria-labelledby': 'acctBtn', hidden: ''
+    });
+
+    if (account) {
+      var who = h('div', { className: 'menu-who', role: 'presentation' }, [
+        h('div', { className: 'menu-name', text: account.name || account.email || 'Signed in' })
+      ]);
+      if (account.name && account.email) who.appendChild(h('div', { className: 'menu-meta', text: account.email }));
+      if (account.meta) who.appendChild(h('div', { className: 'menu-meta', text: account.meta }));
+      menu.appendChild(who);
+    }
+
+    MENU_LINKS.forEach(function (item) {
+      var link = h('a', {
+        className: 'menu-item', href: item.href, role: 'menuitem', 'data-badge-key': item.key
+      }, [icon(item.icon), h('span', { text: item.label })]);
+      appendBadge(link, (cfg.badges || {})[item.key]);
+      menu.appendChild(link);
+    });
+
+    /* The guided tour mounts its two entries here. */
+    menu.appendChild(h('div', { className: 'menu-extra', role: 'presentation' }));
+
+    menu.appendChild(h('button', {
+      className: 'menu-item', type: 'button', id: 'themeBtn', role: 'menuitem'
+    }));
+
+    wrap.appendChild(btn);
+    wrap.appendChild(menu);
+    wireMenu(wrap, btn, menu);
+    return wrap;
+  }
+
+  function wireMenu(wrap, btn, menu) {
+    function items() {
+      return Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), function (el) {
+        return !el.disabled && !el.hidden;
+      });
+    }
+    function open(focusFirst) {
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      var list = items();
+      if (focusFirst && list.length) list[0].focus();
+    }
+    function close(returnFocus) {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      if (returnFocus) btn.focus();
+    }
+
+    btn.addEventListener('click', function () { if (menu.hidden) open(true); else close(true); });
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' && menu.hidden) { e.preventDefault(); open(true); }
+    });
+    menu.addEventListener('keydown', function (e) {
+      var list = items();
+      var at = list.indexOf(document.activeElement);
+      if (e.key === 'Escape') { e.preventDefault(); close(true); }
+      else if (e.key === 'Tab') { close(false); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); if (list.length) list[(at + 1) % list.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (list.length) list[(at - 1 + list.length) % list.length].focus(); }
+      else if (e.key === 'Home') { e.preventDefault(); if (list.length) list[0].focus(); }
+      else if (e.key === 'End') { e.preventDefault(); if (list.length) list[list.length - 1].focus(); }
+    });
+    /* An entry the tour mounts opens a dialog, so the menu has to be gone by
+       the time the dialog hands focus back. Closing is left to here, after the
+       entry's own handler has run, and focus is not moved: the dialog has it. */
+    menu.addEventListener('click', function (e) {
+      var hit = e.target && e.target.closest ? e.target.closest('.menu-extra [role="menuitem"]') : null;
+      if (hit) close(false);
+    });
+    document.addEventListener('click', function (e) {
+      if (!menu.hidden && !wrap.contains(e.target)) close(false);
+    });
   }
 
   /* ----------------------------------------------------------------- theme */
@@ -287,6 +491,7 @@
     if (b) {
       clear(b);
       b.appendChild(icon(t === 'dark' ? 'sun' : 'moon'));
+      b.appendChild(h('span', { text: t === 'dark' ? 'Light theme' : 'Dark theme' }));
       b.setAttribute('aria-label', t === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
     }
     redrawCharts();
@@ -687,6 +892,9 @@
     var rail = document.getElementById('rail');
     if (rail) renderRail(rail, cfg);
 
+    var bottom = document.getElementById('bottomNav');
+    if (bottom) renderBottom(bottom, cfg);
+
     var top = document.getElementById('topbar');
     if (top) renderTop(top, cfg);
 
@@ -721,11 +929,18 @@
   /* boot, icon and redraw are the surface the mocks define. applyState is the
      fourth because the mocks drive it from a switcher this shell does not
      ship: a real pane calls it when its read resolves. There is no icons()
-     accessor — icon() is the whole icon API. */
+     accessor — icon() is the whole icon API. The last three are this shell's
+     own: appendBadge so a surface outside this file (the pane shell's
+     sub-navigation) draws a count the way the rail does, and lookup and
+     takeLookup, the two ends of the header search's hand-off to the users
+     pane. */
   global.Aria = {
     boot: boot,
     icon: icon,
     redraw: redrawCharts,
-    applyState: applyState
+    applyState: applyState,
+    appendBadge: appendBadge,
+    lookup: lookup,
+    takeLookup: takeLookup
   };
 })(window);
