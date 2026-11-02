@@ -581,6 +581,11 @@ and none of `ops.css`, `shell.js` or `icons.js`. `data-pane` rather than v1's
 | `region(content)` | the four preview states, as a region the pane owns |
 | `read(source)` | the pane's own read, through the local fixture hook |
 | `h` / `icon` / `card` / `cardHead` / `band` / `bandHead` / `stateBlock` / `link` | DOM builders, never `innerHTML` |
+| `dates` | how a day is written: `parse`, `monthDay`, `dayRange`, `headDate`, `updatedAt`, and `DAY` in milliseconds |
+| `trendChart(opts)` | the line chart Today and Growth share: a lead series on a labelled scale, further series on the same scale, the week before as a dashed ghost, and a "Week high" mark only when the lead's whole week earns it |
+| `delta(active, before, comparison)` | the change in people against the window before, as a difference and never a rate |
+| `tip(id, text)` | an info icon that carries what a figure counts, shown on hover and focus, put away with Escape |
+| `sections(opts)` | a page of independent reads that degrade one section at a time: per-read generations (the newest ask of a read wins), a Try again that re-reads only that read, and focus and speech for what comes back |
 | `announce` / `toast` / `fmt` / `safeHref` / `isLoopback` / `failureMessage` / `panes` | the rest |
 
 Two events fire on `window` once the shell is in the document: `ops:ready` and then `ops:filters`,
@@ -2780,7 +2785,7 @@ ops/assets/pane-registry.js "Custom is deliberately not offered, for the same re
 ops/assets/pane-releases.js "The chip carries the share and nothing else" = line 179
 ops/assets/pane-releases-v2.css "The chip holds the share and nothing else" = line 208
 ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded." = line 1014
-ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 118
+ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for" = line 128
 ops/assets/aria.css ".btn-primary:hover { filter: brightness(1.07);" = line 660
 ```
 

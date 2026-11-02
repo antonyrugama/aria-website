@@ -114,29 +114,11 @@
 .hp-head { display: flex; align-items: center; gap: 9px; }
 .hp-head .sec-title { font-size: 16.5px; font-weight: 520; color: var(--ink-2); letter-spacing: -.01em; }
 
-.big {
-  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
-  font-size: 44px; font-weight: 640; line-height: 1.05; letter-spacing: -.03em;
-  color: var(--ink);
-}
-.big .num { font-weight: 640; }
 .big-unit { font-size: 20px; font-weight: 450; letter-spacing: -.01em; color: var(--ink-2); }
-.big.words { font-size: 20px; font-weight: 520; line-height: 1.3; letter-spacing: -.01em; color: var(--ink-2); }
-.hp-note { margin-top: 6px; font-size: 13px; line-height: 1.5; color: var(--ink-3); max-width: 46ch; }
 
 .hp-main .big.num { margin-top: 10px; font-size: 92px; line-height: .95; letter-spacing: -.05em; }
 .hp-main .big.words { margin-top: 14px; }
 
-.delta {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 14px;
-  font-size: 19px; font-weight: 560; letter-spacing: -.012em;
-  color: var(--cyan-ink);
-}
-.delta svg { width: 20px; height: 20px; flex: none; }
-.delta.is-up svg { transform: rotate(-90deg); }
-.delta.is-down svg { transform: rotate(90deg); }
-.delta.is-down, .delta.is-flat, .delta.is-none { color: var(--ink-2); font-weight: 450; font-size: 16px; }
 .hp-range { margin-top: 6px; font-size: 15px; color: var(--ink-3); }
 
 .hp-split {
@@ -149,129 +131,15 @@
 .split-label { font-size: 15px; color: var(--ink-2); }
 .split-value { font-size: 26px; font-weight: 600; line-height: 1.1; color: var(--ink); }
 
-/* The scope of the figure, in an info icon. */
-.tip { position: relative; display: inline-flex; }
-/* The button is 44x44 so a thumb can find it, and the negative margin hands
-   the extra 11px each side back, so the 22px the glyph has always occupied is
-   what the layout still sees and the bubble below it does not move. */
-.tip-btn {
-  display: grid; place-items: center;
-  width: 44px; height: 44px; margin: -11px; padding: 0;
-  border: 0; border-radius: 50%;
-  background: transparent; color: var(--ink-3);
-  cursor: help;
-}
-.tip-btn svg { width: 17px; height: 17px; }
-.tip-btn:hover { color: var(--ink); }
-.tip-bubble {
-  position: absolute; z-index: 6;
-  top: calc(100% + 8px); left: -6px;
-  width: 270px; max-width: 78vw;
-  padding: 11px 13px;
-  border-radius: var(--r);
-  background: var(--surface-3);
-  box-shadow: inset 0 0 0 1px var(--line-2), var(--shadow-2);
-  font-size: 12.5px; line-height: 1.5; color: var(--ink-2);
-  visibility: hidden; opacity: 0;
-  transition: opacity .12s;
-}
-/* The gap between the icon and the bubble is part of the bubble, so the
-   pointer can travel onto it without it closing. */
-.tip-bubble::before { content: ''; position: absolute; left: 0; right: 0; top: -10px; height: 10px; }
-.tip:hover .tip-bubble,
-.tip-btn:focus-visible + .tip-bubble { visibility: visible; opacity: 1; }
-.tip .tip-bubble[data-dismissed] { visibility: hidden; opacity: 0; }
-
 /* --------------------------------------------------------- the charts */
 
-.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .chart-title { font-size: 17px; font-weight: 580; letter-spacing: -.012em; color: var(--ink); }
 .chart-block + .chart-block {
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
 
-.tc-legend { display: inline-flex; align-items: center; gap: 18px; font-size: 12.5px; color: var(--ink-2); }
-.tc-key { display: inline-flex; align-items: center; gap: 8px; }
-.tc-key-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); }
-.tc-key-dash {
-  width: 18px; height: 0;
-  border-top: 2px dashed var(--ink-3);
-}
-
-.tchart { position: relative; width: 100%; height: 100px; }
 .is-lead .tchart { height: 168px; }
-.tchart.is-spark { height: 54px; }
-
-.tc-plot { position: absolute; top: 24px; right: 0; bottom: 26px; left: 38px; }
-.tchart.is-spark .tc-plot { top: 4px; bottom: 4px; left: 0; }
-.tc-inner { position: absolute; top: 0; bottom: 0; left: 14px; right: 14px; }
-.tchart.is-spark .tc-inner { left: 3px; right: 3px; }
-
-.tc-grid {
-  position: absolute; left: 0; right: 0; height: 0;
-  border-top: 1px solid var(--line);
-  pointer-events: none;
-}
-.tc-grid.is-base { border-top-color: var(--line-2); }
-.tc-y {
-  position: absolute; left: -38px; width: 28px;
-  transform: translateY(-50%);
-  text-align: right;
-  font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink-3);
-}
-
-.tc-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; overflow: visible; }
-.tc-line, .tc-ghost, .tc-area { vector-effect: non-scaling-stroke; }
-.tc-line {
-  fill: none; stroke: var(--ink-2); stroke-width: 2;
-  stroke-linejoin: round; stroke-linecap: round;
-}
-.tc-ghost {
-  fill: none; stroke: var(--ink-3); stroke-width: 1.5;
-  stroke-dasharray: 6 5; opacity: .9;
-}
-.tc-area { stroke: none; }
-.tc-stop-top { stop-color: var(--cyan); stop-opacity: .36; }
-.tc-stop-base { stop-color: var(--cyan); stop-opacity: .02; }
-
-/* The cyan line carries the glow. */
-.is-area .tc-line {
-  stroke: var(--cyan); stroke-width: 2.6;
-  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--cyan) 55%, transparent));
-}
-
-.tc-dot {
-  position: absolute; box-sizing: border-box;
-  width: 8px; height: 8px; margin: -4px 0 0 -4px;
-  border-radius: 50%;
-  background: var(--ink-2);
-}
-.tc-dot.is-end { background: var(--ink); }
-.is-area .tc-dot { background: var(--cyan); }
-.is-area .tc-dot.is-end {
-  width: 14px; height: 14px; margin: -7px 0 0 -7px;
-  background: var(--surface);
-  border: 2.5px solid var(--cyan);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--cyan) 60%, transparent);
-}
-.tchart.is-spark .tc-dot.is-end {
-  width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
-  background: var(--cyan); border: 0; box-shadow: none;
-}
-
-.tc-val {
-  position: absolute; transform: translate(-50%, -165%);
-  font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink);
-  white-space: nowrap;
-}
-.tc-val.is-end { font-weight: 600; }
-
-.tc-x {
-  position: absolute; top: 100%; margin-top: 9px;
-  transform: translateX(-50%);
-  font-size: 12.5px; color: var(--ink-2); white-space: nowrap;
-}
 
 /* ------------------------------------------------------- the moments */
 
@@ -408,10 +276,6 @@
 /* ------------------------------------------------------------ failure */
 
 .today .state-block { padding: 24px 12px; }
-.fail-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 4px; }
-.fail-title { font-size: 14.5px; font-weight: 520; color: var(--ink); }
-.fail-why { font-size: 13px; color: var(--ink-3); }
-
 /* -------------------------------------------------------------- phone */
 
 @media (max-width: 980px) {
@@ -445,8 +309,6 @@
     column-gap: 14px; align-items: center;
   }
   .hp-head { grid-area: head; position: relative; }
-  .tip { position: static; }
-  .tip-bubble { left: 0; right: 0; width: auto; max-width: none; }
   .hp-main > .big.words, .hp-main > .hp-note { grid-column: 1 / -1; }
   .hp-fail { grid-area: main; padding-right: 0; }
   .hero-charts { padding-left: 0; border-left: 0; gap: 16px; margin-top: 16px; }
@@ -455,10 +317,6 @@
   .hp-range { grid-area: range; align-self: start; margin: 2px 0 0; }
 
   .is-lead .tchart { height: 150px; }
-  .tchart { height: 92px; }
-  .tc-plot { left: 0; }
-  .tchart.is-spark .tc-plot { left: 0; }
-  .tc-y, .tc-grid:not(.is-base), .tc-x.is-mid { display: none; }
 
   .hp-split { margin: 16px 0 0; padding-top: 14px; }
   .split-item { flex-direction: row; align-items: baseline; gap: 12px; }
