@@ -1014,10 +1014,12 @@ const PROOF = {
   /* Mobile's sessions over the window and the second app's name, neither of
      which is on the empty state or the failure card. */
   analytics: ['308', USAGE.apps[1].label],
-  /* The top row of the category and the service cut, which the pane prints
-     verbatim as row labels and which neither its empty cards nor its failure
-     card name. */
-  spend: [COSTS.views.category.rows[0].label, COSTS.views.service.rows[0].label],
+  /* Two rows of the category cut, which neither the pane's empty cards nor its
+     failure card name. The pane prints the five known categories under the
+     short names the approved layout uses (AI and models is "AI & models",
+     Application compute is "Compute"), so the markers are those names: the
+     largest row and the smallest of the stub's five. */
+  spend: ['AI & models', 'Compute'],
   evals: ['Check a dataset declaration', 'Quarantine evidence'],
   review: [REVIEW_ITEM.reviewItemId, REVIEW_ITEM.evidence.evidenceRefs[0]],
   releases: [RELEASES.sources[0].label, RELEASES.sources[1].label],
