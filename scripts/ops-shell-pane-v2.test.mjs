@@ -547,10 +547,10 @@ test('the range control starts on the pane default, not on the first option', as
 
 test('a range the pane does not offer is refused rather than accepted from the URL', async () => {
   const registry = registryOnly();
-  const pane = registry.PANES.analytics;
-  const { shell } = await bootPane('analytics', {
-    file: 'analytics.html',
-    href: 'https://ops.example.invalid/ops/analytics.html?range=custom',
+  const pane = registry.PANES.usage;
+  const { shell } = await bootPane('usage', {
+    file: 'usage.html',
+    href: 'https://ops.example.invalid/ops/usage.html?range=custom',
     definePane: () => {},
   });
   assert.equal(shell.filters().range, pane.rangeDefault || pane.range[0],
@@ -559,9 +559,9 @@ test('a range the pane does not offer is refused rather than accepted from the U
 
 test('a link to another pane carries only the filters that pane has', async () => {
   const registry = registryOnly();
-  const { shell } = await bootPane('analytics', {
-    file: 'analytics.html',
-    href: 'https://ops.example.invalid/ops/analytics.html?range=30d&env=staging&scope=aria',
+  const { shell } = await bootPane('usage', {
+    file: 'usage.html',
+    href: 'https://ops.example.invalid/ops/usage.html?range=30d&env=staging&scope=aria',
     definePane: () => {},
   });
 
@@ -607,9 +607,9 @@ test('an App chosen on one pane reaches a pane that draws its own App control', 
   const own = Object.keys(registry.PANES).filter((id) => registry.PANES[id].scopeInPane);
   assert.ok(own.length >= 1, 'no pane draws its own App control, so this proves nothing');
 
-  const { shell } = await bootPane('analytics', {
-    file: 'analytics.html',
-    href: 'https://ops.example.invalid/ops/analytics.html?scope=coaches',
+  const { shell } = await bootPane('usage', {
+    file: 'usage.html',
+    href: 'https://ops.example.invalid/ops/usage.html?scope=coaches',
     definePane: () => {},
   });
   for (const id of own) {
@@ -2491,9 +2491,9 @@ function listenFor(win, log) {
 
 test('a pane hears ops:ready before ops:filters, and both carry the starting selection', async () => {
   const log = [];
-  const { doc, shell } = await bootPane('analytics', {
-    file: 'analytics.html',
-    href: 'https://ops.example.invalid/ops/analytics.html?range=90d',
+  const { doc, shell } = await bootPane('usage', {
+    file: 'usage.html',
+    href: 'https://ops.example.invalid/ops/usage.html?range=90d',
     onLoad: (win) => listenFor(win, log),
     definePane: () => {},
   });
@@ -2502,7 +2502,7 @@ test('a pane hears ops:ready before ops:filters, and both carry the starting sel
     'the shell fired ' + log.map((e) => e.name).join(' then ') + ' instead of ops:ready then ops:filters');
 
   const [ready, filters] = log;
-  assert.equal(ready.detail.pane, 'analytics', 'ops:ready did not say which pane it is');
+  assert.equal(ready.detail.pane, 'usage', 'ops:ready did not say which pane it is');
   assert.deepEqual(ready.detail.filters, shell.filters(), 'ops:ready carried a selection nobody is showing');
   assert.deepEqual(filters.detail, shell.filters(), 'ops:filters carried a selection nobody is showing');
   assert.equal(filters.detail.range, '90d', 'the starting selection lost the range the URL asked for');
@@ -2519,15 +2519,15 @@ test('a pane hears ops:ready before ops:filters, and both carry the starting sel
 
 test('ops:filters fires again on every change, and ops:ready never does', async () => {
   const log = [];
-  const { doc, shell } = await bootPane('analytics', {
-    file: 'analytics.html',
+  const { doc, shell } = await bootPane('usage', {
+    file: 'usage.html',
     onLoad: (win) => listenFor(win, log),
     definePane: () => {},
   });
   const started = shell.filters().range;
 
   const select = doc.querySelector('.filters').querySelectorAll('select')[0];
-  assert.ok(select, 'the analytics bar drew no control to change');
+  assert.ok(select, 'the usage bar drew no control to change');
   const other = findAll(select, (el) => el.tagName === 'OPTION')
     .map((el) => el.getAttribute('value'))
     .filter((v) => v && v !== started)[0];

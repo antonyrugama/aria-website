@@ -151,18 +151,18 @@
       filterNote: 'Problems are production only, so there is no environment filter'
     },
     analytics: {
-      file: 'analytics.html', icon: 'analytics', label: 'People and usage', group: 'How we are doing',
-      destination: 'growth',
+      file: 'analytics.html', icon: 'analytics', label: 'Growth', group: 'How we are doing',
+      destination: 'growth', datedHead: true,
       question: 'Who is using the app, and is that growing?',
-      /* Custom is deliberately not offered, for the same reason as Cloud costs
-         below and one that bites harder here. This bar carries a range name and
-         nothing else, so a custom window reaches the usage API with no start and
-         no end. That route does not refuse it: it answers over the widest window
-         retention allows. Left in the list it would draw confident figures for a
-         window the operator never chose, with nothing on screen saying so, which
-         is worse than the cost pane's honest failure card. It comes back when
-         this bar grows date controls to fill it. */
-      wave: 'W3', scope: true, range: ['7d', '14d', '30d', '90d'], rangeDefault: '30d', env: true
+      /* Growth draws one week of production, across both apps, and says which
+         week. None of the three controls can honestly move it: the people and
+         the daily lines are the last seven whole UTC days, the comings back are
+         whole signup weeks over the last thirty, and the figure at the top is
+         the platform's own distinct count. A bar that offers a window the page
+         then ignores is the failure this registry exists to prevent, so the bar
+         is absent. Every control the old People and usage page had is on Usage
+         detail, which this page links to. */
+      wave: 'W3', scope: false, range: false, env: false
     },
     spend: {
       file: 'spend.html', icon: 'spend', label: 'Money', group: 'How we are doing',
@@ -206,6 +206,20 @@
          prevent, so the control is removed rather than labelled. */
       wave: 'W4', scope: false, range: false, env: false,
       filterNote: 'Store tracks are current state, so there is no window to choose'
+    },
+    usage: {
+      file: 'usage.html', icon: 'analytics', label: 'Usage detail', group: 'How we are doing',
+      destination: 'growth',
+      question: 'What does usage look like in a window I choose, for one app?',
+      /* Custom is deliberately not offered, for the same reason as Cloud costs
+         below and one that bites harder here. This bar carries a range name and
+         nothing else, so a custom window reaches the usage API with no start and
+         no end. That route does not refuse it: it answers over the widest window
+         retention allows. Left in the list it would draw confident figures for a
+         window the operator never chose, with nothing on screen saying so, which
+         is worse than the cost pane's honest failure card. It comes back when
+         this bar grows date controls to fill it. */
+      wave: 'W3', scope: true, range: ['7d', '14d', '30d', '90d'], rangeDefault: '30d', env: true
     },
     users: {
       file: 'users.html', icon: 'users', label: 'Look up a user', group: 'Apps and people',

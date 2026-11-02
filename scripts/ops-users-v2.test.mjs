@@ -1082,7 +1082,7 @@ test('address: picking an App writes it to the address, keeps the other paramete
   assert.equal(new URL(written, ORIGIN).searchParams.get('scope'), 'mobile');
   assert.equal(new URL(written, ORIGIN).pathname, '/ops/users.html');
   assert.equal(dom.window.OpsPaneShell.filters().scope, 'mobile');
-  assert.equal(new URL(dom.window.OpsPaneShell.paneHref('analytics'), ORIGIN).searchParams.get('scope'), 'mobile',
+  assert.equal(new URL(dom.window.OpsPaneShell.paneHref('usage'), ORIGIN).searchParams.get('scope'), 'mobile',
     'a link to another pane dropped the App picked here');
 
   /* Back to All is a write too: a stale ?scope=mobile would re-narrow the

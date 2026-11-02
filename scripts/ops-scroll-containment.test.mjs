@@ -278,7 +278,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    /* The populated Usage detail, whose tables this sweep lays out. The stub's
+       default is Aria's real small population, which that page answers with a
+       card and no tables. */
+    res.end(JSON.stringify(stub(url.pathname, undefined, { usage: 'ready' })));
     return;
   }
   const file = path.join(ROOT, url.pathname.replace(/^\/+/, ''));

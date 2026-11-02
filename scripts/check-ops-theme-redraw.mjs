@@ -109,7 +109,7 @@ import vm from 'node:vm';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PROOF, SUMMARY, stub } from './ops-api-stub.mjs';
+import { PROOF, SUMMARY, USAGE_WEEK, stub } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
@@ -236,8 +236,9 @@ function readRegistry() {
 const DECLARED = readRegistry();
 
 /* Today carries the date and when its figures were read under the title, not
-   its registry question. The sub is still asserted to the character, off the
-   stub's own summary stamp. */
+   its registry question, and Growth carries the date and which seven days it
+   is about. The sub is still asserted to the character, off the stub's own
+   summary stamp and its own seven day window. */
 const datedSub = (iso) => {
   const t = new Date(iso);
   const two = (n) => String(n).padStart(2, '0');
@@ -251,6 +252,18 @@ const datedSub = (iso) => {
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(stub('/api/ops/costs').data.asOf),
+  analytics: () => {
+    const day = new Date(SUMMARY.generatedAt).toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+    });
+    const month = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const first = new Date(USAGE_WEEK.window.start);
+    const last = new Date(Date.parse(USAGE_WEEK.window.endExclusive) - 24 * 60 * 60 * 1000);
+    const span = first.getUTCMonth() === last.getUTCMonth()
+      ? `${month(first)}\u2013${last.getUTCDate()}`
+      : `${month(first)}\u2013${month(last)}`;
+    return `${day}${span} \u00b7 UTC`;
+  },
   /* Look up a user carries the UTC date of the day and nothing else, on the
      page's own clock, so it is computed here the same way. */
   users: () => new Date().toLocaleDateString('en-US', {
@@ -357,7 +370,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname.startsWith('/api/')) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(stub(url.pathname)));
+    /* Usage detail's drawn state, whose tables and charts this sweep repaints,
+       needs a population over the floor: the stub's default, Aria's real small
+       one, is a card. Growth draws the same elements from either. */
+    res.end(JSON.stringify(stub(url.pathname, url.search, { usage: 'ready' })));
     return;
   }
   const abs = path.join(ROOT, decodeURIComponent(url.pathname));

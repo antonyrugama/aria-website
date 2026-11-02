@@ -23,6 +23,7 @@ const SRC = {
   history: read('assets/pane-run-history-v2.js'),
   alerts: read('assets/pane-alerts.js'),
   analytics: read('assets/pane-analytics.js'),
+  usage: read('assets/pane-usage.js'),
   spend: read('assets/pane-spend.js'),
   releases: read('assets/pane-releases.js'),
   users: read('assets/pane-users.js'),
@@ -351,6 +352,7 @@ const PANES = [
   ['releases', ['releases'], 'releases.html'],
   ['spend', ['spend'], 'spend.html'],
   ['analytics', ['analytics'], 'analytics.html'],
+  ['usage', ['usage'], 'usage.html'],
   ['alerts', ['alertsModel', 'alerts'], 'alerts.html'],
   ['jobs', ['jobs'], 'jobs-live.html'],
   ['history', ['history'], 'run-history.html'],
@@ -499,7 +501,16 @@ test('round-2 reviewed diagnostic rows are covered by the boundary sweep', async
       { '/api/ops/releases': { data: releasesPayload() } }],
     ['Spend daily note', 'spend', ['spend'], 'spend.html',
       { '/api/ops/costs': { data: spendPayload() } }],
-    ['Analytics cohort and coverage notes', 'analytics', ['analytics'], 'analytics.html',
+    ['Growth cohort note', 'analytics', ['analytics'], 'analytics.html',
+      { '/api/ops/usage': { data: usagePayload() } }],
+    ['Growth availability detail', 'analytics', ['analytics'], 'analytics.html',
+      { '/api/ops/usage': { data: (() => {
+        const payload = usagePayload();
+        payload.cohorts = [];
+        payload.availability = { state: 'not_reporting', detail: DIAGNOSTIC };
+        return payload;
+      })() } }],
+    ['Usage cohort and coverage notes', 'usage', ['usage'], 'usage.html',
       { '/api/ops/usage': { data: usagePayload() } }],
     ['Problems insufficient-data reason', 'alerts', ['alertsModel', 'alerts'], 'alerts.html',
       { '/api/ops/alerts/rules': { data: alertsRulesPayload() } }],
@@ -560,15 +571,15 @@ test('round-3 summary hint and description rows are covered by named cases', asy
     'Spend hint and description'
   );
 
-  const analyticsResponses = cleanResponses();
+  const usageResponses = cleanResponses();
   const usage = usagePayload();
   usage.features.hint = DIAGNOSTIC;
-  analyticsResponses['/api/ops/usage'] = { data: usage };
+  usageResponses['/api/ops/usage'] = { data: usage };
   assertNoRawDiagnostic(
-    await bootPane('analytics', ['analytics'], {
-      file: 'analytics.html',
-      responses: analyticsResponses,
+    await bootPane('usage', ['usage'], {
+      file: 'usage.html',
+      responses: usageResponses,
     }),
-    'Analytics features hint'
+    'Usage features hint'
   );
 });

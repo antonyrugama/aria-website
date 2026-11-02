@@ -280,6 +280,21 @@ const datedSub = (iso) => {
 const LIVE_SUB = {
   overview: () => datedSub(SUMMARY.generatedAt),
   spend: () => datedSub(COSTS.asOf),
+  /* Growth carries the date and which seven days it is about, off the seven
+     day answer's own window. */
+  analytics: () => {
+    const t = new Date(SUMMARY.generatedAt);
+    const day = t.toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+    });
+    const month = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const first = new Date(USAGE_WEEK.window.start);
+    const last = new Date(Date.parse(USAGE_WEEK.window.endExclusive) - DAY);
+    const span = first.getUTCMonth() === last.getUTCMonth()
+      ? `${month(first)}\u2013${last.getUTCDate()}`
+      : `${month(first)}\u2013${month(last)}`;
+    return `${day}${span} \u00b7 UTC`;
+  },
   /* Look up a user carries the UTC date of the day and nothing else: there is
      no figure on it that has a read time. The date is the page's own clock, so
      it is computed here the same way, on the same clock. */
@@ -600,6 +615,35 @@ const USAGE = {
   ]
 };
 
+/* Growth asks for the same route twice, over the last seven whole days and over
+   thirty, and draws the lines, the app rows and feature use from the first and
+   the signup weeks from the second. The default 30 day answer above is the one
+   Usage detail reads; this is the seven day one, so the top bar's range, the
+   daily lines and the feature rows are drawn from a window that has seven days
+   in it. */
+const USAGE_WEEK = {
+  ...USAGE,
+  window: {
+    ...USAGE.window,
+    range: '7d',
+    start: utcDay(7 * DAY) + 'T00:00:00.000Z',
+    days: 7,
+    daysCovered: 7,
+    reportingStart: utcDay(7 * DAY)
+  },
+  apps: USAGE.apps.map((a) => ({
+    ...a, trend: { ...a.trend, values: a.trend.values.slice(-7) }
+  })),
+  features: {
+    hint: 'People who opened each feature.',
+    note: 'People who opened each feature in the window.',
+    rows: [
+      { label: 'Training plan', app: 'Mobile', color: 's1', users: 410, denominator: 1061 },
+      { label: 'Program builder', app: 'Coaches Web', color: 's2', users: 140, denominator: 308 }
+    ]
+  }
+};
+
 /* Cloud costs, billed and published. The rows add up to the total exactly, so
    the pane draws the reconciled sentence rather than the gap one.
 
@@ -778,7 +822,7 @@ const REVIEW_ITEM = {
   labelCounts: { submitted: 0, disputes: 0, adjudications: 0 }
 };
 
-function stub(pathname, body) {
+function stub(pathname, body, query) {
   if (pathname.startsWith('/api/ops/auth/refresh') || pathname.startsWith('/api/ops/auth/login')) {
     return { data: {
       accessToken: 'stub-access', expiresIn: 900, refreshToken: 'stub-refresh-2',
@@ -811,7 +855,9 @@ function stub(pathname, body) {
   if (pathname === '/api/ops/runs') return { data: RUNS };
   if (pathname.startsWith('/api/ops/costs')) return { data: COSTS };
   if (pathname.startsWith('/api/ops/summary')) return { data: SUMMARY };
-  if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
+  if (pathname.startsWith('/api/ops/usage')) {
+    return { data: query && query.get('range') === '7d' ? USAGE_WEEK : USAGE };
+  }
   if (pathname.startsWith('/api/ops/releases')) return { data: RELEASES };
   if (pathname.startsWith('/api/ops/seval/admin/reviews/items/')) {
     return { data: {
@@ -971,6 +1017,7 @@ const RESULT_PROOF = {
   history: [RUNS.failures[0].failureCode, RUNS.runs[0].modelUsed],
   alerts: [PROBLEMS[0].reference, PROBLEMS[1].reference, PROBLEMS[0].workPaneLabel],
   analytics: ['1,061', '8,430', USAGE.apps[1].label],
+  usage: ['1,061', '8,430', USAGE.apps[1].label],
   spend: [COST_ROWS[0].label, COST_ROWS[2].label],
   /* Only the answered validation draws these: the digest the stub sent back
      and the sentence the pane writes for a valid declaration. */
@@ -1047,13 +1094,13 @@ const KNOWN_UNPAINTED_STATE = [];
    anybody editing this table, and a pane that stops drawing the pairs it has
    today fails rather than passing on zero comparisons.
 
-   Seven panes are zero because their result views declare no ARIA state at
+   Nine panes are zero because their result views declare no ARIA state at
    all. That is stated here rather than left to be inferred from a sweep that
-   silently compared nothing. Seven, not eight: releases draws state too, and
+   silently compared nothing. Nine, not eleven: releases draws state too, and
    this table said 0 for it until round 15 read the number the sweep prints
    against the number this table demands. */
 const EXPECTED_PAIRS = {
-  overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0,
+  overview: 0, jobs: 0, history: 0, alerts: 0, analytics: 0, usage: 0,
   /* One pair: the Group-the-bill-by switch's buttons, one `aria-pressed`
      group over the cuts the answer carries (ops/assets/pane-spend.js,
      `viewSwitch()`). The switch is drawn only when two or more cuts have rows,
@@ -1385,7 +1432,7 @@ const server = http.createServer((req, res) => {
       let body = null;
       try { body = raw ? JSON.parse(raw) : null; } catch { /* not a JSON body */ }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify(stub(url.pathname, body)));
+      res.end(JSON.stringify(stub(url.pathname, body, url.searchParams)));
     });
     return;
   }
