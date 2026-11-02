@@ -758,62 +758,54 @@
     spend: [
       {
         id: 'spend-total', kind: 'metric', title: 'What this period cost',
-        anchor: { selector: 'section', title: 'What this period cost' },
+        anchor: { selector: '.mn-hero' },
         live: function (ctx) {
-          var total = ctx.read('.sp-total');
-          var billed = ctx.readAll('.pill');
-          return total ? 'The total reads ' + total + (billed.length ? ' (' + billed.join('; ') + ')' : '') + '.' : '';
+          var total = ctx.read('.mn-total');
+          var delta = ctx.read('.mn-delta');
+          return total ? 'The total reads ' + total + (delta ? ' (' + delta + ')' : '') + '.' : '';
         },
         metric: {
-          counts: 'What the cloud bill says has been spent over the period in the filter bar, ' +
-            'and a forecast to the end of the period at the same daily rate.',
-          grain: 'The period in the filter bar, compared with the same point of the one before. ' +
-            'The bill arrives behind the day, and the band says how far it has been billed.',
+          counts: 'What the cloud bill says has been spent over the period in the picker, the ' +
+            'change against the stretch before it, the daily average and the latest billed day. ' +
+            'A forecast to the end of the month and a budget figure appear only when the server ' +
+            'has them to give.',
+          grain: 'This month, last month, three months or twelve months. A month still running ' +
+            'is compared with the same days of the one before. The bill arrives behind the ' +
+            'day, and the line under the title says how far it has been billed.',
           source: "The cloud provider's billing export, collected by the server.",
           healthy: 'A small change against the period before, or one that more use explains.',
           worrying: 'A forecast well above the last period with no growth in use behind it.'
         }
       },
       {
-        id: 'spend-target', kind: 'section', title: 'Against the monthly target',
-        anchor: { selector: '.card', title: 'Against the monthly target' },
-        body: 'No budget is recorded anywhere, so there is nothing to draw against. The card ' +
-          'says so rather than drawing a bar against a target that does not exist.'
+        id: 'spend-daily', kind: 'metric', title: 'Daily spend',
+        anchor: { selector: '.mn-chart' },
+        metric: {
+          counts: 'Spend for each billed day of the period, with the daily average drawn as a ' +
+            'dashed line across it.',
+          grain: 'One point per billed day. A day with no reading breaks the line rather than ' +
+            'joining across it, and the scale always leaves room above the highest day.',
+          source: 'The billing export.',
+          healthy: 'The line stays near the average.',
+          worrying: 'A step up that stays up.'
+        }
       },
       {
-        id: 'spend-where', kind: 'metric', title: 'Where the money goes',
-        anchor: { selector: 'section', title: 'Where the money goes' },
+        id: 'spend-where', kind: 'metric', title: 'Where it goes',
+        anchor: { selector: '.mn-where' },
         live: function (ctx) {
-          var names = ctx.readAll('.sp-name');
+          var names = ctx.readAll('.mn-row-name > span:first-child');
           return names.length ? 'Largest first: ' + names.slice(0, 3).join(', ') + '.' : '';
         },
         metric: {
-          counts: 'The same bill cut by what the money is for, or by resource group. Every cut ' +
-            'adds up to the billed total, and the card says whether it does.',
-          grain: 'The period in the filter bar.',
+          counts: 'The same bill cut by what the money is for, or by resource group or service ' +
+            'when the switch offers them. Each bar is that row\'s share of the bill, and the ' +
+            'card says so when the rows do not add up to the total.',
+          grain: 'The period in the picker.',
           source: 'The billing export, sorted into the categories an owner maps in Settings.',
-          healthy: 'The cut reconciles to the total and the largest share is the one you expect.',
-          worrying: 'A large share marked as not grouped, or a gap between the cut and the total.'
+          healthy: 'The rows add up to the total and the largest share is the one you expect.',
+          worrying: 'A large share marked as not grouped, or a row with no amount.'
         }
-      },
-      {
-        id: 'spend-daily', kind: 'metric', title: 'Day by day',
-        anchor: { selector: 'section', title: 'Day by day, and what Azure calls it' },
-        metric: {
-          counts: 'Spend for each billed day of this period against the one before, and the ' +
-            'bill again by the cloud provider\'s own service names.',
-          grain: 'One point per billed day. A day past the end of what was billed breaks the ' +
-            'line rather than joining across it.',
-          source: 'The billing export.',
-          healthy: 'The two lines follow each other.',
-          worrying: 'A step up that stays up, or one service growing on its own.'
-        }
-      },
-      {
-        id: 'spend-unanswered', kind: 'section', title: 'What this pane cannot answer yet',
-        anchor: { selector: 'section', title: 'What this pane cannot answer yet' },
-        body: 'Questions about cost that nothing records yet, such as spend per app. A shared ' +
-          'bill split by app would be an invented number, so it is named instead.'
       }
     ],
 

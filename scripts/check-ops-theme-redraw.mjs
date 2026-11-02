@@ -239,15 +239,19 @@ const DECLARED = readRegistry();
    its registry question, and Growth carries the date and which seven days it
    is about. The sub is still asserted to the character, off the stub's own
    summary stamp and its own seven day window. */
+const datedSub = (iso) => {
+  const t = new Date(iso);
+  const two = (n) => String(n).padStart(2, '0');
+  const day = t.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+  });
+  return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+};
+/* Money carries the same line, off the stub's own cost answer: the time the
+   server collected the bill. */
 const LIVE_SUB = {
-  overview: () => {
-    const t = new Date(SUMMARY.generatedAt);
-    const two = (n) => String(n).padStart(2, '0');
-    const day = t.toLocaleDateString('en-US', {
-      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
-    });
-    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
-  },
+  overview: () => datedSub(SUMMARY.generatedAt),
+  spend: () => datedSub(stub('/api/ops/costs').data.asOf),
   analytics: () => {
     const day = new Date(SUMMARY.generatedAt).toLocaleDateString('en-US', {
       weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
