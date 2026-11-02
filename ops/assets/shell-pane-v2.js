@@ -28,6 +28,10 @@
      filters()               a copy of the current filter selection
      resetRange()            put the range back to the pane's own default;
                              answers whether that changed anything
+     setScope(value)         set the App selection for a pane that draws its
+                             own App control (`scopeInPane` in the registry):
+                             the querystring, the links that carry it and
+                             ops:filters follow; answers whether it changed
      paneFilters(nodes)      put the pane's own controls in the shared filter
                              bar, replacing any it put there before. A pane
                              declares in the registry what the shell can filter
@@ -428,6 +432,23 @@
     return true;
   }
 
+  /* The App selection, set by a pane that draws its own control for it
+     (`scopeInPane` in the registry). The shell has no segment to click, so what
+     a click on one does is done here instead: the querystring, every link that
+     carries the selection, and ops:filters. Answers whether anything changed;
+     a value the registry does not offer, or a pane with no App filter, changes
+     nothing. */
+  var activePane = null;
+
+  function setScope(value) {
+    if (!activePane || !activePane.scope) return false;
+    if (!SCOPES.some(function (s) { return s.v === value; })) return false;
+    if (filters.scope === value) return false;
+    filters.scope = value;
+    writeFilters(activePane);
+    return true;
+  }
+
   /* -------------------------------------------------------- the filter bar */
 
   function segment(ariaLabel, options, current, onPick) {
@@ -471,13 +492,18 @@
      approved design has a control nothing can carry yet, the note says so
      where the control would have been. */
   function renderFilters(pane) {
-    if (!pane.scope && !pane.range && !pane.env && !pane.scopeNote && !pane.filterNote) {
+    /* Whether the shell draws the App segment is a different question from
+       whether the pane has an App filter. A pane that draws its own control
+       (`scopeInPane`) still has one, and the reading, writing and carrying of
+       it stays here. */
+    var drawsScope = pane.scope && !pane.scopeInPane;
+    if (!drawsScope && !pane.range && !pane.env && !pane.scopeNote && !pane.filterNote) {
       return null;
     }
 
     var bar = h('div', { className: 'filters' });
 
-    if (pane.scope) {
+    if (drawsScope) {
       bar.appendChild(h('span', { className: 'filter-label', text: 'App' }));
       bar.appendChild(segment('App scope', SCOPES, filters.scope, function (v) {
         filters.scope = v;
@@ -1547,6 +1573,7 @@
     if (!pane) throw new Error('Unknown pane: ' + pageId);
 
     document.title = pane.label + ' | Aria Operations';
+    activePane = pane;
     setGate('booting');
 
     session.boot().then(whenParsed).then(function () {
@@ -1616,6 +1643,7 @@
     panes: PANES,
     filters: function () { return shallow(filters); },
     resetRange: resetRange,
+    setScope: setScope,
     paneFilters: paneFilters,
     paneHref: paneHref,
     setBadge: setBadge,

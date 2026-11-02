@@ -299,70 +299,154 @@ const AUDIT = [
     targetType: null, targetId: null, reason: null, ipAddress: '203.0.113.4' }
 ];
 
+/* One invented account, drawn the way the real payload draws it: a masked
+   address and name the owner may reveal, plain facts about the sign-in, a Pro
+   subscription on the App Store, one phone, two recent events and two entries
+   in the access record. A plain field carries no `reveal`, exactly as
+   plainField() in the API's opsUsersView does not write one. */
+const USER_REF = 'usr-2048';
+const USER_EMAIL = 'maya.lindqvist@example.invalid';
+const USER_NAME = 'Maya Lindqvist';
+
+const USER_STATE = { key: 'active', label: 'Active', tone: 'ok' };
+const USER_TIER = { key: 'pro', label: 'Pro', brand: true };
+
+const plain = (key, label, value) => ({ key, label, masked: false, value });
+
+const USER_ACCOUNT_FIELDS = [
+  { key: 'email', label: 'Email', masked: true, maskedValue: 'm••••••@e••••••.invalid', reveal: 'allowed' },
+  { key: 'displayName', label: 'Name', masked: true, maskedValue: 'M••••••', reveal: 'allowed' },
+  plain('authProvider', 'Sign-in method', 'apple'),
+  plain('emailVerified', 'Email verified', 'Verified'),
+  plain('lastSignInAt', 'Last sign-in', ago(75 * MINUTE)),
+  plain('usageAnalytics', 'Usage analytics', 'Opted in'),
+  plain('accountKind', 'Account type', 'Athlete'),
+  plain('minor', 'Minor account', 'No')
+];
+
 const USER_LOOKUP = {
   recorded: {
     at: ago(2 * MINUTE),
     actor: ADMIN.email,
     fields: 'identifier',
-    reason: 'support request'
+    reason: 'Support ticket 1042'
   },
   matchCount: 1,
   matches: [
     {
-      reference: 'ath_123',
-      maskedEmail: 'ath*****@example.invalid',
-      state: { key: 'active', label: 'Active', tone: 'ok' },
-      tier: { key: 'pro', label: 'Pro', brand: 'Aria' },
+      reference: USER_REF,
+      maskedEmail: 'm••••••@e••••••.invalid',
+      state: USER_STATE,
+      tier: USER_TIER,
       platforms: ['iOS'],
-      lastActiveAt: ago(3 * HOUR),
+      lastActiveAt: ago(75 * MINUTE),
       flags: []
     }
   ]
 };
 
+const USER_LOOKUP_MANY = {
+  ...USER_LOOKUP,
+  matchCount: 3,
+  matches: [
+    USER_LOOKUP.matches[0],
+    {
+      reference: 'usr-2049',
+      maskedEmail: 'm••••••@e••••••.invalid',
+      state: { key: 'payment_failed', label: 'Payment failed', tone: 'warn' },
+      tier: USER_TIER,
+      platforms: ['Android'],
+      lastActiveAt: ago(3 * DAY),
+      flags: [{ key: 'email_unverified', label: 'Email not verified', tone: 'warn' }]
+    },
+    {
+      reference: 'usr-2077',
+      maskedEmail: 'm••••••@e••••••.invalid',
+      state: USER_STATE,
+      tier: { key: 'free', label: 'Free', brand: false },
+      platforms: ['iOS'],
+      lastActiveAt: null,
+      flags: []
+    }
+  ]
+};
+
+const USER_LOOKUP_NONE = { ...USER_LOOKUP, matchCount: 0, matches: [] };
+
 const USER_DETAIL = {
-  reference: 'ath_123',
+  reference: USER_REF,
   kind: 'athlete',
-  state: { key: 'active', label: 'Active', tone: 'ok' },
-  tier: { key: 'pro', label: 'Pro', brand: 'Aria' },
-  memberSince: ago(180 * DAY),
+  state: USER_STATE,
+  tier: USER_TIER,
+  memberSince: ago(21 * DAY),
   recorded: {
     at: ago(MINUTE),
     actor: ADMIN.email,
     fields: 'summary',
-    reason: 'opening this account'
+    reason: 'Support ticket 1042'
   },
-  summary: {
-    fields: [
-      { key: 'contactEmail', label: 'Contact email', masked: false,
-        value: 'athlete.identity@example.invalid', reveal: 'unavailable' },
-      { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
-        reveal: 'never', neverShownNote: 'Never shown here.' },
-      { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
-        reveal: 'unavailable', unavailableNote: 'No source can reveal this yet.' }
+  summary: { fields: USER_ACCOUNT_FIELDS },
+  record: { fields: USER_ACCOUNT_FIELDS },
+  activity: {
+    windowDays: 30,
+    events: [
+      { label: 'Training plan opened', occurredAt: ago(74 * MINUTE), tone: 'ok' },
+      { label: 'Workout logging opened', occurredAt: ago(31 * HOUR), tone: 'ok' }
     ]
   },
-  record: {
-    fields: [
-      { key: 'contactEmail', label: 'Contact email', masked: false,
-        value: 'athlete.identity@example.invalid', reveal: 'unavailable' },
-      { key: 'birthDate', label: 'Birth date', masked: true, maskedValue: 'Hidden',
-        reveal: 'never', neverShownNote: 'Never shown here.' },
-      { key: 'phone', label: 'Phone', masked: true, maskedValue: 'Hidden',
-        reveal: 'unavailable', unavailableNote: 'No source can reveal this yet.' }
-    ],
-    note: 'Only operational support fields are shown.'
-  },
-  activity: { windowDays: 30, events: [] },
-  devices: [],
+  devices: [
+    { label: 'iPhone', os: 'iOS 26', lastSeenAt: ago(75 * MINUTE), appVersion: null }
+  ],
   billing: {
     fields: [
-      { key: 'billingEmail', label: 'Billing email', masked: false,
-        value: 'billing.identity@example.invalid', reveal: 'unavailable' }
+      plain('tier', 'Tier', 'pro'),
+      plain('billingStatus', 'Subscription status', 'active'),
+      plain('billingPlatform', 'Store', 'apple'),
+      plain('billingCycle', 'Billing cycle', 'monthly'),
+      plain('currentPeriodStart', 'Period start', ago(21 * DAY)),
+      plain('currentPeriodEnd', 'Period end', ahead(9 * DAY))
     ]
   },
-  access: { windowDays: 30, entries: [] },
+  access: {
+    windowDays: 90,
+    entries: [
+      { occurredAt: ago(2 * HOUR), actor: 'ian@example.invalid', fields: 'Summary only',
+        reason: 'Support ticket 1042', revealed: false },
+      { occurredAt: ago(2 * DAY), actor: 'anthony@example.invalid', fields: 'Email',
+        reason: 'Support ticket 1038', revealed: true }
+    ]
+  },
   supportActions: { available: [] }
+};
+
+/* An account the API knows little about: no subscription, no phone, no
+   activity shared, no access record sent and no confirmation that this open
+   was recorded. Every card has to say which of those it is. */
+const USER_DETAIL_PARTIAL = {
+  reference: USER_REF,
+  kind: 'athlete',
+  state: USER_STATE,
+  tier: { key: 'free', label: 'Free', brand: false },
+  memberSince: null,
+  summary: { fields: [USER_ACCOUNT_FIELDS[0], plain('authProvider', 'Sign-in method', 'email')] },
+  record: { fields: [USER_ACCOUNT_FIELDS[0], plain('authProvider', 'Sign-in method', 'email')] },
+  devices: [],
+  billing: { fields: [] },
+  supportActions: { available: [] }
+};
+
+const USER_REVEAL = {
+  email: USER_EMAIL,
+  displayName: USER_NAME
+};
+
+/* The scenes the users pane can be driven into by scripts/shot-style callers.
+   Anything else answers the one account above. */
+const USER_SCENES = {
+  many: { lookup: USER_LOOKUP_MANY },
+  none: { lookup: USER_LOOKUP_NONE },
+  partial: { detail: USER_DETAIL_PARTIAL },
+  error: { lookup: { __status: 503, body: { error: { code: 'ops_unavailable', message: 'The lookup service did not answer.' } } } }
 };
 
 const INTEGRATIONS = {
@@ -1178,13 +1262,20 @@ function stub(pathname, search, options = {}) {
   if (pathname === '/api/ops/settings/retention') return { data: RETENTION };
   if (pathname.startsWith('/api/ops/settings/cost-categories')) return { data: COST_CATEGORIES };
   if (pathname.startsWith('/api/ops/integrations')) return { data: INTEGRATIONS };
-  if (pathname.startsWith('/api/ops/users/lookup')) return { data: USER_LOOKUP };
-  if (pathname.startsWith('/api/ops/users/')) return { data: USER_DETAIL };
+  if (pathname.startsWith('/api/ops/users/')) {
+    const scene = USER_SCENES[String(options.scene || '').replace(/^users-/, '')] || {};
+    if (pathname.startsWith('/api/ops/users/lookup')) return scene.lookup && scene.lookup.__status ? scene.lookup : { data: scene.lookup || USER_LOOKUP };
+    if (pathname.endsWith('/reveal')) {
+      const field = options.body?.field;
+      return { data: { field, value: USER_REVEAL[field] ?? null, expiresAt: ahead(2 * MINUTE), recorded: true } };
+    }
+    return { data: scene.detail || USER_DETAIL };
+  }
   return { data: {} };
 }
 
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, USAGE_WEEK, USAGE_READY, USAGE_WEEK_READY, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, USER_LOOKUP_MANY, USER_LOOKUP_NONE, USER_DETAIL_PARTIAL, USER_REF, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, USAGE_WEEK, USAGE_READY, USAGE_WEEK_READY, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

@@ -382,8 +382,13 @@ test('a pane is offered exactly the filters it declared, and never one more', as
     const { doc } = await bootPane(id, { file: pane.file, definePane: () => {} });
     const drawn = controlsOn(doc);
 
-    assert.equal(drawn.app, pane.scope ? 1 : 0,
-      id + (pane.scope ? ' lost its App control' : ' grew an App control it cannot honour'));
+    /* `scopeInPane` is a pane that has an App filter and draws it itself: the
+       shell still reads, persists and hands it on (the next two tests), and
+       draws nothing, because a second control would be two answers to one
+       question. */
+    const shellDraws = pane.scope && !pane.scopeInPane;
+    assert.equal(drawn.app, shellDraws ? 1 : 0,
+      id + (shellDraws ? ' lost its App control' : ' grew an App control it cannot honour'));
     assert.equal(drawn.range, pane.range ? 1 : 0,
       id + (pane.range ? ' lost its Range control' : ' grew a Range control it cannot honour'));
     assert.equal(drawn.env, pane.env ? 1 : 0,
@@ -590,6 +595,55 @@ test('a link to another pane carries only the filters that pane has', async () =
     assert.ok(registry.PANES.spend.range.indexOf(spendRange) !== -1,
       'spend.html was handed the range ' + spendRange + ', which it does not offer');
   }
+});
+
+/* Round 1, finding 1. Whether the shell DRAWS the App control and whether it
+   READS, WRITES and CARRIES the App are different questions. A pane that draws
+   its own control (`scopeInPane`) must still be a pane with an App filter, or a
+   link to it loses the App on the way in. */
+test('an App chosen on one pane reaches a pane that draws its own App control', async () => {
+  const registry = registryOnly();
+  const query = (href) => new URLSearchParams((href.split('?')[1] || ''));
+  const own = Object.keys(registry.PANES).filter((id) => registry.PANES[id].scopeInPane);
+  assert.ok(own.length >= 1, 'no pane draws its own App control, so this proves nothing');
+
+  const { shell } = await bootPane('usage', {
+    file: 'usage.html',
+    href: 'https://ops.example.invalid/ops/usage.html?scope=coaches',
+    definePane: () => {},
+  });
+  for (const id of own) {
+    assert.equal(registry.PANES[id].scope, true, id + ' draws its own App control but told the shell it has none');
+    assert.equal(query(shell.paneHref(id)).get('scope'), 'coaches',
+      'a link to ' + id + ' dropped the App the operator was looking at');
+  }
+});
+
+test('a pane that draws its own App control still has the address read and written for it', async () => {
+  const registry = registryOnly();
+  for (const id of Object.keys(registry.PANES).filter((p) => registry.PANES[p].scopeInPane)) {
+    const pane = registry.PANES[id];
+    const { shell, window } = await bootPane(id, {
+      file: pane.file,
+      href: 'https://ops.example.invalid/ops/' + pane.file + '?scope=coaches',
+      definePane: () => {},
+    });
+    assert.equal(shell.filters().scope, 'coaches', id + ' ignored ?scope= because it draws its own control');
+
+    const before = window.history.entries.length;
+    assert.equal(shell.setScope('mobile'), true, id + ' refused a change from its own control');
+    assert.equal(shell.filters().scope, 'mobile');
+    assert.equal(window.history.entries.length, before + 1);
+    assert.match(window.history.entries[before], /scope=mobile/);
+    assert.equal(shell.setScope('mobile'), false, 'an unchanged App was reported as a change');
+    assert.equal(shell.setScope('aria'), false, 'a value that is not an App was accepted');
+    assert.equal(shell.filters().scope, 'mobile');
+  }
+
+  /* A pane with no App filter has nothing for setScope to change. */
+  const { shell } = await bootPane('history', { file: registry.PANES.history.file, definePane: () => {} });
+  assert.equal(registry.PANES.history.scope, false);
+  assert.equal(shell.setScope('coaches'), false, 'a pane with no App filter accepted one');
 });
 
 /* =========================== the pane's own controls ==================== */

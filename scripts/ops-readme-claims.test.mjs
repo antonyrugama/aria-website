@@ -1844,7 +1844,7 @@ const REQUIRED_ROWS = {
     'ops/assets/pane-registry.js "Custom is deliberately not offered, for the same reason as Cloud costs"',
     'ops/assets/pane-releases.js "The chip carries the share and nothing else"',
     'ops/assets/pane-releases-v2.css "The chip holds the share and nothing else"',
-    'ops/assets/pane-users.js "Hidden for every role, including this one, until a reveal is recorded."',
+    'ops/assets/pane-users.js "Health data has no reveal control at all, and no row. Not a disabled"',
     'ops/assets/shell-pane-v2.js "Ported from the v1 panes rather than reached for"',
   ],
   'deleted-assets': ['ops/assets/operate.css', 'ops/assets/settings.css'],

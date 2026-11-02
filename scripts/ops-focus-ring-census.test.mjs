@@ -123,6 +123,8 @@ const EXPECTED = [
     offset: '2px', dark: '#00e5ff', light: '#0891b2' },
   { file: 'ops/assets/pane-evaluations-v2.css', selector: '.field-input:focus-visible',
     offset: '-2px', dark: '#00e5ff', light: '#155e75' },
+  { file: 'ops/assets/pane-users-v2.css', selector: '.u-field:focus-within',
+    offset: '-2px', dark: '#00e5ff', light: '#155e75' },
   { file: 'ops/assets/shell-pane-v2.css', selector: '.modal-card .field-input:focus-visible',
     offset: '-2px', dark: '#00e5ff', light: '#155e75' }
 ];
@@ -825,9 +827,9 @@ test('the counts are the ones this file claims to produce', () => {
     enumerated: counts.enumerated,
     pins: counts.pins
   }, {
-    colourRules: 9,
-    censusRows: 9,
-    inherits: 7,
+    colourRules: 10,
+    censusRows: 10,
+    inherits: 8,
     diverges: 2,
     unresolvable: 0,
     enumerated: 2,

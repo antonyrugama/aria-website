@@ -59,7 +59,7 @@ function isShown(el) {
 }
 
 function sectionName(section) {
-  const title = section.querySelector('.band-title, .hero-title, .hunt-title');
+  const title = section.querySelector('.band-title, .hero-title');
   return title ? String(title.textContent).trim() : '(untitled ' + section.getAttribute('class') + ')';
 }
 
