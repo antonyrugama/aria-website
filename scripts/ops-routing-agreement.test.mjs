@@ -28,7 +28,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
+import { makeDom, allText } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -160,9 +160,6 @@ async function boot(pane, channels) {
 
 /* ------------------------------------------------------- what is drawn */
 
-const hasClass = (node, name) =>
-  String(node.className || '').split(/\s+/).indexOf(name) !== -1;
-
 function shownPanel(dom) {
   const boxes = dom.doc.getElementById('content').querySelectorAll('[data-state]')
     .filter((n) => n.getAttribute('data-shown') !== null);
@@ -173,31 +170,31 @@ function shownPanel(dom) {
 
 const panelText = (dom) => allText(shownPanel(dom)).replace(/\s+/g, ' ').trim();
 
-/* Overview's chips, each as its own string, so "the header carries this
-   chip" is asked of a chip and not of the whole panel. */
-function chips(dom) {
-  return findAll(shownPanel(dom), (n) => hasClass(n, 'pill'))
-    .map((n) => allText(n).replace(/\s+/g, ' ').trim());
-}
+/* What Today's status line says. The line is the one thing an operator reads
+   first, so it is the one that must not stay calm over a destination nothing
+   can be sent to. */
+const healthWords = (dom) => {
+  const found = dom.doc.getElementById('content').querySelectorAll('.health-text')[0];
+  assert.ok(found, 'Today drew no status line, so there is nothing to compare');
+  return allText(found).replace(/\s+/g, ' ').trim();
+};
 
-const routeChip = (dom) => chips(dom).filter((t) => /not set up/.test(t));
+const UNSET = 'No alert destination set';
 
 /* ------------------------------------------------------------- the tests */
 
-test('Overview says a destination is not set up on every payload Problems does',
+test('Today says a destination is not set up on every payload Problems does',
   async () => {
     /* The finder, shown working in both directions on values nobody disputes,
        so neither the presence nor the absence below is read off a probe that
        matches everything or nothing. */
     const wired = await boot('overview', channelsWith(true));
-    assert.equal(routeChip(wired).length, 0,
-      `two configured destinations drew ${JSON.stringify(routeChip(wired))} on Overview`);
-    assert.ok(chips(wired).length >= 1,
-      'Overview drew no chips at all, so the absence above proves nothing');
+    assert.equal(healthWords(wired), 'No critical issues',
+      `two configured destinations drew "${healthWords(wired)}" on Today`);
 
     const off = await boot('overview', channelsWith(false));
-    assert.deepEqual(routeChip(off), ['2 routes not set up'],
-      `two unconfigured destinations drew ${JSON.stringify(chips(off))} on Overview`);
+    assert.equal(healthWords(off), UNSET,
+      `two unconfigured destinations drew "${healthWords(off)}" on Today`);
 
     /* The payload the three spellings disagree on. A string is what an
        encoder that stringifies booleans sends, and it is truthy -- so
@@ -208,11 +205,11 @@ test('Overview says a destination is not set up on every payload Problems does',
       const problems = await boot('alerts', channelsWith(hostile));
       const said = panelText(problems);
 
-      const overviewSaysUnset = routeChip(overview).length > 0;
+      const overviewSaysUnset = healthWords(overview) === UNSET;
       const problemsSaysUnset = /No destination has been set/.test(said);
 
       assert.equal(overviewSaysUnset, problemsSaysUnset,
-        `on configured: ${JSON.stringify(hostile)} Overview ${overviewSaysUnset
+        `on configured: ${JSON.stringify(hostile)} Today ${overviewSaysUnset
           ? 'says' : 'does not say'} a destination is not set up while Problems `
         + `${problemsSaysUnset ? 'does' : 'does not'} -- the two panes an operator moves `
         + 'between during one incident disagree about whether anyone will be told');
@@ -220,8 +217,16 @@ test('Overview says a destination is not set up on every payload Problems does',
       if (hostile !== true) {
         assert.ok(overviewSaysUnset,
           `configured: ${JSON.stringify(hostile)} is not the boolean the column holds, and `
-          + 'Overview read it as set up -- a clean header over an incident nothing can be '
+          + 'Today read it as set up -- a clean header over an incident nothing can be '
           + 'sent about');
       }
     }
   });
+
+test('a channel list the answer never carried is not a destination that is not set up', async () => {
+  /* Said nothing about delivery is not said there is none: the same refusal
+     the Problems pane makes (`channelsKnown`). */
+  const dom = await boot('overview', undefined);
+  assert.equal(healthWords(dom), 'No critical issues',
+    `an answer with no channel list drew "${healthWords(dom)}"`);
+});

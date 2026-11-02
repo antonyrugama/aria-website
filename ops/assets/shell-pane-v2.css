@@ -73,6 +73,7 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
    on screen marked with a cyan underline. It scrolls sideways rather than
    wrapping when a phone cannot hold it, so it is never two lines tall. */
 .subnav {
+  position: relative;
   display: flex; align-items: center; gap: 4px;
   padding: 0 26px;
   border-bottom: 1px solid var(--line);
@@ -91,6 +92,9 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
   white-space: nowrap;
 }
 .subnav-item:hover { color: var(--ink); }
+/* Inset: the row scrolls sideways, so an outline drawn outside the tab is cut
+   off by the row's own overflow and never reaches the screen. */
+.subnav-item:focus-visible { outline-offset: -2px; }
 .subnav-item.on { color: var(--ink); font-weight: 560; }
 .subnav-item.on::after {
   content: '';

@@ -465,8 +465,13 @@
       }
       if (capped) return { tone: 'warn', text: 'At least ' + fmt.plural(problems.length, 'open problem') };
       if (results.rules.error) return { tone: 'warn', text: 'Checks unread', retry: ['rules'] };
-      if (!model.armedState(data('rules') || {}).trustworthy) {
-        return { tone: 'warn', text: 'Checks not running' };
+      var armed = model.armedState(data('rules') || {});
+      if (!armed.trustworthy) return { tone: 'warn', text: 'Checks not running' };
+      /* A calm line over an incident nothing can be sent about is the one
+         thing worse than a red one. `channelsKnown` keeps an answer that said
+         nothing about delivery apart from one that said there is none. */
+      if (armed.channelsKnown && !armed.channelsConfigured) {
+        return { tone: 'warn', text: 'No alert destination set' };
       }
       return { tone: 'ok', text: 'No critical issues' };
     }
@@ -947,6 +952,20 @@
       return S.paneHref('alerts') || 'alerts.html';
     }
 
+    /* The word a screen reader gets before a problem's title, and the tone the
+       row is drawn in. Both lookups go through textOf(), so a severity of
+       `constructor` or `toString` (words every plain object answers to) cannot
+       reach the page as the source of a function. The Problems pane takes the
+       same three steps for the same problem, so one incident has one word on
+       both panes. */
+    function severityWords(severity) {
+      return textOf(model.SEVERITY_LABEL[severity]) || textOf(severity) || 'Unknown';
+    }
+
+    function severityTone(severity) {
+      return textOf(model.SEVERITY_TONE[severity]) || 'info';
+    }
+
     function drawProblems(node) {
       var problems = problemList();
       if (!problems) return;
@@ -954,7 +973,7 @@
       if (!active.length) return;
 
       active.slice(0, ROWS_LISTED).forEach(function (problem) {
-        var tone = model.SEVERITY_TONE[problem.severity] || 'info';
+        var tone = severityTone(problem.severity);
         var title = textOf(problem.title) ? maskContactDetails(textOf(problem.title)) : 'Untitled problem';
         var since = parseDay(problem.detectedAt || problem.firedAt);
         var owner = ownerOf(problem);
@@ -974,7 +993,7 @@
 
         node.appendChild(h('div', { className: 'prob-row is-' + tone }, [
           h('i', { className: 'dot is-' + (tone === 'crit' ? 'crit' : tone === 'warn' ? 'warn' : 'info'), 'aria-hidden': 'true' }),
-          h('span', { className: 'sr', text: (model.SEVERITY_LABEL[problem.severity] || 'Problem') + ': ' }),
+          h('span', { className: 'sr', text: severityWords(problem.severity) + ': ' }),
           h('span', { className: 'prob-title', text: title }),
           meta,
           view

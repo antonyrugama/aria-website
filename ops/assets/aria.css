@@ -99,13 +99,16 @@
      as a tint leaves the same colour too close to it to read as text. So the
      tint keeps the base token and the text takes an -ink token. On dark
      surfaces the base colour already clears AA as text, so here they match,
-     with one exception: violet at #8B5CF6 is 3.9:1 on a card, which is a
-     graphic and not a sentence, so its ink is the lighter hue it replaced. */
+     with three exceptions. Violet at #8B5CF6 is 3.9:1 on a card, which is a
+     graphic and not a sentence, so its ink is the lighter hue it replaced.
+     Emerald and rose are a step lighter for a pill on a hovered or selected
+     table row, where the row's own wash sits under the pill's and the base
+     colour falls just under 4.5:1. */
   --cyan-ink:    var(--cyan);
   --violet-ink:  #A78BFA;
-  --emerald-ink: var(--emerald);
+  --emerald-ink: #3CDBA0;
   --amber-ink:   var(--amber);
-  --rose-ink:    var(--rose);
+  --rose-ink:    #FA7C7C;
   --blue-ink:    var(--blue);
 
   /* Surfaces */
@@ -259,7 +262,7 @@ svg { display: block; }
 }
 
 .brand-name {
-  font-size: 26px; font-weight: 650; letter-spacing: -.035em;
+  font-size: 26px; font-weight: 640; letter-spacing: -.035em;
   line-height: 1;
 }
 .brand-sub {
@@ -281,6 +284,9 @@ svg { display: block; }
   transition: background .15s, color .15s;
 }
 .nav-item svg { width: 18px; height: 18px; flex: none; }
+/* The label gives way before the icon does, so a long name is clipped with an
+   ellipsis instead of pushing a badge out of the rail. */
+.nav-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-item:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink); }
 
 /* The selected destination: a thin cyan marker on the rail's edge and a
@@ -357,7 +363,7 @@ svg { display: block; }
 }
 .top-brand { display: none; }
 .page-head { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 14px; row-gap: 2px; min-width: 0; }
-.page-title { font-size: 30px; font-weight: 650; letter-spacing: -.03em; line-height: 1.15; }
+.page-title { font-size: 30px; font-weight: 640; letter-spacing: -.03em; line-height: 1.15; }
 .page-sub { font-size: 13.5px; color: var(--ink-2); }
 .topbar-end { display: flex; align-items: center; gap: 10px; }
 
@@ -385,12 +391,15 @@ svg { display: block; }
 .acct { position: relative; }
 .acct-btn {
   display: grid; place-items: center;
-  width: 40px; height: 40px;
-  padding: 0; border: 0; border-radius: 50%;
+  width: 44px; height: 44px;
+  padding: 0; border: 0; border-radius: var(--r);
   background: transparent;
   color: var(--ink-2);
   cursor: pointer;
 }
+/* The avatar is a circle and its button is not: a ring drawn round a circle
+   has no straight run to measure, and a focus indicator that cannot be
+   measured cannot be held to a contrast ratio. */
 .acct-btn .who-av { width: 40px; height: 40px; font-size: 13px; }
 .acct-btn svg { width: 18px; height: 18px; }
 .acct-btn:hover .who-av { box-shadow: inset 0 0 0 1px var(--ink-3); }
@@ -420,6 +429,7 @@ svg { display: block; }
 .menu-item svg { width: 16px; height: 16px; flex: none; }
 .menu-item:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
 .menu-item:focus-visible { outline-offset: -2px; }
+.menu-extra { display: flex; flex-direction: column; gap: 2px; }
 .menu-extra:not(:empty) { margin: 6px 0; padding: 6px 0; border-block: 1px solid var(--line); }
 
 /* The phone's navigation. Hidden above the rail's breakpoint, where the rail
@@ -1075,7 +1085,7 @@ svg { display: block; }
   }
   .lookup-open svg { width: 18px; height: 18px; }
   .acct { grid-area: acct; }
-  .acct-btn, .acct-btn .who-av { width: 44px; height: 44px; }
+  .acct-btn { width: 44px; height: 44px; }
   .lookup { display: none; grid-area: search; width: auto; height: 44px; }
   .topbar.is-searching .lookup { display: flex; }
 

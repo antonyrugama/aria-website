@@ -2665,9 +2665,18 @@ test('the truncation note does not claim the whole window over a partly covered 
     + 'it covers');
 });
 
-/* The rail is the one surface with no controls beside it to explain its
+/* The count is filed under this pane's own id, so it lands on the What
+   happened tab in the row under the Health title. The rail's Health item is
+   keyed to Problems, and is not where this pane's figure is read. */
+function historyTab(doc) {
+  const row = doc.getElementById('subnav');
+  assert.ok(row, 'the page has no row of Health pages to carry the badge');
+  return row.querySelectorAll('[data-badge-key="history"]')[0];
+}
+
+/* The tab is the one surface with no controls beside it to explain its
    figure, and it already learned this for narrowing. */
-test('the rail badge names the record start rather than the window over partial coverage', async () => {
+test('the badge names the record start rather than the window over partial coverage', async () => {
   const since = at(3 * HOUR);
   const dom = await boot({
     runs: windowAnswer((base) => {
@@ -2676,9 +2685,8 @@ test('the rail badge names the record start rather than the window over partial 
       };
     }),
   });
-  const item = dom.doc.getElementById('rail').querySelectorAll('.nav-item')
-    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
-  assert.ok(item, 'the rail has no What happened item to badge');
+  const item = historyTab(dom.doc);
+  assert.ok(item, 'the Health row has no What happened tab to badge');
   const said = allText(item.querySelectorAll('.nav-badge-sr')[0] || item);
   assert.match(said, /runs failed/, 'no failure badge was drawn, so there is no wording to read');
 
@@ -3442,8 +3450,7 @@ test('address-shaped text is masked on the surfaces a screen reader reads', asyn
   outcomeSelect.value = 'failed';
   outcomeSelect.dispatch('change');
   await settle();
-  const item = narrowed.doc.getElementById('rail').querySelectorAll('.nav-item')
-    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const item = historyTab(narrowed.doc);
   const sr = item && item.querySelectorAll('.nav-badge-sr')[0];
   const badgeSaid = sr ? allText(sr) : '';
   assert.match(badgeSaid, /among .* and .* only$/,
@@ -3472,8 +3479,7 @@ test('address-shaped text is masked on the surfaces a screen reader reads', asyn
   });
   buttonsIn(livePanel(dropped), /Read again/)[0].dispatch('click');
   await settle();
-  const droppedItem = dropped.doc.getElementById('rail').querySelectorAll('.nav-item')
-    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const droppedItem = historyTab(dropped.doc);
   const droppedSr = droppedItem && droppedItem.querySelectorAll('.nav-badge-sr')[0];
   const droppedSaid = droppedSr ? allText(droppedSr) : '';
   assert.match(droppedSaid, /among .* only$/,
@@ -3561,15 +3567,13 @@ test('every gap the pane names draws the empty glyph, not the warning one', asyn
   }
 });
 
-/* ============================== the rail =============================== */
+/* ============================== the badge ============================== */
 
-test('the rail badge counts failures, and clears rather than zeroing when nothing was read', async () => {
+test('the badge counts failures, and clears rather than zeroing when nothing was read', async () => {
   const withFailures = await boot({});
-  const rail = withFailures.doc.getElementById('rail');
-  const item = rail.querySelectorAll('.nav-item')
-    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
-  assert.ok(item, 'the rail has no What happened item to badge');
-  assert.match(allText(item), /\b3\b/, 'three failed runs did not reach the rail');
+  const item = historyTab(withFailures.doc);
+  assert.ok(item, 'the Health row has no What happened tab to badge');
+  assert.match(allText(item), /\b3\b/, 'three failed runs did not reach the badge');
 
   const unread = await boot({
     runs: windowAnswer((base) => {
@@ -3581,8 +3585,7 @@ test('the rail badge counts failures, and clears rather than zeroing when nothin
       base.runs = []; base.failures = [];
     }),
   });
-  const unreadItem = unread.doc.getElementById('rail').querySelectorAll('.nav-item')
-    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const unreadItem = historyTab(unread.doc);
   assert.equal(unreadItem.querySelectorAll('.nav-badge').length, 0,
     'a pipeline that never recorded put a 0 beside the pane name, which states as fact the ' +
     'one thing the pane does not know');
@@ -3603,20 +3606,18 @@ test('a readable window with nothing failing clears the badge rather than printi
         base.runs = base.runs.map((r) => ({ ...r, outcome: 'completed', failureCode: null }));
       }),
     });
-    const item = quiet.doc.getElementById('rail').querySelectorAll('.nav-item')
-      .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+    const item = historyTab(quiet.doc);
     assert.equal(item.querySelectorAll('.nav-badge').length, 0,
-      'a readable window with no failures put "' + allText(item) + '" on the rail, so a ' +
-      'measured zero and an unread pane look the same from the rail');
+      'a readable window with no failures put "' + allText(item) + '" on the tab, so a ' +
+      'measured zero and an unread pane look the same from the row');
   });
 
-test('the rail badge says what it counted, once the operator narrows the window', async () => {
-  /* The rail is the one place on screen with no controls beside it. A 3 that
+test('the badge says what it counted, once the operator narrows the window', async () => {
+  /* The tab is the one place on screen with no controls beside it. A 3 that
      becomes a 1 because the operator narrowed to one request type is a
      different number over a different set, and nothing next to it says so. */
   const dom = await boot({});
-  const railItem = () => dom.doc.getElementById('rail').querySelectorAll('.nav-item')
-    .filter((n) => n.getAttribute('data-rail-id') === 'history')[0];
+  const railItem = () => historyTab(dom.doc);
   const said = () => {
     const sr = railItem().querySelectorAll('.nav-badge-sr')[0];
     return sr ? allText(sr) : null;
