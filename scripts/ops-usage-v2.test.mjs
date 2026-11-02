@@ -1094,6 +1094,16 @@ test('an answer under the floor that carries the apps is the page, with every co
     .filter((r) => /Athlete roster/.test(allText(r)))[0];
   assert.match(allText(row), /5 people\s*Not reported, 41 people in the group, floor is 50/,
     'the withheld feature row did not carry the count of people who used it: ' + allText(row));
+
+  /* The sentence belongs to the answer under the floor and to nothing else: a
+     page over the floor says nothing under its title. */
+  const noteOf = (page) => findAll(livePanel(page), (n) => (n.className || '').split(' ').indexOf('band-head') !== -1
+    && /^Who is using Aria/.test(allText(n)))
+    .flatMap((head) => findAll(head, (n) => (n.className || '').split(' ').indexOf('band-note') !== -1).map(allText));
+  assert.deepEqual(noteOf(dom), [answer.availability.detail], 'the head of the page did not carry the sentence');
+  const over = await boot({ usage: usageFixture() });
+  assert.equal(usageFixture().availability.state, 'ready', 'the fixture is not over the floor, so this proves nothing');
+  assert.deepEqual(noteOf(over), [], 'a page over the floor wrote a floor sentence under its title');
 });
 
 test('an answer under the floor with no apps in it is still the card that says there is too little', async () => {
