@@ -371,11 +371,13 @@ function cleanResponses() {
 }
 
 async function lookUpUser(dom) {
+  /* The shell's own header search is a form too, and comes first in the
+     document, so the pane's form is found through the field it owns. */
   const identifier = dom.doc.getElementById('lookupIdentifier');
   const reason = dom.doc.getElementById('lookupReason');
   identifier.value = 'ath_123';
   reason.value = 'support';
-  dom.doc.querySelector('form').dispatch('submit');
+  identifier.closest('form').dispatch('submit');
   await settle();
 }
 
@@ -487,8 +489,12 @@ test('round-2 reviewed diagnostic rows are covered by the boundary sweep', async
 });
 
 test('round-3 summary hint and description rows are covered by named cases', async () => {
+  /* Today draws a problem's title and nothing of its summary, so the title is
+     the text that has to arrive masked, and the summary has to stay off the
+     page altogether rather than arrive raw. */
   const overviewResponses = cleanResponses();
   const overviewProblem = clone(PROBLEM);
+  overviewProblem.title = DIAGNOSTIC;
   overviewProblem.summary = DIAGNOSTIC;
   overviewResponses['/api/ops/alerts/problems'] = { data: { problems: [overviewProblem] } };
   assertNoRawDiagnostic(
@@ -496,7 +502,7 @@ test('round-3 summary hint and description rows are covered by named cases', asy
       file: 'index.html',
       responses: overviewResponses,
     }),
-    'Overview problem summary'
+    'Overview problem title'
   );
 
   const problemResponses = cleanResponses();

@@ -237,43 +237,52 @@ test('no pane offers a custom range, because no bar on this dashboard can supply
 
 /* ============================ registry meets rail ====================== */
 
-test('every pane the registry names is on the rail, at the href and label it gave', async () => {
+test('every destination the registry names is on the rail and the phone bar, at the href and label it gave', async () => {
   const { doc, registry } = await bootPane('overview', { definePane: () => {} });
-  const rail = doc.getElementById('rail');
-  const items = rail.querySelectorAll('.nav-item');
 
-  const railed = Object.keys(registry.PANES).filter((id) => registry.PANES[id].railId);
-  assert.equal(items.length, railed.length,
-    'the rail and the registry disagree about how many panes there are');
+  assert.equal(registry.DESTINATIONS.length, 5, 'the registry no longer names five destinations');
+  for (const [surface, cls] of [['rail', '.nav-item'], ['bottomNav', '.tab-item']]) {
+    const items = doc.getElementById(surface).querySelectorAll(cls);
+    assert.equal(items.length, registry.DESTINATIONS.length,
+      surface + ' and the registry disagree about how many destinations there are');
 
-  for (const id of railed) {
-    const pane = registry.PANES[id];
-    const matches = items.filter((a) => (a.getAttribute('href') || '').split('?')[0] === pane.file);
-    assert.equal(matches.length, 1,
-      'the rail has ' + matches.length + ' items for ' + pane.file + ', expected exactly one');
-    assert.equal(matches[0].getAttribute('data-rail-id'), pane.railId,
-      pane.file + ' was stamped with the wrong rail id, so its badge would land elsewhere');
-    assert.match(allText(matches[0]), new RegExp(pane.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-      pane.file + ' is on the rail under a different name than the registry gives it');
+    for (const dest of registry.DESTINATIONS) {
+      const home = registry.PANES[dest.home];
+      const matches = items.filter((a) => a.getAttribute('data-destination') === dest.id);
+      assert.equal(matches.length, 1, surface + ' has ' + matches.length + ' items for ' + dest.id);
+      assert.equal((matches[0].getAttribute('href') || '').split('?')[0], home.file,
+        dest.id + ' on the ' + surface + ' does not open on ' + dest.home);
+      assert.equal(matches[0].getAttribute('data-badge-key'), dest.home,
+        dest.id + ' is stamped with the wrong key, so a count for ' + dest.home + ' would land elsewhere');
+      assert.equal(allText(matches[0].querySelector('.nav-label')), dest.label,
+        dest.id + ' is on the ' + surface + ' under a different name than the registry gives it');
+    }
   }
 });
 
-test('every railId the registry gives is an id aria.js actually has', async () => {
+test('every destination a pane declares is one aria.js drew, and a pane that declares none marks nothing', async () => {
   const registry = registryOnly();
-  const railed = Object.keys(registry.PANES).filter((id) => registry.PANES[id].railId);
+  const ids = registry.DESTINATIONS.map((d) => d.id);
 
-  /* aria.js keeps its own list of rail items and this file cannot edit it, so
-     the pairing is checked through the one thing aria.js does with an id:
-     it marks that item as the current page. An id aria.js does not have marks
+  /* aria.js declares the five itself and this file cannot edit it, so the
+     pairing is checked through the one thing aria.js does with an id: it marks
+     that destination as the current page. An id aria.js does not have marks
      nothing, which is a rail with no "you are here" on it. */
-  for (const id of railed) {
-    const { doc } = await bootPane(id, {
-      file: registry.PANES[id].file, definePane: () => {},
-    });
-    const current = doc.getElementById('rail').querySelectorAll('[aria-current]');
-    assert.equal(current.length, 1,
-      id + ' has railId "' + registry.PANES[id].railId
-      + '", which aria.js does not know: ' + current.length + ' items marked current');
+  for (const id of Object.keys(registry.PANES)) {
+    const pane = registry.PANES[id];
+    const { doc } = await bootPane(id, { file: pane.file, definePane: () => {} });
+    for (const surface of ['rail', 'bottomNav']) {
+      const current = doc.getElementById(surface).querySelectorAll('[aria-current]');
+      if (pane.destination === null) {
+        assert.equal(current.length, 0, id + ' belongs to no destination, yet ' + surface + ' marked one current');
+        continue;
+      }
+      assert.ok(ids.indexOf(pane.destination) !== -1, id + ' names a destination the registry does not: ' + pane.destination);
+      assert.equal(current.length, 1,
+        id + ' has destination "' + pane.destination + '", which aria.js does not know: '
+        + current.length + ' items marked current on the ' + surface);
+      assert.equal(current[0].getAttribute('data-destination'), pane.destination);
+    }
   }
 
   /* The other direction, so the check above cannot pass by aria.js marking
@@ -283,6 +292,59 @@ test('every railId the registry gives is an id aria.js actually has', async () =
   assert.equal(rail.querySelectorAll('[aria-current]').length, 1);
   assert.ok(rail.querySelectorAll('.nav-item').length > 1,
     'the rail has one item, so "marked once" says nothing');
+
+  /* A destination opens on a pane that belongs to it. */
+  for (const dest of registry.DESTINATIONS) {
+    assert.equal(registry.PANES[dest.home].destination, dest.id, dest.id + ' opens on a pane that is not its own');
+  }
+});
+
+test('a pane inside a destination is marked on that destination, not on the one named after it', async () => {
+  const registry = registryOnly();
+  const { doc } = await bootPane('history', { file: registry.PANES.history.file, definePane: () => {} });
+  const current = doc.getElementById('rail').querySelectorAll('[aria-current]');
+  assert.equal(current.length, 1);
+  assert.equal(current[0].getAttribute('data-destination'), 'health',
+    'What happened is a Health page, and the rail did not say so');
+});
+
+/* ============================ the row under the title ================== */
+
+function subnavOf(doc) {
+  const nav = doc.getElementById('subnav');
+  return nav ? nav.querySelectorAll('a') : null;
+}
+
+test('a destination with several pages lists them under the title and marks the one on screen', async () => {
+  const registry = registryOnly();
+  for (const dest of registry.DESTINATIONS) {
+    const ids = registry.panesOf(dest.id);
+    for (const id of ids) {
+      const pane = registry.PANES[id];
+      const { doc } = await bootPane(id, { file: pane.file, definePane: () => {} });
+      const links = subnavOf(doc);
+      if (ids.length < 2) {
+        assert.equal(links, null, dest.id + ' has a single page and drew a row for it');
+        continue;
+      }
+      assert.ok(links, id + ' belongs to ' + dest.id + ', which has ' + ids.length + ' pages, and drew no row');
+      assert.deepEqual(Array.from(links.map((a) => a.getAttribute('data-badge-key'))), Array.from(ids),
+        id + ': the row does not list the destination\'s pages, home first');
+      assert.deepEqual(Array.from(links.map((a) => allText(a))), Array.from(ids.map((p) => registry.PANES[p].label)));
+      const on = links.filter((a) => a.getAttribute('aria-current') === 'page');
+      assert.equal(on.length, 1, id + ' marked ' + on.length + ' pages current in its own row');
+      assert.equal(on[0].getAttribute('data-badge-key'), id);
+      assert.equal(doc.getElementById('subnav').getAttribute('aria-label'), dest.label + ' pages');
+    }
+  }
+});
+
+test('a pane that belongs to no destination has no row under its title', async () => {
+  for (const id of ['users', 'settings']) {
+    const { doc, registry } = await bootPane(id, { file: id + '.html', definePane: () => {} });
+    assert.equal(registry.PANES[id].destination, null);
+    assert.equal(doc.getElementById('subnav'), null, id + ' drew a row of pages that are not its own');
+  }
 });
 
 test('the pane being viewed is the one marked current, and it is marked once', async () => {
@@ -442,15 +504,24 @@ test('the filter note wraps, and takes the geometry of the control it stands in 
   assert.deepEqual(Object.keys(seen).sort(), ['dark1440', 'dark375', 'light1440', 'light375']);
 });
 
-test('Overview offers no control at all and states the absence instead', async () => {
-  const { doc } = await bootPane('overview', { definePane: () => {} });
-  const drawn = controlsOn(doc);
-  assert.equal(drawn.present, true, 'the bar vanished, so the absence is unstated');
-  assert.deepEqual([drawn.app, drawn.range, drawn.env], [0, 0, 0]);
-  assert.equal(doc.querySelector('.filters').querySelectorAll('select').length, 0);
-  assert.equal(doc.querySelector('.filters').querySelectorAll('button').length, 0);
+test('Today draws no filter bar at all, rather than a bar that apologises for its absence', async () => {
+  const { doc, registry } = await bootPane('overview', { definePane: () => {} });
+  const pane = registry.PANES.overview;
+  assert.deepEqual([pane.scope, pane.range, pane.env], [false, false, false]);
+  assert.ok(!pane.scopeNote && !pane.filterNote, 'Today declares a note, so the bar is owed');
+  assert.equal(controlsOn(doc).present, false, 'Today drew a filter bar with nothing in it');
+
+  /* The other direction: a pane that does declare a note still states it, so
+     the check above cannot pass by the bar being gone everywhere. */
+  const noted = Object.keys(registry.PANES).filter((id) => {
+    const p = registry.PANES[id];
+    return !p.scope && !p.range && !p.env && (p.scopeNote || p.filterNote);
+  });
+  assert.ok(noted.length >= 1, 'no pane states an absence any more, so this half proves nothing');
+  const { doc: other } = await bootPane(noted[0], { file: registry.PANES[noted[0]].file, definePane: () => {} });
+  const drawn = controlsOn(other);
+  assert.equal(drawn.present, true, noted[0] + ' lost the bar that states its absence');
   assert.equal(drawn.notes.length, 1);
-  assert.match(drawn.notes[0], /do not apply here yet/);
 });
 
 test('the range control starts on the pane default, not on the first option', async () => {
@@ -659,30 +730,35 @@ test('a role without access gets a named refusal, and one with access gets the p
   }
 });
 
-test('the rail marks a pane this role cannot open, in words as well as in tone', async () => {
+test('the avatar menu marks a pane this role cannot open, in words as well as in tone', async () => {
   const registry = registryOnly();
   const gated = gatedPanes(registry)[0];
   const pane = registry.PANES[gated];
   const outsider = ROLES.find((r) => pane.roles.indexOf(r) === -1);
+  assert.equal(pane.destination, null, 'the gated pane is on the rail now, so this test is looking in the wrong place');
 
   const { doc } = await bootPane('overview', {
     session: { role: outsider }, definePane: () => {},
   });
-  const item = doc.getElementById('rail')
-    .querySelectorAll('[data-rail-id="' + pane.railId + '"]')[0];
-  assert.ok(item, 'the gated pane left the rail');
-  assert.match(allText(item), /locked/, 'the locked pane is marked by colour alone');
-  assert.match(allText(item), new RegExp(pane.roles[0]),
-    'the rail says locked without saying who it is locked to');
+  const items = doc.getElementById('acctMenu').querySelectorAll('[data-badge-key="' + gated + '"]');
+  assert.ok(items.length >= 1, 'the gated pane left the menu');
+  for (const item of items) {
+    assert.match(allText(item), /locked/, 'the locked pane is marked by colour alone');
+    assert.match(allText(item), new RegExp(pane.roles[0]),
+      'the menu says locked without saying who it is locked to');
+  }
+  for (const surface of ['rail', 'bottomNav']) {
+    assert.equal(doc.getElementById(surface).querySelectorAll('.nav-badge').length, 0,
+      'the ' + surface + ' wore a lock for a pane it does not carry');
+  }
 
   const open = await bootPane('overview', {
     session: { role: pane.roles[0] }, definePane: () => {},
   });
-  const openItem = open.doc.getElementById('rail')
-    .querySelectorAll('[data-rail-id="' + pane.railId + '"]')[0];
-  assert.doesNotMatch(allText(openItem), /locked/,
-    'a pane this role can open is still marked locked');
-  assert.equal(open.doc.getElementById('rail').querySelectorAll('.nav-badge').length, 0,
+  for (const item of open.doc.getElementById('acctMenu').querySelectorAll('[data-badge-key="' + gated + '"]')) {
+    assert.doesNotMatch(allText(item), /locked/, 'a pane this role can open is still marked locked');
+  }
+  assert.equal(open.doc.querySelectorAll('.nav-badge').length, 0,
     'a badge appeared for a role that is locked out of nothing');
 });
 
@@ -793,42 +869,75 @@ test('nothing renders before the session resolves', async () => {
 
 /* ============================== rail badges ============================ */
 
-test('the rail carries no count nobody passed, and a count taken away goes away', async () => {
-  const { doc, shell } = await bootPane('overview', { definePane: () => {} });
-  const rail = doc.getElementById('rail');
-  assert.equal(rail.querySelectorAll('.nav-badge').length, 0,
-    'a badge appeared that no pane asked for');
+test('no count appears that nobody passed, and a count taken away goes away, everywhere it was worn', async () => {
+  /* Health is where the count goes, and What is running is one of its pages, so
+     the row under the title wears it as well as the rail and the phone bar. */
+  const registry = registryOnly();
+  const { doc, shell } = await bootPane('jobs', { file: registry.PANES.jobs.file, definePane: () => {} });
+  const worn = () => doc.querySelectorAll('[data-badge-key="alerts"]');
+  assert.equal(doc.querySelectorAll('.nav-badge').length, 0, 'a badge appeared that no pane asked for');
+  assert.equal(worn().length, 3, 'the rail, the phone bar and the row do not all carry the key');
 
   shell.setBadge('alerts', { label: '2', tone: 'hot', description: '2 problems with nobody on them' });
-  const badges = rail.querySelectorAll('.nav-badge');
-  assert.equal(badges.length, 1);
-  assert.equal(badges[0].textContent, '2');
-  const item = rail.querySelectorAll('[data-rail-id="alerts"]')[0];
-  assert.match(allText(item), /2 problems with nobody on them/,
-    'the count is a bare number to a screen reader');
+  assert.equal(doc.querySelectorAll('.nav-badge').length, 3, 'the count did not reach all three places');
+  for (const link of worn()) {
+    assert.equal(link.querySelectorAll('.nav-badge')[0].textContent, '2');
+    assert.match(allText(link), /2 problems with nobody on them/, 'the count is a bare number to a screen reader');
+  }
+  assert.equal(doc.querySelectorAll('.nav-badge').filter((b) => b.parentNode.getAttribute('data-badge-key') !== 'alerts').length, 0,
+    'the count landed on a link that is not Health');
+
+  /* Set again, not stacked. */
+  shell.setBadge('alerts', { label: '3', description: '3 problems' });
+  assert.equal(doc.querySelectorAll('.nav-badge').length, 3, 'a second count was stacked on the first');
+  assert.equal(doc.querySelectorAll('.nav-badge-sr').length, 3);
 
   shell.setBadge('alerts', null);
-  assert.equal(rail.querySelectorAll('.nav-badge').length, 0, 'a stale count survived');
-  assert.equal(rail.querySelectorAll('.nav-badge-sr').length, 0,
-    'the spoken half of a removed count survived');
+  assert.equal(doc.querySelectorAll('.nav-badge').length, 0, 'a stale count survived');
+  assert.equal(doc.querySelectorAll('.nav-badge-sr').length, 0, 'the spoken half of a removed count survived');
 
   shell.setBadge('alerts', { label: '', description: 'nothing' });
-  assert.equal(rail.querySelectorAll('.nav-badge').length, 0,
-    'an empty label was drawn as a badge');
+  assert.equal(doc.querySelectorAll('.nav-badge').length, 0, 'an empty label was drawn as a badge');
 });
 
-test('the account footer comes from the session and is absent when there is none', async () => {
+test('the account comes from the session: a first name in the rail, the whole of it in the menu, none when absent', async () => {
   const signedIn = await bootPane('overview', { definePane: () => {} });
   const foot = signedIn.doc.querySelector('.rail-foot');
   assert.ok(foot, 'a confirmed session drew no account footer');
-  assert.match(allText(foot), /owner@example\.invalid/);
-  assert.match(allText(foot), /Owner/);
+  assert.equal(allText(foot.querySelector('.who-name')), 'Owner');
+  assert.doesNotMatch(allText(foot), /@/, 'the rail footer shows an address');
+  const menu = signedIn.doc.getElementById('acctMenu');
+  assert.match(allText(menu.querySelector('.menu-who')), /owner@example\.invalid/);
+  assert.match(allText(menu.querySelector('.menu-who')), /Owner/);
 
   const anonymous = await bootPane('overview', {
     session: { admin: null }, definePane: () => {},
   });
   assert.equal(anonymous.doc.querySelectorAll('.rail-foot').length, 0,
     'an account footer was invented for a session with no admin on it');
+  assert.equal(anonymous.doc.querySelectorAll('.menu-who').length, 0,
+    'the menu named an account for a session with no admin on it');
+});
+
+/* ============================ the phone bar =========================== */
+
+test('the phone bar is a landmark of its own after the content, and no drawer is left behind', async () => {
+  const { doc } = await bootPane('overview', { matchMedia: { '(max-width: 980px)': true }, definePane: () => {} });
+  const app = doc.getElementById('app');
+  const bar = doc.getElementById('bottomNav');
+  assert.ok(bar, 'the pane shell drew no phone bar');
+  assert.equal(bar.tagName, 'NAV');
+  assert.equal(bar.getAttribute('aria-label'), 'Main');
+  assert.ok(app.children[app.children.length - 1] === bar, 'the phone bar is not the last thing in the app');
+  assert.equal(bar.querySelectorAll('.tab-item').length, 5);
+
+  /* The drawer it replaced: a toggle, a backdrop, and an open state on the rail. */
+  assert.equal(doc.getElementById('railToggle'), null, 'the drawer toggle survived');
+  assert.equal(doc.querySelectorAll('.scrim').length, 0, 'a drawer backdrop survived');
+  assert.equal(doc.getElementById('rail').classList.contains('is-open'), false);
+  assert.equal(doc.getElementById('rail').getAttribute('aria-label'), 'Main');
+  assert.equal(doc.querySelectorAll('nav').filter((n) => n.getAttribute('aria-label') === 'Main').length, 2,
+    'two navigations share a name only if both are the five destinations');
 });
 
 /* ============================ the four states ========================== */
@@ -2310,179 +2419,6 @@ test('the page behind the dialog goes inert and comes back, and the live regions
       'the page stayed hidden from assistive tech after the dialog closed');
     assert.equal(el.inert, false, 'the page stayed inert after the dialog closed, so nothing on it can be used');
   }
-});
-
-/* ======================== the rail as a phone drawer ==================== */
-
-/* Below 980px the rail is an overlay, and an overlay is a dialog: it traps
-   focus, closes on Escape, hands focus back to the control that opened it,
-   and takes the rest of the page out of the accessibility tree while it is
-   open. None of that had an assertion (Stadiora/Aria#10352). */
-
-const PHONE = { '(max-width: 980px)': true };
-
-async function openDrawer(options) {
-  const opts = options || {};
-  const dom = await bootPane('overview', {
-    matchMedia: PHONE,
-    definePane: (content, pane, shell) => {
-      content.appendChild(shell.h('button', { type: 'button', id: 'act', text: 'Suspend' }));
-    },
-    ...opts,
-  });
-  dom.shell.announce('ready');
-  dom.shell.toast('check', 'saved');
-
-  const rail = dom.doc.getElementById('rail');
-  const toggle = dom.doc.getElementById('railToggle');
-  assert.ok(rail && toggle, 'the pane shell drew no rail or no toggle for it');
-
-  const seedInert = (el) => { el.inert = false; };
-  dom.body.children.forEach(seedInert);
-  let node = rail;
-  while (node && node !== dom.body && node.parentNode) {
-    node.parentNode.children.forEach(seedInert);
-    node = node.parentNode;
-  }
-
-  if (!opts.leaveClosed) toggle.dispatch('click');
-  return { ...dom, rail, toggle };
-}
-
-test('the phone drawer opens, says so, and puts focus on the first thing in it', async () => {
-  const { doc, body, rail, toggle } = await openDrawer();
-
-  assert.equal(rail.classList.contains('is-open'), true, 'the drawer did not open');
-  assert.equal(toggle.getAttribute('aria-expanded'), 'true', 'the toggle still reads as collapsed');
-  assert.match(toggle.getAttribute('aria-label'), /close/i,
-    'the toggle still offers to open the drawer that is already open');
-  const scrims = doc.querySelectorAll('.scrim');
-  assert.equal(scrims.length, 1, 'the drawer opened without a backdrop');
-  /* Beside the rail, so the two stack against each other. On <body> the
-     backdrop sat in a higher stacking context than the app wrapper that holds
-     the drawer, and painted over it (Stadiora/Aria#12909). */
-  /* By identity: an equality assertion on two DOM nodes prints both trees. */
-  assert.ok(scrims[0].parentNode === rail.parentNode,
-    'the backdrop is not beside the drawer, so it stacks in a different context from it');
-  assert.equal(doc.activeElement, rail.querySelector('a'),
-    'the drawer opened without moving focus into itself');
-});
-
-test('the phone drawer closes on Escape and on its own toggle, both times handing focus back', async () => {
-  for (const [how, close] of [
-    ['Escape', ({ doc }) => doc.dispatch('keydown', { key: 'Escape' })],
-    ['the toggle', ({ toggle }) => toggle.dispatch('click')],
-  ]) {
-    const open = await openDrawer();
-    close(open);
-    assert.equal(open.rail.classList.contains('is-open'), false, how + ' left the drawer open');
-    assert.equal(open.toggle.getAttribute('aria-expanded'), 'false', how + ' left the toggle reading as expanded');
-    assert.match(open.toggle.getAttribute('aria-label'), /open/i,
-      how + ' left the toggle offering to close a drawer that is shut');
-    /* Anywhere in the document: the backdrop sits beside the rail, not on the body. */
-    assert.equal(open.doc.querySelectorAll('.scrim').length, 0,
-      how + ' left the backdrop over the page');
-    assert.equal(open.doc.activeElement, open.toggle,
-      how + ' dropped focus instead of returning it to the toggle');
-    assert.equal(open.doc.listenerCount('keydown'), 0, how + ' left the drawer key handler on the document');
-    assert.equal(open.doc.listenerCount('focusin'), 0, how + ' left the drawer focus handler on the document');
-  }
-});
-
-test('focus cannot walk out of the open phone drawer, in either direction', async () => {
-  const { doc, rail, toggle } = await openDrawer();
-  const items = rail.querySelectorAll('a, button');
-  assert.ok(items.length >= 3, 'the rail has too few items to trap anything');
-  const first = items[0];
-  const last = items[items.length - 1];
-
-  last.focus();
-  doc.dispatch('keydown', { key: 'Tab' });
-  assert.equal(doc.activeElement, first, 'Tab off the last rail item left the drawer');
-  first.focus();
-  doc.dispatch('keydown', { key: 'Tab', shiftKey: true });
-  assert.equal(doc.activeElement, last, 'shift+Tab off the first rail item left the drawer');
-
-  toggle.focus();
-  doc.dispatch('focusin', { target: toggle });
-  assert.equal(doc.activeElement, first,
-    'focus landing outside the drawer was left there, so the trap only holds for Tab');
-});
-
-test('the page behind the phone drawer goes inert and comes back, and the live regions never do', async () => {
-  const { doc, body, rail } = await openDrawer();
-  const live = body.children.filter((el) => el.getAttribute('aria-live'))[0];
-  const toasts = body.children.filter((el) => el.classList.contains('toast-host'))[0];
-  const scrim = rail.parentNode.children.filter((el) => el.classList.contains('scrim'))[0];
-  assert.ok(live && toasts && scrim, 'the drawer opened without the hosts this exclusion is about');
-
-  /* Everything that is not the rail, at every level up to the body — the rail
-     is inside the app wrapper, so a list of body children would inert the
-     rail's own ancestor and take the drawer with it. */
-  const hidden = [];
-  const ancestors = [];
-  let node = rail;
-  while (node && node !== body && node.parentNode) {
-    for (const sib of node.parentNode.children) if (sib !== node) hidden.push(sib);
-    node = node.parentNode;
-    if (node !== body) ancestors.push(node);
-  }
-  const expected = hidden.filter((el) => el !== scrim && el !== live && el !== toasts);
-  assert.ok(expected.length >= 1, 'nothing sits behind the drawer, so inerting it proves nothing');
-  assert.ok(expected.indexOf(rail.parentNode.children.filter((el) => el !== rail && el !== scrim)[0]) !== -1,
-    "the rail's own sibling is not among what went inert, so the walk never left the body's children");
-  assert.ok(ancestors.length >= 1, 'the rail is a body child here, so the ancestor case is untested');
-
-  /* Both ends of the walk, not just the near one. The skip link is a body
-     child and the rail is two levels down, so a walk that stops at the rail's
-     own siblings leaves the first thing on the page reachable. */
-  const skip = body.children.filter((el) => el.classList.contains('skip'))[0];
-  assert.ok(skip, 'this page has no skip link, so the far end of the walk is untested');
-  assert.ok(expected.indexOf(skip) !== -1,
-    'the skip link is not among what went inert, so the walk stopped at the rail\'s own level');
-
-  for (const el of expected) {
-    assert.equal(el.getAttribute('aria-hidden'), 'true', 'the page behind the drawer is still exposed');
-    assert.equal(el.inert, true, 'the page behind the drawer is still reachable by a pointer');
-  }
-  assert.equal(rail.getAttribute('aria-hidden'), null, 'the drawer inerted itself');
-  /* The other half of the same walk: inerting an ancestor of the rail would
-     inert the rail with it, and the drawer would open already dead. */
-  for (const el of ancestors) {
-    assert.equal(el.getAttribute('aria-hidden'), null, 'an ancestor of the rail was hidden, taking the drawer with it');
-    assert.equal(el.inert, false, 'an ancestor of the rail was inerted, taking the drawer with it');
-  }
-  for (const el of [live, toasts, scrim]) {
-    assert.equal(el.getAttribute('aria-hidden'), null,
-      'a live region or the backdrop was hidden from assistive tech while the drawer was open');
-    assert.notEqual(el.inert, true, 'a live region or the backdrop was inerted while the drawer was open');
-  }
-
-  doc.dispatch('keydown', { key: 'Escape' });
-  for (const el of expected) {
-    assert.equal(el.getAttribute('aria-hidden'), null, 'the page stayed hidden after the drawer closed');
-    assert.equal(el.inert, false, 'the page stayed inert after the drawer closed');
-  }
-});
-
-test('growing past the breakpoint closes the drawer, and does not snatch focus to do it', async () => {
-  const { doc, body, window, rail, toggle } = await openDrawer();
-  const inside = rail.querySelector('a');
-  assert.equal(doc.activeElement, inside, 'the drawer did not open onto its first item');
-
-  /* The overlay becomes a permanent column again, at which point trapping
-     focus in it would be the bug. Nothing about that is a reason to move the
-     operator's focus to the toggle. */
-  const mq = window.media.filter((m) => m.media === '(max-width: 980px)')[0];
-  assert.ok(mq, 'the drawer stopped listening to the breakpoint it is keyed on');
-  mq.set(false);
-
-  assert.equal(rail.classList.contains('is-open'), false, 'the drawer stayed open on a desktop width');
-  assert.equal(toggle.getAttribute('aria-expanded'), 'false', 'the toggle still reads as expanded');
-  assert.equal(doc.querySelectorAll('.scrim').length, 0,
-    'the backdrop stayed over a page with no drawer on it');
-  assert.notEqual(doc.activeElement, toggle,
-    'widening the window moved focus to a control the operator never used, which on a desktop width is hidden');
 });
 
 /* ========================= the two lifecycle events ===================== */

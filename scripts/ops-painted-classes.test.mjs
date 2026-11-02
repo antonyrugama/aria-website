@@ -552,11 +552,10 @@ function coloursIn(image) {
 }
 
 /* Stadiora/Aria#10834. The dash colour is read out of the rule that paints it,
-   and the surface is taken two ways: every stop of the gradient on the card
-   the pipeline sits in, since `.card`'s own background-color is transparent
-   and a probe reading only that reports the page behind it, and Chromium's own
-   composited backdrop, in case a tinted layer ever sits between the card and
-   the rail. The worst of them is the one judged. */
+   and the surface is taken two ways: every stop of the fill on the card the
+   pipeline sits in (a gradient's stops, or the one colour of a flat card), and
+   Chromium's own composited backdrop, in case a tinted layer ever sits between
+   the card and the rail. The worst of them is the one judged. */
 test('the rail of a stage nobody has reached clears 3:1 against the card behind it', async () => {
   for (const state of SHIP_TODO) {
     await show(state);
@@ -567,6 +566,7 @@ test('the rail of a stage nobody has reached clears 3:1 against the card behind 
       return {
         rail: getComputedStyle(step, '::before').backgroundImage,
         card: card ? getComputedStyle(card).backgroundImage : null,
+        cardColour: card ? getComputedStyle(card).backgroundColor : null,
         page
       };
     })()`);
@@ -578,9 +578,15 @@ test('the rail of a stage nobody has reached clears 3:1 against the card behind 
       seen.rail);
     assert.ok(seen.card, `${state.key}: the unreached stage is not inside a .card`);
     const page = parseColour(seen.page);
-    const stops = coloursIn(seen.card).map((c) => composite(c, page));
-    assert.ok(stops.length >= 2,
-      `${state.key}: the card should be a gradient, and its background-image is ${seen.card}`);
+    const gradient = coloursIn(seen.card).map((c) => composite(c, page));
+    const flat = parseColour(seen.cardColour);
+    /* A card with no gradient is painted by its own background-color, and one
+       that is transparent is the page behind it: reading that as the card would
+       judge the rail against a surface it is not on. */
+    assert.ok(gradient.length >= 2 || flat[3] > 0,
+      `${state.key}: the card should be a gradient or a painted colour, and its ` +
+      `background-image is ${seen.card} over ${seen.cardColour}`);
+    const stops = gradient.length >= 2 ? gradient : [composite(flat, page)];
     const surfaces = [...stops, await backdrop('.pipe-step.todo .pipe-label')];
     const worst = surfaces
       .map((surface) => ({ surface, ratio: contrast(inks[0], surface) }))

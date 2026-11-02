@@ -1,73 +1,52 @@
-/* Overview, and strings that are present but say nothing.
+/* Today, and strings that are present but say nothing.
 
-   Stadiora/Aria#10799: the pane's `textOf()` accepted any non-empty string,
-   so a field holding nothing but spaces was treated as a field with words in
-   it. On the severity path that split Overview from the Problems pane on one
-   payload -- the disagreement #10630 was filed about, surviving on the other
-   pane. Off the severity path it printed punctuation with nothing inside it:
-   a trailing comma with no environment after it, an empty pair of brackets
-   after a version, a footnote box holding no note.
-
-   FIVE call sites were the reason the fix is more than one line. They used `textOf(x)` as a PREDICATE and then rendered the raw `x`,
-   so trimming the predicate alone would have decided with a trimmed value and
-   drawn an untrimmed one -- the same defect wearing its own fix. They are
-   `people.environment`, `platform.versionCode`, `appendNote()`,
-   `platform.versionName` and `omissionsCard()`'s `entry.key`, and each has a
-   test below.
-
-   The last two of those five were found by the independent review of PR #124,
-   not by the sweep. SIX MORE were found by the rendered sweep at the bottom
-   of this file, and not one of the six is a `textOf()` call site at all -- so
-   no census of `textOf()` calls, however carefully counted, could ever have
-   reached them. That is the argument for the sweep in one line: it asks the
-   screen what it drew rather than asking the source what it should have.
-
-   The six are not listed here. A list in a comment is what this file is
-   arguing against, and three of them were counted wrong in the first
-   draft of this very paragraph. `git log -p` has them; the sweep at the
-   bottom of the file has the invariant.
+   A field holding nothing but spaces is a field with no words in it, and a
+   field with words and spaces around them is the words. Both are easy to get
+   wrong in the same way: a call site that tests the string and then draws the
+   RAW one decides with the trimmed value and prints the untrimmed, which is
+   the defect wearing its own fix. On this page that looks like a split-label
+   with no name in it, a heading with a gap before the word, a note box with
+   nothing in it, or a "Since" with a date that is not one.
 
    How these bind, and why it is not a source grep:
 
-     - Every assertion reads the RENDERED panel. Asserting that the source
+     - Every assertion reads the RENDERED page. Asserting that the source
        contains `.trim()` would pin the characters and not the drawing, and a
        call site that resolved the value elsewhere would walk straight past.
 
+     - Padding is judged on text that was NOT normalised. `allText()` from the
+       harness collapses whitespace and trims, so anything routed through it
+       reads a string the harness had already tidied and could not see a
+       padded heading. `said()` below does not.
+
      - Every absence assertion is preceded by the same finder locating the
-       thing on a render that DOES have it. A finder that matches nothing
-       passes an absence test for the wrong reason, and that is how a sweep on
-       another pane classified nothing at all and stayed green.
+       thing on a render that DOES have it, so a finder that matches nothing
+       cannot pass an absence test for the wrong reason.
+
+   The sweeps at the bottom ask the screen rather than the source. They pad
+   every string any of the eight answers carries, one at a time, and the
+   rendered page must be unchanged; then they blank every string at once and
+   the page must still be a page. No census of `textOf()` calls, however
+   carefully counted, can reach a call site that never used `textOf()`, and
+   that is the argument for the sweep in one line.
 
    NOT COVERED here:
 
-     - The severity path. `scripts/ops-alerts-severity-retry.test.mjs`'s
-       "Problems and Overview give one word for one state" already runs
-       Overview's own `severityWords()` over Overview's own lifted `textOf()`
-       and compares it against the Problems pane's rendered pill, for all four
-       of that file's hostile payloads including the whitespace one. Repeating
-       it here would be a second place to update and no new binding.
+     - The severity path through `model.SEVERITY_LABEL`. It is a word the
+       route sends, matched exactly, and a severity this page does not know is
+       printed as the word that arrived, which is bound in ops-overview-v2.
+       What is bound here is only that the word that arrives is printed
+       without its padding.
 
      - No enumeration of the other call sites, by name, by line or by count.
-       Two rounds of review found two different censuses wrong: the first
-       said "the other fourteen have no predicate/value split to get wrong"
-       and had missed two, and the REPLACEMENT -- eleven sites named with
-       line numbers -- was wrong in most of its line numbers and in two of
-       its classifications, written inside the commit that was fixing the
-       first one.
-
-       A census in a comment is a claim nothing executes, and it goes stale
-       on the next edit to the file it describes. `padding any string the
-       answer carries changes nothing on the screen`, at the bottom of this
-       file, is what replaced it: the invariant the census existed to assert,
-       checked against the render. It binds every call site the fixtures'
-       own strings reach -- which is not all of them, and the block above
-       that test says which parts of the pane it does not reach. */
+       A census in a comment is a claim nothing executes, and it goes stale on
+       the next edit to the file it describes. The sweeps are the invariant. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import { makeDom, findAll, glyphShape } from './ops-dom-harness.mjs';
+import { makeDom, allText, findAll } from './ops-dom-harness.mjs';
 
 const OPS = new URL('../ops/', import.meta.url);
 const read = (rel) => readFileSync(new URL(rel, OPS), 'utf8');
@@ -79,99 +58,118 @@ const MODEL_SRC = read('assets/alerts-model.js');
 const PANE_SRC = read('assets/pane-overview.js');
 
 const TOKENS = {
-  '--cyan': '#22D3EE', '--violet': '#A78BFA', '--emerald': '#34D399',
-  '--amber': '#FBBF24', '--rose': '#FB7185', '--blue': '#60A5FA',
-  '--line-2': '#1F2A36', '--ink': '#E6EDF3',
+  '--cyan': '#00E5FF', '--violet': '#8B5CF6', '--emerald': '#34D399',
+  '--amber': '#FBBF24', '--rose': '#F87171', '--blue': '#60A5FA',
+  '--line-2': '#1F2A36', '--ink': '#F5F5F7',
 };
-
-const hoursAgo = (n) => new Date(Date.now() - n * 3600000).toISOString();
-const SWEEP_NOW = Date.parse('2026-09-25T08:20:00.000Z');
-
-async function withSweepClock(fn) {
-  const originalNow = Date.now;
-  Date.now = () => SWEEP_NOW;
-  try {
-    return await fn();
-  } finally {
-    Date.now = originalNow;
-  }
-}
 
 /* ------------------------------------------------------------- fixtures */
 
-/* A healthy answer carrying all three of the fields under test with real
-   words in them. Each test replaces exactly one of those words with spaces,
-   so the difference between the two renders is one field and not a fixture. */
-function summaryFixture() {
+/* A function, because the sweeps below write into the fixture and a shared
+   object would carry one test's padding into the next. */
+const week = () => ({
+  start: '2026-10-25T00:00:00.000Z', endExclusive: '2026-11-01T00:00:00.000Z', days: 7,
+});
+const MOBILE_DAILY = [12, 15, 14, 17, 16, 19, 18, 17, 20, 22, 19, 21, 23, 20, 22,
+  25, 24, 22, 26, 27, 25, 24, 28, 30, 26, 29, 31, 28, 33, 37];
+const COACHES_DAILY = [4, 5, 4, 6, 5, 7, 6, 5, 7, 8, 6, 7, 8, 6, 7,
+  9, 8, 7, 8, 9, 7, 6, 8, 9, 7, 8, 9, 8, 7, 9];
+
+/* Every date is fixed, so a render is the same on every day it is run and the
+   padded and the clean renders can be compared as strings. */
+const FIVE_MINUTES_BEFORE = '2026-11-01T09:36:00.000Z';
+
+/* A whole answer from every read, carrying a word in every field the page
+   prints. Each test replaces exactly one of those words, so the difference
+   between two renders is one field and not a fixture. */
+function everything() {
   return {
-    generatedAt: '2026-09-20T06:00:00.000Z',
-    consent: { basis: 'operational', detail: 'Operational data only.' },
-    people: {
-      availability: { state: 'ready' },
-      platform: { active: 1102, previousActive: 980 },
+    summary: {
+      generatedAt: '2026-11-01T09:41:00.000Z',
+      consent: { basis: 'operational', detail: 'Operational data only.' },
+      people: {
+        availability: { state: 'ready', detail: '' },
+        platform: { active: 1102, previousActive: 980 },
+        apps: [
+          { app: 'mobile', label: 'Mobile', active: 870, previousActive: 800 },
+          { app: 'coaches', label: 'Coaches Web', active: 412, previousActive: 390 },
+        ],
+        window: week(),
+        comparison: { days: 7, label: 'the 7 days before' },
+        reportingFloor: 5,
+        environment: 'production',
+      },
+      aiRuns: {
+        availability: { state: 'ready', detail: '' },
+        runs: 4820, previous: { runs: 4410, daysReported: 7 },
+        daysMissing: [], daysReported: 7, window: week(),
+      },
+    },
+    usage: {
+      window: {
+        range: '30d', start: '2026-10-02T00:00:00.000Z', endExclusive: '2026-11-01T00:00:00.000Z',
+        days: 30, grain: 'day', timezone: 'UTC', daysCovered: 30, daysMissingRollups: [],
+      },
+      availability: { state: 'ready', detail: '' },
       apps: [
-        { key: 'aria', label: 'Aria', active: 870, tone: 's1' },
-        { key: 'ariaxii', label: 'Aria XII', active: 412, tone: 's2' },
-      ],
-      window: { days: 7 },
-      comparison: { days: 7, label: 'the 7 days before' },
-      reportingFloor: 50,
-      environment: 'production',
-    },
-    aiRuns: {
-      availability: { state: 'ready' },
-      window: { days: 7 }, runs: 4210, previous: { runs: 3900 },
-    },
-    cost: {
-      availability: { state: 'ready' },
-      /* `micros`, not `total.usd`. Round 3 of PR #124's review found the
-         earlier shape meant `costTile()` read `cost.micros` as null and every
-         sweep render took the tile's unavailable branch -- so the whole tile,
-         including `cost.comparison.label`, was outside the experiment while
-         the sweep looked like it covered it. The baseline gate below now
-         asserts the figure reached the screen. */
-      micros: 128_400_000, currency: 'USD',
-      window: { days: 7, dayOfPeriod: 12, daysInPeriod: 31 },
-      comparison: { changeBasisPoints: -420, label: 'the same days last month' },
-      basis: 'spend',
-      asOf: hoursAgo(20),
-    },
-    release: {
-      availability: { state: 'ready' },
-      version: '2.4.1',
-      releasedAt: hoursAgo(50),
-      platforms: [
-        { platform: 'ios', label: 'iOS', versionName: '2.4.1', versionCode: '2410' },
-        { platform: 'android', label: 'Android', versionName: '2.4.1', versionCode: '2411' },
+        { app: 'mobile', label: 'Mobile', trend: { values: MOBILE_DAILY.slice() } },
+        { app: 'coaches', label: 'Coaches Web', trend: { values: COACHES_DAILY.slice() } },
       ],
     },
-    /* Empty days, so `activityCard()` takes its no-line branch and reaches
-       `appendNote()` with the note -- the shorter of that function's two
-       callers and the one that needs no chart data to get to. */
-    activity: { availability: { state: 'ready' }, days: [], note: 'Backfilled on 3 Sep.' },
-    /* One real omission, so `omissionsCard()`'s own strings are inside the
-       sweep rather than beside it. */
-    omissions: [
-      { key: 'budget', title: 'No budget bar', detail: 'Nothing here records a cloud budget.' },
-    ],
+    problems: {
+      problems: [
+        { id: 'p1', reference: 'PRB-104', severity: 'warning', status: 'open',
+          title: 'Generation queue is slow', summary: 'Nothing has drained for 40 minutes.',
+          detectedAt: '2026-10-30T08:00:00.000Z', workPane: 'jobs-live', workPaneLabel: 'Happening now' },
+        { id: 'p2', reference: 'PRB-105', severity: 'info', status: 'acknowledged',
+          title: 'Backfill is behind', summary: 'Running late.',
+          detectedAt: '2026-10-29T08:00:00.000Z', workPane: 'run-history', workPaneLabel: 'Run history' },
+      ],
+      total: 2,
+    },
+    rules: {
+      rules: [{
+        key: 'queue', label: 'Queue depth', enabled: true,
+        lastEvaluatedAt: FIVE_MINUTES_BEFORE, lastEvaluationStatus: 'ok', lastFiredAt: null,
+      }],
+      channels: [{ key: 'teams', label: 'Teams', configured: true, status: 'ok' }],
+    },
+    jobs: {
+      generatedAt: '2026-11-01T09:40:00.000Z',
+      queue: { open: 19, byState: [{ state: 'running', jobs: 6 }, { state: 'queued', jobs: 13 }] },
+      attention: { completeness: 'whole_queue', stuck: [] },
+    },
+    runs: {
+      window: { range: '24h' },
+      coverage: { state: 'ready', coversWindow: true },
+      summary: { runs: 26, completed: 24, failed: 1, canceled: 1, unfinished: 0 },
+    },
+    costs: {
+      availability: { state: 'ready', detail: '' }, currency: 'USD',
+      period: { start: '2026-10-01T00:00:00.000Z', actualThrough: '2026-10-31T00:00:00.000Z', billedDays: 31 },
+      total: { micros: 3_100_000_000 },
+      daily: { series: [{ values: Array.from({ length: 31 }, (_, i) => (85 + i) * 1_000_000) }] },
+    },
   };
 }
 
-function problemsFixture() {
-  return { problems: [] };
+/* The same page when three of its figures cannot be given and say why. This
+   is the branch that draws a note, and the one a ready fixture cannot reach. */
+function withNotes() {
+  const all = everything();
+  all.summary.people.availability = { state: 'not_collected', detail: 'Backfilled on 3 Sep.' };
+  all.summary.aiRuns.availability = { state: 'not_reported', detail: 'Runs are not recorded yet.' };
+  all.costs.availability = { state: 'not_published', detail: 'The export lands on the 2nd.' };
+  return all;
 }
 
-function rulesFixture() {
-  return {
-    rules: [{
-      id: 'r1', name: 'Crash-free rate', enabled: true,
-      lastEvaluationStatus: 'ok', lastEvaluatedAt: hoursAgo(1), lastFiredAt: null,
-    }],
-    channels: [],
-  };
-}
+const ENDPOINTS = {
+  summary: '/api/ops/summary', usage: '/api/ops/usage',
+  problems: '/api/ops/alerts/problems', rules: '/api/ops/alerts/rules',
+  jobs: '/api/ops/jobs', runs: '/api/ops/runs', costs: '/api/ops/costs',
+};
 
-/* ------------------------------------------------------------------ boot */
+/* -------------------------------------------------------------- the page */
 
 function buildPage(dom, body) {
   const el = (parent, tag, attrs = {}) => {
@@ -186,17 +184,12 @@ function buildPage(dom, body) {
   el(boot, 'h1', { class: 'sr' }).textContent = 'Aria Operations';
   el(body, 'main', { class: 'gate gate-failed gate-center', id: 'gateFailed', tabindex: '-1' });
   const appGate = el(body, 'div', { class: 'gate gate-app' });
-  const app = el(appGate, 'div', { id: 'app' });
-  const rail = el(app, 'nav', { id: 'rail' });
-  el(rail, 'a', { class: 'nav-item', href: 'alerts.html' }).textContent = 'Problems';
+  el(appGate, 'div', { id: 'app' });
 }
 
-async function boot(summary) {
-  const answers = {
-    '/api/ops/summary': summary,
-    '/api/ops/alerts/problems': problemsFixture(),
-    '/api/ops/alerts/rules': rulesFixture(),
-  };
+async function boot(all) {
+  const answers = {};
+  for (const key of Object.keys(ENDPOINTS)) answers[ENDPOINTS[key]] = all[key];
 
   const dom = makeDom({ tokens: TOKENS, href: 'https://ops.example.invalid/ops/index.html' });
   const body = dom.element('body');
@@ -225,637 +218,388 @@ async function boot(summary) {
   vm.runInContext(SHELL_SRC, dom.window, { filename: 'shell-pane-v2.js' });
   vm.runInContext(MODEL_SRC, dom.window, { filename: 'alerts-model.js' });
   vm.runInContext(PANE_SRC, dom.window, { filename: 'pane-overview.js' });
-
   for (let i = 0; i < 12; i += 1) await new Promise((r) => setImmediate(r));
   return dom;
 }
 
-/* ------------------------------------------------------- what is drawn */
+/* ------------------------------------------------------------- reading it */
 
-const hasClass = (node, name) =>
-  String(node.className || '').split(/\s+/).indexOf(name) !== -1;
+const classesOf = (n) => String(n.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+const withClass = (root, cls) => findAll(root, (n) => classesOf(n).includes(cls));
+const section = (dom, id) => dom.doc.getElementById('today-' + id);
 
-function livePanel(dom) {
-  const boxes = dom.doc.getElementById('content').querySelectorAll('[data-state]')
-    .filter((n) => (n.getAttribute('data-state') || '').split(' ').indexOf('live') !== -1);
-  assert.equal(boxes.length, 1, 'the live panel is not a single element to read');
-  return boxes[0];
-}
-
-/* The text of a node and everything under it, with NOTHING done to the
-   whitespace.
-
-   `allText()` from the harness ends in `.replace(/\s+/g, ' ').trim()`, so
-   every "this must not carry its own padding" assertion routed through it
-   read a string the HARNESS had already tidied. Two drafts of this file were
-   blind that way: the first trimmed in the finder, and the second stopped
-   trimming in the finder while still calling `allText`, which trims one layer
-   down. Both passed while the pane rendered `",   staging  "`. The mutation
-   battery's M3, M4 and M5 -- the three payloads that put the predicate/value
-   split back -- came back green over the second draft and are what found it.
-
-   Presence is asserted with `includes`, which does not care either way.
-   Padding is asserted on this, which is the only thing that can see it. */
+/* The text of a node exactly as drawn. `allText()` ends in
+   `.replace(/\s+/g, ' ').trim()`, so every "this must not carry its own
+   padding" assertion routed through it read a string the harness had already
+   tidied. Presence is asserted with `includes`, which does not care either
+   way; padding is asserted on this, which is the only thing that can see it. */
 function rawText(node) {
   if (!node) return '';
-  const own = node.textContent || '';
-  const kids = (node.childNodes || []).map(rawText).join('');
-  return own + kids;
+  return (node.textContent || '') + (node.childNodes || []).map(rawText).join('');
 }
 
-const textsWithClass = (dom, name) =>
-  findAll(livePanel(dom), (n) => hasClass(n, name)).map(rawText);
-
-/* The small grey sentence under a tile saying which window and which
-   environment the figure came from. */
-const whyTexts = (dom) => textsWithClass(dom, 'kpi-why');
-
-/* Every version string in the release tile's rows. */
-const versionTexts = (dom) => textsWithClass(dom, 'num');
-
-/* Every card foot on the pane, which is the box `appendNote()` draws into. */
-const footTexts = (dom) => textsWithClass(dom, 'card-foot');
-
-/* ------------------------------------------------- the environment suffix */
-
-test('an environment of nothing but spaces does not print a comma with nothing after it',
-  async () => {
-    /* The finder first has to FIND the suffix on a render that has one.
-       Without this the assertion below would pass on a pane that stopped
-       drawing `why` lines entirely, which is the failure mode an absence test
-       is blind to. */
-    const named = whyTexts(await boot(summaryFixture()));
-    const withEnvironment = named.filter((t) => t.includes(', production'));
-    assert.equal(withEnvironment.length, 1,
-      'no line on the healthy render carries ", production", so the absence below reads a '
-      + 'pane that never draws the suffix rather than one that suppressed it');
-
-    const blank = summaryFixture();
-    blank.people.environment = '   ';
-    const texts = whyTexts(await boot(blank));
-
-    assert.equal(texts.length, named.length,
-      'the blank environment changed how many why-lines are drawn, so the two renders '
-      + 'are not comparable');
-    for (const text of texts) {
-      assert.doesNotMatch(text.trimEnd(), /,$/,
-        `"${text}" ends in a comma with nothing after it -- the pane committed to naming an `
-        + 'environment and then named none');
-    }
-  });
-
-test('an environment with words either side of the spaces still prints the words',
-  async () => {
-    /* The other direction of the same trim, and the one that stops the fix
-       from being "drop the field whenever it looks odd". `'  staging  '` is a
-       real environment badly typed, and it must survive. */
-    const padded = summaryFixture();
-    padded.people.environment = '  staging  ';
-    const texts = whyTexts(await boot(padded));
-
-    assert.equal(texts.filter((t) => t.includes(', staging')).length, 1,
-      'a padded environment name did not reach the screen, so the trim is deleting text '
-      + 'rather than tidying it');
-    for (const text of texts) {
-      assert.doesNotMatch(text, /,\s\s/,
-        `"${text}" carries the field's own padding onto the screen, so the predicate and the `
-        + 'value disagree about what the string is');
-    }
-  });
-
-/* ----------------------------------------------------- the version code */
-
-test('a version code of nothing but spaces does not print empty brackets', async () => {
-  const named = versionTexts(await boot(summaryFixture()));
-  assert.equal(named.filter((t) => t.includes('(2410)')).length, 1,
-    'no version row carries "(2410)" on the healthy render, so the absence below proves '
-    + 'nothing about brackets');
-
-  const blank = summaryFixture();
-  blank.release.platforms[0].versionCode = '   ';
-  const texts = versionTexts(await boot(blank));
-
-  assert.equal(texts.length, named.length,
-    'the blank version code changed how many version rows are drawn');
-  for (const text of texts) {
-    assert.doesNotMatch(text, /\(\s*\)/,
-      `"${text}" prints an empty pair of brackets where a build number belongs`);
-  }
-  assert.equal(texts.filter((t) => t.includes('(2411)')).length, 1,
-    'the OTHER platform lost its build number too, so the blank one took down a row it '
-    + 'has nothing to do with');
-});
-
-test('a version code padded with spaces prints without its padding', async () => {
-  /* The third site's padded case, which the first draft of this file did not
-     have. The blank case cannot see the predicate/value split here -- a code
-     of three spaces resolves to null either way and draws no brackets -- so
-     without this test the site was bound in one direction only. Battery row
-     M4 stayed green until it existed. */
-  const padded = summaryFixture();
-  padded.release.platforms[0].versionCode = '  2410  ';
-  const texts = versionTexts(await boot(padded));
-
-  assert.ok(texts.some((t) => t.includes('(2410)')),
-    `the padded build number drew as ${JSON.stringify(texts)} rather than "(2410)"`);
-  for (const text of texts) {
-    assert.doesNotMatch(text, /\(\s|\s\)/,
-      `"${text}" carries the field's own padding inside the brackets, so the predicate `
-      + 'trimmed and the render did not');
-  }
-});
-
-/* ------------------------------------------------------------- the note */
-
-test('a note of nothing but spaces does not draw an empty footnote', async () => {
-  const named = footTexts(await boot(summaryFixture()));
-  assert.ok(named.some((t) => t.includes('Backfilled on 3 Sep.')),
-    'the healthy render does not carry the note at all, so the absence below reads a pane '
-    + 'that never draws notes');
-
-  const blank = summaryFixture();
-  blank.activity.note = '   ';
-  const texts = footTexts(await boot(blank));
-
-  assert.equal(texts.length, named.length - 1,
-    `the blank note drew ${texts.length} card feet against ${named.length - 1} expected -- `
-    + 'an element holding no words is an element an operator cannot see and cannot skip');
-  for (const text of texts) {
-    assert.notEqual(text.trim(), '',
-      'a card foot reached the screen with nothing in it');
-  }
-});
-
-test('a note padded with spaces prints without its padding', async () => {
-  const padded = summaryFixture();
-  padded.activity.note = '  Backfilled on 3 Sep.  ';
-  const texts = footTexts(await boot(padded));
-
-  assert.ok(texts.some((t) => t.includes('Backfilled on 3 Sep.')),
-    'the padded note did not reach the screen as its own words');
-  for (const text of texts) {
-    assert.doesNotMatch(text, /^\s|\s$/,
-      `"${text}" carries its own padding into the DOM, so the predicate trimmed and the `
-      + 'render did not');
-  }
-});
-
-/* --------------------------------------------------- the version NAME
-
-   Sites four and five, found by the independent review of PR #124 rather
-   than by the sweep that reported three. `releaseTile()` filters platforms
-   with `textOf(platform.versionName)` at :1311 and drew the RAW field at
-   :1330 -- one line below the `versionCode` half the same sweep did fix. */
-
-test('a version name padded with spaces prints without its padding', async () => {
-  const named = versionTexts(await boot(summaryFixture()));
-  assert.equal(named.filter((t) => t.includes('2.4.1 (2410)')).length, 1,
-    'no version row reads "2.4.1 (2410)" on the healthy render, so the padding assertion '
-    + 'below is reading the wrong element');
-
-  const padded = summaryFixture();
-  padded.release.platforms[0].versionName = '  2.4.1  ';
-  const texts = versionTexts(await boot(padded));
-
-  assert.equal(texts.length, named.length,
-    'the padded version name changed how many version rows are drawn');
-  assert.ok(texts.some((t) => t === '2.4.1 (2410)'),
-    `the padded version name drew as ${JSON.stringify(texts)} rather than "2.4.1 (2410)"`);
-  for (const text of texts) {
-    assert.doesNotMatch(text, /^\s|\s\s/,
-      `"${text}" carries the field's own padding, so the predicate trimmed and the render `
-      + 'did not');
-  }
-});
-
-test('a platform with no usable name of its own is still named', async () => {
-  const named = versionTexts(await boot(summaryFixture()));
-  assert.equal(named.length, 2, 'the healthy render does not draw two platform rows');
-
-  const blank = summaryFixture();
-  blank.release.platforms[0].label = '   ';
-  blank.release.platforms[0].platform = '   ';
-  const dom = await boot(blank);
-
-  assert.equal(versionTexts(dom).length, 2,
-    'the nameless platform took its own row down rather than being named');
-  const plats = textsWithClass(dom, 'kpi-plat');
-  for (const text of plats) {
-    assert.notEqual(text.trim(), '',
-      'a platform row reached the screen with no name in it at all, which reads as a row '
-      + 'that is not there');
-  }
-  assert.ok(plats.some((t) => t === 'Unnamed platform'),
-    `the nameless platform drew as ${JSON.stringify(plats)} rather than "Unnamed platform"`);
-});
-
-/* ------------------------------------------- omissionsCard()'s entry key */
-
-const omitTitles = (dom) => textsWithClass(dom, 'omit-title');
-const STATIC_OMISSION_KEYS = new Set(['what_aria_has_been_doing', 'where_the_money_goes']);
-const apiOmitTitles = (dom) =>
-  findAll(livePanel(dom), (n) => hasClass(n, 'omit-item'))
-    .filter((item) => !STATIC_OMISSION_KEYS.has(item.getAttribute('data-omission-key')))
-    .map((item) => {
-      const title = findAll(item, (n) => hasClass(n, 'omit-title'))[0];
-      return title ? rawText(title) : '';
-    });
-
-function withOmission(entry) {
-  const fixture = summaryFixture();
-  fixture.omissions = [entry];
-  return fixture;
+/* Everything the page says, to anyone: its text exactly as drawn, and every
+   attribute a screen reader or a link follows. An un-normalised string, so a
+   field that carries its padding onto the screen in an attribute is seen too.
+   Sighted users are not the only users the sweep answers for. */
+function said(node) {
+  if (!node) return '';
+  const attrs = (node.attributeNames || [])
+    .map((name) => name + '=' + node.getAttribute(name)).join('\u0001');
+  const kids = (node.childNodes || []).map(said).join('\u0002');
+  return (node.textContent || '') + '\u0003' + attrs + '\u0003' + kids;
 }
 
-test('an omission named only by a padded key prints the key without its padding',
-  async () => {
-    const named = apiOmitTitles(await boot(withOmission({ key: 'spend_budget' })));
-    assert.deepEqual(named, ['spend_budget'],
-      'the healthy render does not draw the key as the omission title, so the padding '
-      + 'assertion below is reading the wrong element');
+const everyWordOn = (dom) => said(dom.doc.body);
 
-    const padded = withOmission({ title: '  ', key: '  spend_budget  ' });
-    const texts = apiOmitTitles(await boot(padded));
+/* ======================= a label, padded or blank ========================= */
 
-    assert.deepEqual(texts, ['spend_budget'],
-      `the padded key drew as ${JSON.stringify(texts)} -- omissionsCard() decided with `
-      + 'textOf(entry.key) at :1623 and rendered the raw field at :1640');
-  });
+test('an app named with nothing but spaces is named by its key, and by a word when the key is blank too', async () => {
+  const clean = await boot(everything());
+  assert.deepEqual(withClass(section(clean, 'people'), 'split-label').map(rawText), ['Mobile', 'Coaches Web']);
 
-/* Stadiora/Aria#10881. Under forced colours the glyph's shape is the only
-   channel left, so an omission drawn with the warning glyph would read as a
-   fault. Both the pane's own entries and the one the route sent are checked.
-   MUTATION: `icon('clock')` to `icon('warn')` in omissionsCard() in
-   ops/assets/pane-overview.js fails the equality below. */
-test('every omission draws the clock glyph, not the warning one', async () => {
-  const dom = await boot(withOmission({ key: 'spend_budget' }));
-  const items = findAll(livePanel(dom), (n) => hasClass(n, 'omit-item'));
-  assert.equal(items.length, STATIC_OMISSION_KEYS.size + 1,
-    'the card does not draw the static omissions plus the one the route sent');
-  const clock = glyphShape(dom.window.Aria.icon('clock'));
-  assert.notEqual(clock, glyphShape(dom.window.Aria.icon('warn')),
-    'aria.js draws clock and warn with the same shape');
-  for (const item of items) {
-    assert.equal(glyphShape(findAll(item, (n) => n.tagName === 'svg')[0]), clock,
-      `omission ${item.getAttribute('data-omission-key')} does not draw the clock glyph`);
-  }
+  const blankLabel = everything();
+  blankLabel.summary.people.apps[0].label = '    ';
+  blankLabel.summary.people.apps[1].label = '\t \n';
+  const keyed = await boot(blankLabel);
+  assert.deepEqual(withClass(section(keyed, 'people'), 'split-label').map(rawText), ['mobile', 'coaches'],
+    'a label of spaces was drawn as nothing, or as spaces');
+
+  const blankBoth = everything();
+  blankBoth.summary.people.apps.forEach((app) => { app.label = ' '; app.app = '  '; });
+  const nameless = await boot(blankBoth);
+  assert.deepEqual(withClass(section(nameless, 'people'), 'split-label').map(rawText), ['App', 'App']);
 });
 
-test('an omission with nothing usable to name it is not drawn at all', async () => {
-  assert.deepEqual(apiOmitTitles(await boot(withOmission({ key: 'spend_budget' }))),
-    ['spend_budget'], 'the finder does not see an omission that IS drawn');
-
-  const blank = withOmission({ title: '   ', key: '   ' });
-  assert.deepEqual(apiOmitTitles(await boot(blank)), [],
-    'an omission with no words in either field drew a heading holding nothing');
+test('a label with words and spaces around them is the words', async () => {
+  const padded = everything();
+  padded.summary.people.apps[0].label = '   Mobile  ';
+  padded.summary.people.apps[1].app = '  coaches ';
+  padded.summary.people.apps[1].label = '';
+  const dom = await boot(padded);
+  assert.deepEqual(withClass(section(dom, 'people'), 'split-label').map(rawText), ['Mobile', 'coaches']);
 });
 
-/* ===================================================================== */
-/* A resolved label that resolves to NOTHING                             */
-/* ===================================================================== */
+test('the chart carries an app label in its spoken name without its padding or its blankness', async () => {
+  const names = (dom) => findAll(section(dom, 'charts'), (n) => n.getAttribute && n.getAttribute('role') === 'img')
+    .map((n) => String(n.getAttribute('aria-label')));
+  const clean = await boot(everything());
+  assert.equal(names(clean).length, 2, 'the clean render drew no named charts, so their padding proves nothing');
+  assert.ok(names(clean)[0].includes('Mobile'));
 
-/* The chart's spoken name, which is where a `null` would be heard. */
-function chartNames(dom) {
-  return findAll(livePanel(dom), (n) => n.getAttribute && n.getAttribute('aria-label'))
-    .map((n) => n.getAttribute('aria-label'))
-    .filter((s) => /People active each day/.test(s));
-}
-
-/* The two day labels under the chart, with their whitespace untouched. */
-const axisTexts = (dom) =>
-  findAll(livePanel(dom), (n) => hasClass(n, 'axis-x')).map(rawText);
-
-test('a day label that resolves to nothing is left out, not said as the word "null"',
-  async () => {
-    /* Round 3 of PR #124's review. `labelAt()` resolves a day label through
-       `textOf()`, which is the point -- but three of its callers guard the
-       null it returns and `chartName()` CONCATENATED it, so the fix for a
-       blank label replaced the blank with the four characters `null`.
-
-       Only the concatenation. The x axis hands the same null to `S.h`,
-       which assigns it to `textContent` with no `String()`, and the DOM
-       setter maps null to the empty string -- so the axis prints nothing
-       and needs the different assertion further down. (`aria.js`'s own
-       `h()` DOES coerce, and would have printed the word; this pane does
-       not use it. Reading the wrong `h` is how the first draft of this
-       test came to assert something that could not fail.)
-
-       The concatenation is worse than the defect it replaced: a blank
-       prints nothing, and `null` prints a word the answer never sent, into
-       a `role="img"` label that is the only thing a screen-reader user
-       gets from this chart. */
-    const good = await boot(chartedFixture());
-    const saidWell = chartNames(good);
-    assert.equal(saidWell.length, 1,
-      'the finder does not see a chart name on a render that HAS one, so every '
-      + 'assertion below would pass over nothing');
-    assert.match(saidWell[0], /14 Sep to 20 Sep/,
-      `the baseline chart name is "${saidWell[0]}" -- it does not name its own days, so `
-      + 'this test is not reading the sentence it means to');
-    assert.equal(axisTexts(good).length, 1, 'the axis finder sees no axis on a drawn chart');
-    assert.match(axisTexts(good)[0], /14 Sep/, 'the axis does not carry the fixture label');
-
-    for (const [label, what] of [['   ', 'spaces'], ['', 'empty'], [20260914, 'a number']]) {
-      const fixture = chartedFixture();
-      fixture.activity.labels[0] = label;
-      const dom = await boot(fixture);
-
-      const said = chartNames(dom);
-      assert.equal(said.length, 1, `the chart stopped being drawn at all on ${what}`);
-      assert.doesNotMatch(said[0], /null/,
-        `a label of ${what} made the chart say "${said[0]}" -- textOf() returned null and `
-        + 'it was concatenated into the accessible name');
-      assert.doesNotMatch(said[0], /, +to 20 Sep/,
-        `a label of ${what} left a dangling range in "${said[0]}"`);
-
-      /* The axis is a different mechanism and needs a different assertion.
-         `S.h` is `if (opts.text !== undefined) el.textContent = opts.text`,
-         with no `String()`, and the DOM setter maps null to the empty
-         string -- so the axis cannot print "null" the way a concatenation
-         can, and asserting that it does not would assert nothing.
-
-         What it CAN do, and did before this PR, is print the label's own
-         padding. So the axis is pinned to exactly what should be left:
-         the end that resolved, and nothing standing in for the one that
-         did not. */
-      assert.deepEqual(axisTexts(dom), ['20 Sep'],
-        `a label of ${what} drew the axis as ${JSON.stringify(axisTexts(dom))}`);
-    }
-  });
-
-test('a day range is named only when both of its ends resolve', async () => {
-  /* Half a range is worse than none: "over the last 7 whole UTC days, 14 Sep"
-     reads as a one-day window. The window is already stated, so a pair that
-     cannot be completed says neither end. */
-  const fixture = chartedFixture();
-  fixture.activity.labels[6] = '   ';
-  const said = chartNames(await boot(fixture));
-  assert.equal(said.length, 1, 'the chart stopped being drawn');
-  assert.doesNotMatch(said[0], /14 Sep/,
-    `only the near end resolved and the chart still said it: "${said[0]}"`);
-  assert.match(said[0], /over the last 7 whole UTC days\./,
-    `the window sentence did not close cleanly: "${said[0]}"`);
-
-  /* And the series sentence's own use of the same label drops its clause
-     rather than carrying the null into it. */
-  assert.doesNotMatch(said[0], /on null|ending [\d,]+ on\b/,
-    `the series sentence carried an unresolved day: "${said[0]}"`);
+  const padded = everything();
+  padded.usage.apps[0].label = '   Mobile  ';
+  padded.usage.apps[1].label = '    ';
+  const dom = await boot(padded);
+  const [first, second] = names(dom);
+  assert.ok(first.includes('Mobile') && !/\s{2}/.test(first) && !first.startsWith(' '), 'padding reached the spoken name: ' + JSON.stringify(first));
+  assert.ok(second.includes('coaches'), 'a blank label was drawn as nothing: ' + JSON.stringify(second));
+  assert.ok(!/\s{2}/.test(second));
 });
 
-/* ===================================================================== */
-/* The sweep itself, rather than a list claiming one happened             */
-/* ===================================================================== */
-
-/* Round 1 of PR #124's review found two predicate/value splits this file had
-   declared absent. Round 2 found that the REPLACEMENT -- an enumeration of
-   the other eleven call sites by name and line -- was itself wrong in most of
-   its line numbers and in two of its classifications.
-
-   Twice is a pattern, and the pattern is that a census written by hand into a
-   comment is a claim nothing executes. It drifts on the next edit, and it
-   drifted inside the very commit that was fixing the previous drift.
-
-   So the census is gone, and this is what replaced it: the invariant the
-   census existed to assert, checked against the render instead of against a
-   reading of the source. PADDING A FIELD MUST CHANGE NOTHING ON SCREEN.
-
-   What it binds, stated exactly, because round 3 of the review found the
-   first wording of this paragraph claiming more than it does:
-
-     - Every call site THE FIXTURE'S OWN STRINGS REACH. It walks
-       `stringPaths(fixture)`, not the source, so a field the fixture does
-       not carry is not swept, and a branch the fixture does not enter is
-       not swept either. The `exercised` list and the baseline gate below
-       are what keep that honest: the gate names a value from release,
-       people, cost, omissions, consent and activity, plus the chart's own
-       accessible name on the fixture that draws one, and fails if any of
-       them is missing from the render.
-
-     - Sites added after this was written, on fields the fixture carries.
-
-   It cannot go stale against a line number, because it does not know any.
-
-   NOT SWEPT, and named rather than left to be discovered:
-
-     - The queue. `problemsFixture()` is `{ problems: [] }`, so nothing in
-       `queueItem()` is reached -- `problem.summary`, `problem.title`,
-       `problem.workPaneLabel`, `problem.reference`,
-       `problem.acknowledgedByEmail`, `severityWords()` and `PANE_FILE`.
-       The severity half is covered by
-       `scripts/ops-alerts-severity-retry.test.mjs`; the rest is not.
-       Sweeping it would need four more lookup exceptions -- `severity`,
-       `status`, `workPane` and the tone key -- and an exception list that
-       large stops meaning anything.
-
-     - Any field `/api/ops/summary` can send that neither fixture carries.
-       `stringPaths()` reports 34 paths for `summaryFixture()` and 47 for
-       `chartedFixture()`, of which 27 and 39 are swept and the rest are
-       lookups; the route's full shape is larger than either.
-
-     - Anything the pane puts somewhere `saidBy()` does not read. It reads
-       text nodes and `aria-label`, and nothing else -- not `title`, `alt`,
-       `aria-description`, `placeholder` or `data-*`. `pane-overview.js`
-       puts `one.key || one.label` into `data-series`, unresolved, and this
-       sweep cannot see it. Nothing renders `data-series` to a user today. */
-
-/* The same fixture with a drawn chart, so `chartCard()`'s legend and
-   `seriesSentence()` are on screen. `summaryFixture()` deliberately carries
-   no days -- it needs `activityCard()`'s no-line branch to reach
-   `appendNote()` -- and two sites live only on the other side of that
-   branch. Battery rows M30 and M31 came back GREEN against a charted-less
-   sweep, which is not a blind test and not a null payload but the third
-   thing: the experiment never reached the code. */
-function chartedFixture() {
-  const fixture = summaryFixture();
-  fixture.activity = {
-    availability: { state: 'ready' },
-    labels: ['14 Sep', '15 Sep', '16 Sep', '17 Sep', '18 Sep', '19 Sep', '20 Sep'],
-    series: [
-      { key: 'aria', label: 'Aria', color: 's1', values: [910, 940, 1001, 980, 1040, 1077, 1102] },
-      { key: 'ariaxii', label: 'Aria XII', color: 's2', values: [380, 402, 396, 410, 421, 404, 412] },
-    ],
-    daysMissingRollups: [],
-    window: { days: 7 },
-    note: 'Backfilled on 3 Sep.',
+test('the best-day moment names the app by its label without padding, and by a word when it is blank', async () => {
+  const label = async (value) => {
+    const all = everything();
+    all.usage.apps[0].label = value;
+    const found = withClass(section(await boot(all), 'moments'), 'moment-label').map(rawText);
+    return found.filter((t) => /day/.test(t));
   };
-  return fixture;
-}
+  assert.deepEqual(await label('Mobile'), ['Best Mobile day'], 'the clean render did not earn the moment');
+  assert.deepEqual(await label('   Mobile  '), ['Best Mobile day']);
+  assert.deepEqual(await label('     '), ['Best Mobile day'], 'a blank label left the moment with no name for the app');
+});
 
-/* What the pane SAYS, which is more than what it draws.
+/* ========================== a problem, padded or blank ==================== */
 
-   `rawText` reads text nodes. The chart's name is an `aria-label`, so a
-   screen-reader user is the only person who hears it -- and two of the
-   sites this sweep exists to bind live only there. Battery rows M31 and M35
-   came back GREEN against a text-only sweep for that reason: not a blind
-   test and not a null payload, but a probe that could not reach the thing it
-   was aimed at. A sweep for "does a padded field reach a user" that ignores
-   the accessible name answers the question for sighted users only. */
-function saidBy(panel) {
-  const spoken = findAll(panel, (n) => n.getAttribute && n.getAttribute('aria-label'))
-    .map((n) => n.getAttribute('aria-label'));
-  return rawText(panel) + '\u0000' + spoken.join('\u0000');
-}
+const titleOf = (dom, which) => withClass(section(dom, 'problems'), 'prob-title').map(rawText)[which || 0];
+const viewLabelOf = (dom, which) => withClass(section(dom, 'problems'), 'prob-view').map((n) => n.getAttribute('aria-label'))[which || 0];
+
+test('a problem titled with spaces is untitled, and a padded title prints without its padding', async () => {
+  assert.equal(titleOf(await boot(everything())), 'Generation queue is slow');
+
+  const blank = everything();
+  blank.problems.problems[0].title = '     ';
+  const untitled = await boot(blank);
+  assert.equal(titleOf(untitled), 'Untitled problem');
+  assert.equal(viewLabelOf(untitled), 'View: Untitled problem', 'the link was named after spaces');
+
+  const padded = everything();
+  padded.problems.problems[0].title = '   Generation queue is slow  ';
+  const dom = await boot(padded);
+  assert.equal(titleOf(dom), 'Generation queue is slow');
+  assert.equal(viewLabelOf(dom), 'View: Generation queue is slow');
+});
+
+test('a title with nothing at all in it, or something that is not a string, is untitled', async () => {
+  for (const value of [undefined, null, '', 0, 12, false, {}, []]) {
+    const all = everything();
+    all.problems.problems[0].title = value;
+    assert.equal(titleOf(await boot(all)), 'Untitled problem', JSON.stringify(value));
+  }
+});
+
+test('a severity that arrives padded is printed as the word, without its padding', async () => {
+  const wordFor = async (severity) => {
+    const all = everything();
+    all.problems.problems[0].severity = severity;
+    return withClass(section(await boot(all), 'problems'), 'sr').map(rawText)[0];
+  };
+  assert.equal(await wordFor('warning'), 'Warning: ', 'the clean severity did not reach its word');
+  const padded = await wordFor('   odd  ');
+  assert.equal(padded, 'odd: ', 'padding reached the severity word: ' + JSON.stringify(padded));
+  assert.equal(await wordFor('     '), 'Unknown: ', 'a severity of spaces was drawn as nothing');
+});
+
+/* ========================= a note, padded or blank ======================== */
+
+test('an availability detail of nothing but spaces draws no note, and a padded one prints without it', async () => {
+  const noteOf = (dom, id) => withClass(section(dom, id), 'hp-note').map(rawText);
+  const clean = await boot(withNotes());
+  assert.deepEqual(noteOf(clean, 'people'), ['Backfilled on 3 Sep.'], 'the clean render drew no note');
+  assert.deepEqual(noteOf(clean, 'spend'), ['The export lands on the 2nd.']);
+
+  const blank = withNotes();
+  blank.summary.people.availability.detail = '      ';
+  blank.costs.availability.detail = '\n\t';
+  const quiet = await boot(blank);
+  assert.deepEqual(noteOf(quiet, 'people'), [], 'a note of spaces was drawn as an empty box');
+  assert.deepEqual(noteOf(quiet, 'spend'), []);
+
+  const padded = withNotes();
+  padded.summary.people.availability.detail = '   Backfilled on 3 Sep.   ';
+  padded.costs.availability.detail = '  The export lands on the 2nd.  ';
+  const dom = await boot(padded);
+  assert.deepEqual(noteOf(dom, 'people'), ['Backfilled on 3 Sep.']);
+  assert.deepEqual(noteOf(dom, 'spend'), ['The export lands on the 2nd.']);
+});
+
+test('an availability state with padding is read as that state, in words and in what it allows', async () => {
+  const words = (dom, id) => withClass(section(dom, id), 'big').map(rawText);
+  const padded = withNotes();
+  padded.summary.people.availability.state = '  not_collected ';
+  padded.costs.availability.state = ' not_published  ';
+  const dom = await boot(padded);
+  assert.deepEqual(words(dom, 'people'), ['Not collected'], 'a padded state was not recognised');
+  assert.deepEqual(words(dom, 'spend'), ['Not published']);
+
+  const ready = everything();
+  ready.summary.people.availability.state = '  ready ';
+  assert.ok(withClass(section(await boot(ready), 'people'), 'big').map(rawText).includes('1,102'),
+    'a padded ready was not ready');
+
+  const blank = everything();
+  blank.summary.people.availability.state = '    ';
+  assert.deepEqual(words(await boot(blank), 'people'), ['Not reported'], 'a state of spaces was read as ready');
+});
+
+/* ========================= a date, invalid or blank ======================= */
+
+test('a stamp that is blank, empty or not a date draws no date and no time, and never the word that says so', async () => {
+  const head = (dom) => rawText(dom.doc.getElementById('pageSub'));
+  const clean = await boot(everything());
+  assert.ok(/Sun, Nov 1, 2026/.test(head(clean)) && /Updated 09:41 UTC/.test(head(clean)), head(clean));
+
+  for (const stamp of ['', '   ', 'not a date', '2026-13-45T99:99:00Z', null, 7, {}]) {
+    const all = everything();
+    all.summary.generatedAt = stamp;
+    all.jobs.generatedAt = stamp;
+    const dom = await boot(all);
+    assert.equal(head(dom), '', 'a stamp of ' + JSON.stringify(stamp) + ' printed ' + JSON.stringify(head(dom)));
+  }
+});
+
+test('a window whose ends are not dates is described by its length, and never by Invalid Date', async () => {
+  const range = (dom) => withClass(section(dom, 'people'), 'hp-range').map(rawText);
+  assert.deepEqual(range(await boot(everything())), ['Oct 25\u201331']);
+
+  for (const ends of [{ start: '   ', endExclusive: '' }, { start: 'tomorrow', endExclusive: 'yesterday' }, { start: null, endExclusive: null }]) {
+    const all = everything();
+    all.summary.people.window = { ...ends, days: 7 };
+    assert.deepEqual(range(await boot(all)), ['Last 7 days'], JSON.stringify(ends));
+  }
+});
+
+test('a problem with no usable date has no since, and a usable one has it', async () => {
+  const since = (dom) => withClass(section(dom, 'problems'), 'prob-since').map(rawText);
+  assert.deepEqual(since(await boot(everything())), ['Since Oct 30', 'Since Oct 29']);
+
+  for (const stamp of ['   ', 'sometime', undefined, '']) {
+    const all = everything();
+    all.problems.problems[0].detectedAt = stamp;
+    all.problems.problems[0].firedAt = stamp;
+    assert.deepEqual(since(await boot(all)), ['Since Oct 29'], JSON.stringify(stamp));
+  }
+});
+
+test('a spend day that is not a date is left off, not printed as one', async () => {
+  const day = (dom) => withClass(section(dom, 'spend'), 'spend-day').map(rawText);
+  assert.deepEqual(day(await boot(everything())), ['Oct 31']);
+  for (const stamp of ['  ', 'the 31st', null]) {
+    const all = everything();
+    all.costs.period.actualThrough = stamp;
+    assert.deepEqual(day(await boot(all)), [''], JSON.stringify(stamp));
+  }
+});
+
+/* ============================== the sweeps ================================ */
 
 /* Every string leaf in the fixture, as a path. */
 function stringPaths(node, prefix = []) {
   if (typeof node === 'string') return [prefix];
-  if (Array.isArray(node)) {
-    return node.flatMap((v, i) => stringPaths(v, prefix.concat(String(i))));
-  }
+  if (Array.isArray(node)) return node.flatMap((v, i) => stringPaths(v, prefix.concat(String(i))));
   if (node && typeof node === 'object') {
     return Object.keys(node).flatMap((k) => stringPaths(node[k], prefix.concat(k)));
   }
   return [];
 }
-
 const getPath = (obj, path) => path.reduce((o, k) => o[k], obj);
 const setPath = (obj, path, value) => {
-  const last = path[path.length - 1];
-  path.slice(0, -1).reduce((o, k) => o[k], obj)[last] = value;
+  path.slice(0, -1).reduce((o, k) => o[k], obj)[path[path.length - 1]] = value;
 };
 const withPath = (obj, path, value) => { setPath(obj, path, value); return obj; };
 
-/* Not a date, not an ISO 4217 code, not an availability state, and holding
-   no whitespace for a render to normalise away. */
+/* Not a date, not an ISO 4217 code, not an availability state, and holding no
+   whitespace for a render to normalise away. */
 const SENTINEL = 'Zq7Sentinel';
 
-/* Fields whose value is not a word the pane prints but a key it looks
-   something up by, so padding them legitimately changes the render. Named
-   one at a time and justified, because "the sweep has exceptions" is how a
-   sweep stops meaning anything.
+/* Fields whose value is a KEY the page looks something up by, or a number
+   written as text, rather than a word it prints, so padding one legitimately
+   changes the render. Named one at a time and justified, because "the sweep
+   has exceptions" is how a sweep stops meaning anything.
 
-   Each of these is verified below to be a LOOKUP, two ways: padding it
-   changes the render, so the exception is not stale; and SUBSTITUTING an
-   unrecognisable value for it leaves nothing of that value on the screen,
-   so the field is looked up rather than printed. The substitution is the
-   one that matters -- review round 4 walked past two different string tests
-   over the padded render, and a padded value can be reformatted into
-   anything while a substituted one cannot hide. */
-const LOOKUP_FIELDS = new Set([
-  /* Parsed as a date, not printed as a word. */
-  'generatedAt',
-  'cost.asOf',
-  /* Enum keys the route sends, matched exactly against a state table. A
-     padded one SHOULD fall to "unavailable" -- that is the pane refusing to
-     read a state it does not recognise, which is the behaviour the honesty
-     rules ask for, not a rendering defect. */
-  'people.availability.state',
-  'aiRuns.availability.state',
-  'release.availability.state',
-  'cost.availability.state',
-  /* An ISO 4217 code handed to Intl.NumberFormat, which throws on a padded
-     one and drops the tile to an unsymbolled number. A currency code is not
-     a word this pane prints. */
-  'cost.currency',
+   Each is verified below to be a lookup, two ways. Padding it changes the
+   render, so the exception is not stale. And SUBSTITUTING an unrecognisable
+   value for it leaves nothing of that value on the screen, so the field is
+   looked up rather than printed. The substitution is the one that matters: a
+   padded value can be reformatted into anything, while a substituted one
+   cannot hide. */
+const LOOKUPS = new Set([
+  /* Parsed as a date, never printed as a word. A padded one is not a date the
+     route could have sent, and the page does not guess at it. */
+  'summary.generatedAt',
+  'summary.people.window.start',
+  'summary.people.window.endExclusive',
+  'usage.window.endExclusive',
+  'problems.problems.0.detectedAt',
+  'problems.problems.1.detectedAt',
+  'rules.rules.0.lastEvaluatedAt',
+  'costs.period.start',
+  'costs.period.actualThrough',
+  /* The key the best-day moment finds the mobile app by, compared exactly. */
+  'usage.apps.0.app',
+  /* An ISO 4217 code handed to Intl.NumberFormat, which refuses a padded one.
+     A currency code is not a word this page prints. */
+  'costs.currency',
+  /* The key a state table is matched against exactly. A padded one is NOT in
+     this list: the page reads the state through textOf(), so ' ready ' is
+     ready, and that is asserted above. These are the words of the route's
+     enums that are compared with ===, never trimmed, and a padded one falls
+     out of the lookup. */
+  'jobs.queue.byState.0.state',
+  'jobs.queue.byState.1.state',
+  'jobs.attention.completeness',
+  'runs.coverage.state',
+  'runs.window.range',
+  'problems.problems.0.status',
+  'problems.problems.1.status',
+  'problems.problems.0.workPane',
+  'problems.problems.1.workPane',
+  'rules.rules.0.lastEvaluationStatus',
 ]);
 
-async function sweep(make, extraLookups, expectSwept, extraReached = []) {
+/* The strings that are printed in a way that is allowed to change when padded,
+   and are asserted on their own above. A severity is a word, not a key: what
+   arrives is what is printed, trimmed. */
+const SEVERITIES = new Set([
+  'problems.problems.0.severity',
+  'problems.problems.1.severity',
+]);
+
+async function sweep(make, lookups, expectSwept, reached) {
   const base = make();
   const paths = stringPaths(base);
-  assert.ok(paths.length >= 15,
-    `the walker found ${paths.length} string fields in the fixture, which is too few to `
-    + 'be reading it properly');
+  assert.ok(paths.length >= 40, `the walker found ${paths.length} string fields, too few to be reading the fixtures properly`);
 
-  const clean = saidBy(livePanel(await boot(make())));
-  /* Each of these is a value from a DIFFERENT region of the fixture, so a
-     region that silently stopped rendering cannot sit inside the sweep
-     looking covered. The cost tile did exactly that: `costTile()` reads
-     `cost.micros` and the fixture carried `total.usd`, so every render took
-     the unavailable branch and `clean.includes('128')` was false while the
-     two values checked here were both true. A sweep that cannot say which
-     parts of the screen it reached is not a sweep.
-
-     Round 5 of the review then read the list against the claim above it.
-     It said "a value from each region" and named release, people, cost and
-     omissions -- nothing from `consent`, and nothing from `activity`, which
-     supplies fourteen of the charted sweep's thirty-nine paths and is the
-     entire reason `chartedFixture()` exists. The chart region was in fact
-     being drawn, so this was an overclaiming sentence rather than a blind
-     spot; it is now a true one, with the chart's own accessible name gated
-     by the caller because only one of the two fixtures draws a chart. */
-  for (const reached of ['2.4.1', 'production', '128.40', 'No budget bar',
-    'Operational data only.', 'Backfilled on 3 Sep.', ...extraReached]) {
-    assert.ok(clean.includes(reached),
-      `the baseline render does not carry "${reached}", so the region of the fixture `
-      + 'that value comes from was never drawn and every comparison below passes over '
-      + 'nothing');
+  const clean = everyWordOn(await boot(make()));
+  /* Each of these is from a DIFFERENT region of the page, so a region that
+     silently stopped rendering cannot sit inside the sweep looking covered. A
+     sweep that cannot say which parts of the screen it reached is not a
+     sweep. */
+  for (const word of reached) {
+    assert.ok(clean.includes(word), `the clean render does not carry "${word}", so the region of the fixture it comes from was never drawn and every comparison below passes over nothing`);
   }
 
   const drifted = [];
   const exercised = [];
   for (const path of paths) {
     const key = path.join('.');
+    if (SEVERITIES.has(key)) continue;
     const fixture = make();
     setPath(fixture, path, '  ' + getPath(base, path) + '  ');
-    const padded = saidBy(livePanel(await boot(fixture)));
-    if (LOOKUP_FIELDS.has(key) || extraLookups.has(key)) {
-      /* The exception list is checked in BOTH directions: a field on it that
-         has stopped mattering is a stale exception hiding a real site. */
-      assert.notEqual(padded, clean,
-        `"${key}" is on the lookup-exception list but padding it changes nothing, so the `
-        + 'exception is stale and is hiding whatever it now covers');
-      /* And it differs the RIGHT way. "This is a lookup, so a padded value
-         legitimately changes the render" was asserted by nobody until round
-         3 of the review pointed out that a listed field which started
-         carrying its padding onto the screen would satisfy the line above
-         and be hidden by the exception that excuses it.
+    const padded = everyWordOn(await boot(fixture));
 
-         Round 4 then broke the obvious check. Rejecting a verbatim echo of
-         the padding walks past a payload that prints the padded value with
-         its whitespace COLLAPSED -- `128.40 ( USD )` -- and so does counting
-         occurrences of the value, because that payload prints the currency
-         in BOTH renders and the count does not move. Both passed 64/64.
-
-         So this is a different experiment rather than a better string test.
-         A padded value can be reformatted into anything; a SUBSTITUTED one
-         cannot hide. Replace the field with a sentinel that is not a date,
-         not a currency code and not a state name, and ask whether it reaches
-         the screen. A field that is looked up cannot print a key it does not
-         recognise. A field that is printed prints the sentinel, in whatever
-         spelling -- there is no whitespace in it to normalise away. */
-      const swapped = saidBy(livePanel(await boot(withPath(make(), path, SENTINEL))));
+    if (lookups.has(key)) {
+      /* Checked in BOTH directions: an exception that has stopped mattering is
+         a stale one, hiding a real site. */
+      assert.notEqual(padded, clean, `"${key}" is on the lookup list but padding it changes nothing, so the exception is stale`);
+      const swapped = everyWordOn(await boot(withPath(make(), path, SENTINEL)));
       assert.ok(!swapped.includes(SENTINEL),
-        `"${key}" is excused as a lookup, but substituting an unrecognisable value put `
-        + 'it on the screen -- the field is being printed, not looked up, and the '
-        + 'exception is hiding a real call site');
+        `"${key}" is excused as a lookup, but substituting an unrecognisable value put it on the screen: the field is printed, not looked up`);
       continue;
     }
     exercised.push(key);
-    /* Reported with the first character that differs and forty either side.
-       "these fields drifted" sends the next person hunting; "here is where"
-       does not, and seven of the eleven sites this sweep found were located
-       from this line rather than from the source. */
     if (padded !== clean) {
       let at = 0;
       while (at < clean.length && padded[at] === clean[at]) at += 1;
-      drifted.push(`${key} (${JSON.stringify(clean.slice(Math.max(0, at - 40), at + 40))}`
-        + ` => ${JSON.stringify(padded.slice(Math.max(0, at - 40), at + 40))})`);
+      drifted.push(`${key} (${JSON.stringify(clean.slice(Math.max(0, at - 40), at + 40))} => ${JSON.stringify(padded.slice(Math.max(0, at - 40), at + 40))})`);
     }
   }
 
   /* Pinned exactly, not floored. A floor cannot tell "the fixture lost a
-     field" from "the fixture never had it", and the whole reason this sweep
-     had to be narrowed is that nobody could say what it reached. Change the
-     fixture, change this number, and the diff says which happened. */
-  assert.equal(exercised.length, expectSwept,
-    `${exercised.length} fields were swept, not ${expectSwept}: ${JSON.stringify(exercised)}`);
-  assert.deepEqual(drifted, [],
-    `padding these fields changed the rendered text: ${JSON.stringify(drifted)} -- each `
-    + 'is a textOf() call site that decides with the resolved value and draws the raw '
-    + 'one, or one that never resolved at all');
+     field" from "the fixture never had it". Change the fixture, change this
+     number, and the diff says which happened. */
+  assert.equal(exercised.length, expectSwept, `${exercised.length} fields were swept, not ${expectSwept}: ${JSON.stringify(exercised)}`);
+  assert.deepEqual(drifted, [], `padding these fields changed what the page says: ${JSON.stringify(drifted)}`);
 }
 
-test('padding any string the answer carries changes nothing on the screen', async () => {
-  await withSweepClock(() => sweep(summaryFixture, new Set(), 27));
+test('padding any string any answer carries changes nothing on the screen', async () => {
+  await sweep(everything, LOOKUPS, 41, ['Mobile', 'Coaches Web', 'Generation queue is slow', 'Backfill is behind',
+    '1,102', '$115.00', 'Best Mobile day']);
 });
 
-test('padding any string changes nothing on the screen with the chart drawn too',
-  async () => {
-    /* The same invariant over the branch the other sweep cannot reach.
-       `summaryFixture()` carries no days on purpose -- it needs
-       `activityCard()`'s no-line branch to get to `appendNote()` -- and the
-       legend and the spoken sentence live on the other side of it. */
-    await withSweepClock(() => sweep(chartedFixture, new Set([
-      'activity.availability.state',
-    ]), 39, ['14 Sep to 20 Sep', 'Aria XII']));
-  });
+/* The people figure and the cost tile give up their detail when they cannot
+   give a count, so these are not drawn here and an exception for them would be
+   stale. */
+const NOT_DRAWN_WITH_NOTES = new Set([
+  'summary.people.window.start', 'summary.people.window.endExclusive',
+  'costs.currency', 'costs.period.start', 'costs.period.actualThrough',
+]);
+
+test('padding any string changes nothing on the screen when the figures carry notes', async () => {
+  const lookups = new Set([...LOOKUPS].filter((key) => !NOT_DRAWN_WITH_NOTES.has(key)));
+  await sweep(withNotes, lookups, 46, ['Backfilled on 3 Sep.', 'The export lands on the 2nd.',
+    'Generation queue is slow']);
+});
+
+/* Blanking is the other half. Every string becomes spaces at once, and the
+   page must still be a page: no word that is a placeholder for an absence,
+   no exception, and every section host still standing. */
+const PLACEHOLDERS = /undefined|\bnull\b|NaN|Invalid Date|\[object|function\s*\(/;
+
+for (const [name, make] of [['a ready answer', everything], ['an answer with notes', withNotes]]) {
+  for (const blank of ['', ' ', '   \t\n  ']) {
+    test(`${name} with every string blanked to ${JSON.stringify(blank)} is still a page that says nothing false`, async () => {
+      const all = make();
+      for (const key of Object.keys(all)) {
+        for (const path of stringPaths(all[key])) setPath(all[key], path, blank);
+      }
+      const dom = await boot(all);
+      const text = allText(dom.doc.getElementById('content'));
+      assert.ok(!PLACEHOLDERS.test(text), 'a placeholder reached the screen: ' + text);
+      assert.ok(section(dom, 'health'), 'the page went down as a whole');
+      for (const heading of findAll(dom.doc.getElementById('content'), (n) => /^H[1-6]$/.test(String(n.tagName || '')))) {
+        assert.notEqual(allText(heading), '', 'an empty heading was drawn');
+      }
+    });
+  }
+}

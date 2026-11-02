@@ -139,25 +139,36 @@ const SUMMARY_HOURS = Array.from({ length: 24 }, (_, n) => utcHourLabel(SUMMARY_
 const SUMMARY_HOUR_START = utcHourKey(SUMMARY_HOUR_START_MS);
 const SUMMARY_HOUR_END = utcHourKey(SUMMARY_HOUR_END_MS);
 
+/* The last seven whole UTC days, and the seven before them, as the summary
+   route sends them: a start, an exclusive end and a day count. */
+const dayStartIso = (ms) => utcDay(ms) + 'T00:00:00.000Z';
+const WEEK_WINDOW = {
+  start: dayStartIso(7 * DAY), endExclusive: dayStartIso(0),
+  days: 7, grain: 'day', timezone: 'UTC'
+};
+const PREVIOUS_WEEK = { start: dayStartIso(14 * DAY), endExclusive: dayStartIso(7 * DAY), days: 7 };
+
 const SUMMARY = {
   generatedAt: ago(5 * MINUTE),
   consent: { basis: 'operational' },
   people: {
     availability: { state: 'ready' },
-    platform: { active: 1102, previousActive: 980 },
+    /* The platform's own distinct count. It is smaller than the two apps
+       added together, because one person can use both. */
+    platform: { active: 44, previousActive: 32 },
     apps: [
-      { key: 'mobile', label: 'Mobile', active: 870, tone: 's1' },
-      { key: 'coaches', label: 'Coaches Web', active: 412, tone: 's2' }
+      { app: 'mobile', label: 'Mobile', tone: 'mobile', color: 's1', active: 39, previousActive: 28 },
+      { app: 'coaches', label: 'Coaches Web', tone: 'coaches', color: 's2', active: 9, previousActive: 7 }
     ],
-    window: { days: 7 },
-    comparison: { days: 7, label: 'the 7 days before' },
-    reportingFloor: 50,
+    window: WEEK_WINDOW,
+    comparison: PREVIOUS_WEEK,
+    reportingFloor: 5,
     environment: 'production'
   },
   aiRuns: {
     availability: { state: 'ready' },
-    runs: 4820, previous: { runs: 4410 },
-    daysMissing: [], daysReported: 7, window: { days: 7 }
+    runs: 128, previous: { runs: 103, daysReported: 7 },
+    daysMissing: [], daysReported: 7, window: WEEK_WINDOW, comparison: PREVIOUS_WEEK
   },
   cost: {
     availability: { state: 'ready' },
@@ -621,8 +632,14 @@ const COST_CATEGORIES = {
    server in scripts/ passes stub(url.pathname) alone, so a page that requests
    that URL is still served the billed month. Both generations of
    the pane print `availability.detail` verbatim into the card they draw for
-   it, so that detail is a fixture value on the page, not pane prose. */
-const COSTS = costsPayload();
+   it, so that detail is a fixture value on the page, not pane prose.
+
+   The days do not bill alike: against a flat month the daily line the Today
+   tile draws is a straight rule, which would look right whether or not it
+   plotted its values. */
+const COSTS = costsPayload({
+  dayScale: (day) => 0.8 + day * 0.02 + (day % 3) * 0.06,
+});
 
 const COSTS_NOT_PUBLISHED = {
   availability: {
@@ -647,9 +664,100 @@ const PROBLEM = {
      (Stadiora/Aria#10461). */
   workPane: 'jobs-live', workPaneLabel: 'Happening now',
   detectedAt: ago(15 * MINUTE), firedAt: ago(13 * MINUTE),
-  acknowledgedAt: null, acknowledgedBy: null,
+  acknowledgedAt: null, acknowledgedBy: null, acknowledgedByEmail: null,
   closedAt: null, closeReason: null, closedBy: null,
   notificationsFailed: 0, events: []
+};
+
+/* The calm day, for the Today page: nothing critical, one cost problem that
+   somebody has already picked up. Served with options.scene = 'calm'. */
+const PROBLEM_CALM = Object.assign({}, PROBLEM, {
+  id: 'prb_2', reference: 'AO-131', severity: 'warning', status: 'acknowledged',
+  category: 'cost', title: 'Cloud costs up',
+  description: 'Spend over the last day is above its usual range.',
+  ruleKey: 'cost_anomaly', ruleTitle: 'Unusual cost for a service',
+  workPane: 'spend', workPaneLabel: 'Cloud spend',
+  detectedAt: ago(2 * DAY), firedAt: ago(2 * DAY),
+  acknowledgedAt: ago(DAY), acknowledgedBy: 'adm_op',
+  acknowledgedByEmail: 'anthony@ops.invalid'
+});
+
+/* Thirty days of people per day, newest last. Mobile's newest day is its best
+   in the window and Coaches Web's is not, so both answers to the "best day"
+   rule are on the page. */
+const MOBILE_DAILY = [12, 15, 14, 17, 16, 19, 18, 17, 20, 22, 19, 21, 23, 20, 22,
+  25, 24, 22, 26, 27, 25, 24, 28, 30, 26, 29, 31, 28, 33, 37];
+const COACHES_DAILY = [4, 5, 4, 6, 5, 7, 6, 5, 7, 8, 6, 7, 8, 6, 7,
+  9, 8, 7, 8, 9, 7, 6, 8, 9, 7, 8, 9, 8, 7, 9];
+
+const USAGE = {
+  asOf: ago(HOUR),
+  window: {
+    range: '30d', start: dayStartIso(30 * DAY), endExclusive: dayStartIso(0),
+    days: 30, grain: 'day', timezone: 'UTC',
+    rollupsComputedAt: ago(5 * HOUR), reportingStart: utcDay(30 * DAY),
+    daysCovered: 30, daysMissingRollups: []
+  },
+  filters: { app: 'all', env: 'production' },
+  reportingFloor: 5,
+  consent: { enforcedAt: 'ingest',
+    detail: 'Only accounts that turned usage analytics on are counted.' },
+  availability: { state: 'ready', detail: '' },
+  apps: [
+    { app: 'mobile', label: 'Mobile', tone: 'mobile', subtitle: 'Athlete app',
+      coverageBasisPoints: 9200,
+      metrics: [
+        { label: 'Active people', kind: 'count', value: 39 },
+        { label: 'Sessions', kind: 'count', value: 308 },
+        { label: 'Sessions per person', kind: 'decimal', digits: 1, value: 7.9,
+          numerator: 308, denominator: 39 },
+        { label: 'Opened a feature', kind: 'rate', value: 6410, numerator: 25, denominator: 39 }
+      ],
+      trend: { label: 'Active people per day, Mobile', color: 's1', values: MOBILE_DAILY } },
+    { app: 'coaches', label: 'Coaches Web', tone: 'coaches', subtitle: 'Coach workspace',
+      coverageBasisPoints: 10000,
+      metrics: [
+        { label: 'Active people', kind: 'count', value: 9 },
+        { label: 'Sessions', kind: 'count', value: 36 },
+        { label: 'Sessions per person', kind: 'decimal', digits: 1, value: 4,
+          numerator: 36, denominator: 9 },
+        { label: 'Opened a feature', kind: 'rate', value: 7778, numerator: 7, denominator: 9 }
+      ],
+      trend: { label: 'Active people per day, Coaches Web', color: 's2', values: COACHES_DAILY } }
+  ],
+  cohorts: [
+    { app: 'mobile', label: 'Mobile', offsets: ['W1', 'W2'],
+      rows: [
+        { label: '24 Aug', size: 14,
+          cells: [{ basisPoints: 7143, returned: 10 }, { basisPoints: 5000, returned: 7 }] },
+        { label: '31 Aug', size: 9,
+          cells: [{ basisPoints: 6667, returned: 6 }, { state: 'not_aged' }] }
+      ] },
+    { app: 'coaches', label: 'Coaches Web', offsets: ['W1', 'W2'],
+      rows: [
+        { label: '24 Aug', size: 6,
+          cells: [{ basisPoints: 8333, returned: 5 }, { basisPoints: 6667, returned: 4 }] },
+        { label: '31 Aug', size: 5,
+          cells: [{ basisPoints: 8000, returned: 4 }, { state: 'not_aged' }] }
+      ] }
+  ]
+};
+
+/* The subscriber history, as GET /api/ops/growth sends it: this reading, the
+   one a week before it, and eight weekly readings behind that. Thirty-one is
+   above every weekly reading, which is the one thing Today needs to call it a
+   record. */
+const GROWTH = {
+  asOf: ago(HOUR), timezone: 'UTC',
+  payingSubscribers: {
+    current: { count: 31, asOf: ago(HOUR) },
+    previous: { day: utcDay(7 * DAY), count: 29, capturedAt: ago(7 * DAY) },
+    weeks: [8, 7, 6, 5, 4, 3, 2, 1].map((n, i) => ({
+      day: utcDay(n * 7 * DAY), count: 20 + i * 1.25 | 0, capturedAt: ago(n * 7 * DAY)
+    })),
+    historyBeginsAt: utcDay(70 * DAY),
+    source: 'subscription_records', historySource: 'snapshots'
+  }
 };
 
 /* One window of run history, for What happened. Stadiora/Aria#5563 moved that
@@ -726,6 +834,14 @@ const REVIEW_ITEM = {
   labelCounts: { submitted: 0, disputes: 0, adjudications: 0 }
 };
 
+/* The same runs, read over the last day rather than the last week. */
+const RUNS_DAY = Object.assign({}, RUNS, {
+  window: { range: '24h', startAt: ago(DAY), endExclusiveAt: ago(0) },
+  summary: Object.assign({}, RUNS.summary, {
+    runs: 25, completed: 24, failed: 1, canceled: 0, unfinished: 0
+  })
+});
+
 const RUN_REVEAL = {
   jobId: '22222222-2222-4222-8222-222222222222',
   jobType: 'video_analysis',
@@ -796,9 +912,9 @@ const RUN_REVEAL = {
    same terms as the fixtures they are taken from, and a pane remodel that
    moves one is meant to come past this file. */
 const PROOF = {
-  /* SUMMARY.people.platform.active and SUMMARY.release.platforms[0].versionName,
-     both of which the failure card replaces with "Not reported". */
-  overview: ['1,102', SUMMARY.release.platforms[0].versionName],
+  /* The platform's distinct count and its change on the week before, both of
+     which the failure card replaces with words. */
+  overview: ['44', '+12 vs last week'],
   /* The id of the first job in the working set, which only the job table
      prints, and the worker-load sentence, which the route sends as prose and
      the pane prints verbatim. Both are absent until a reading is drawn. */
@@ -811,7 +927,9 @@ const PROOF = {
      reference. Both sit in the action row the narrow-viewport sweep
      measures. */
   alerts: [PROBLEM.workPaneLabel, PROBLEM.reference],
-  analytics: ['No app reported over this window'],
+  /* Mobile's sessions over the window and the second app's name, neither of
+     which is on the empty state or the failure card. */
+  analytics: ['308', USAGE.apps[1].label],
   /* The top row of the category and the service cut, which the pane prints
      verbatim as row labels and which neither its empty cards nor its failure
      card name. */
@@ -925,7 +1043,7 @@ function stub(pathname, search, options = {}) {
     } };
   }
   if (pathname.startsWith('/api/ops/alerts/problems')) {
-    return { data: { problems: [PROBLEM] } };
+    return { data: { problems: [options.scene === 'calm' ? PROBLEM_CALM : PROBLEM] } };
   }
   if (/^\/api\/ops\/jobs\/[^/]+\/cancel$/.test(pathname)) {
     return { data: { jobId: pathname.split('/')[4], status: 'canceled' } };
@@ -939,7 +1057,12 @@ function stub(pathname, search, options = {}) {
   }
   if (pathname.startsWith('/api/ops/jobs')) return { data: JOBS };
   if (/^\/api\/ops\/runs\/[^/]+\/reveal$/.test(pathname)) return { data: RUN_REVEAL };
-  if (pathname === '/api/ops/runs') return { data: RUNS };
+  if (pathname === '/api/ops/runs') {
+    const range = new URLSearchParams(search || '').get('range');
+    return { data: range === '24h' ? RUNS_DAY : RUNS };
+  }
+  if (pathname.startsWith('/api/ops/usage')) return { data: USAGE };
+  if (pathname.startsWith('/api/ops/growth')) return { data: GROWTH };
   if (pathname.startsWith('/api/ops/costs')) {
     const flag = new URLSearchParams(search || '').get('stub');
     return { data: flag === 'not_published' ? COSTS_NOT_PUBLISHED : COSTS };
@@ -974,5 +1097,5 @@ function stub(pathname, search, options = {}) {
 export {
   NOW, ago, ahead, MINUTE, HOUR, DAY, utcDay,
   ADMIN, SESSION, NARROW_BADGE, RULES, JOBS, SUMMARY, RELEASES,
-  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, RUNS, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
+  ADMINS, SESSIONS, SESSION_SETTINGS, AUDIT, USER_LOOKUP, USER_DETAIL, INTEGRATIONS, RETENTION, COST_CATEGORIES, COSTS, COSTS_NOT_PUBLISHED, PROBLEM, PROBLEM_CALM, RUNS, RUNS_DAY, USAGE, GROWTH, RUN_REVEAL, REVIEW_ITEM, PROOF, MODERATION_REPORTS, HOSTILE_MODERATION_TEXT, stub
 };

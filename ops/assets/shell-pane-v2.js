@@ -1,7 +1,8 @@
-/* The v2 pane bootstrap: session gate, rail, top bar, filter bar, and the
-   four preview states.
+/* The v2 pane bootstrap: session gate, navigation, top bar, filter bar, and
+   the four preview states.
 
-   assets/aria.js draws a rail and a top bar from one page-level config and
+   assets/aria.js draws the navigation (a rail on a desktop, a bottom bar on a
+   phone) and the top bar from one page-level config and
    knows nothing else about a pane page. Everything a pane page needs on top of
    that — waiting for a session before anything renders, refusing to open a
    pane the signed-in role may not have, offering only the filters the pane's
@@ -33,8 +34,11 @@
                              on; this is for a control only the pane's own read
                              can honour, such as a facet one endpoint takes
      paneHref(paneId)        a link to another pane carrying the selection
-     setBadge(railId, badge) put a count beside a rail item, or remove it with
-                             null. badge is { label, tone, description }
+     setBadge(paneId, badge) put a count beside every place the navigation
+                             names that pane: its destination in the rail and
+                             on the phone, its link in the row under the title,
+                             its menu item. Remove it with null. badge is
+                             { label, tone, description }
      region(content)         the four preview states, as a region a pane owns
      h(tag, opts, children)  DOM builder. Never innerHTML
      icon(name, className)   assets/aria.js's icon set, as an SVGElement
@@ -373,24 +377,26 @@
     return pane ? hrefFor(pane) : null;
   }
 
-  /* assets/aria.js draws the rail from its own list and writes a bare filename
-     into every href, because it knows nothing about filters. Rewriting them
-     here is what stops changing the range and then moving pane from silently
-     dropping you back onto the default window.
+  /* assets/aria.js draws its navigation from its own list and writes a bare
+     filename into every href, because it knows nothing about filters.
+     Rewriting them here is what stops changing the range and then moving pane
+     from silently dropping you back onto the default window.
 
-     Only hrefs the registry recognises are touched. A rail item this registry
-     has never heard of is left exactly as aria.js wrote it rather than being
-     guessed at or dropped. */
+     Only hrefs the registry recognises are touched. A link this registry has
+     never heard of is left exactly as aria.js wrote it rather than being
+     guessed at or dropped. The menu's anchors (settings.html#sessions) are
+     matched on the file alone and keep their fragment. */
   var byFile = {};
   Object.keys(PANES).forEach(function (id) { byFile[PANES[id].file] = PANES[id]; });
 
   function refreshNavHrefs() {
-    var rail = document.getElementById('rail');
-    if (!rail) return;
-    Array.prototype.forEach.call(rail.querySelectorAll('.nav-item'), function (link) {
-      var file = (link.getAttribute('href') || '').split('?')[0];
+    var links = document.querySelectorAll('.nav-item, .tab-item, .subnav-item, .menu-item');
+    Array.prototype.forEach.call(links, function (link) {
+      var raw = link.getAttribute('href') || '';
+      var hash = raw.indexOf('#') === -1 ? '' : raw.slice(raw.indexOf('#'));
+      var file = raw.split('#')[0].split('?')[0];
       var pane = byFile[file];
-      if (pane) link.setAttribute('href', hrefFor(pane));
+      if (pane) link.setAttribute('href', hrefFor(pane) + hash);
     });
   }
 
@@ -776,176 +782,60 @@
     global.setTimeout(function () { t.remove(); }, 4000);
   }
 
-  /* ------------------------------------------------------- rail furniture */
+  /* ----------------------------------------------------------- navigation */
 
-  /* A count beside a rail item, or null to take one away.
+  /* A count beside every place the navigation names a pane, or null to take
+     it away.
 
      Badges are operational facts. aria.js renders none of its own and this
      shell invents none: a pane passes what it read, and a pane that read
      nothing passes nothing. A dashboard that invents a count is worse than one
-     that shows nothing. */
-  function setBadge(railId, badge) {
-    var rail = document.getElementById('rail');
-    if (!rail) return;
-    var link = null;
-    Array.prototype.forEach.call(rail.querySelectorAll('.nav-item'), function (item) {
-      if (item.getAttribute('data-rail-id') === railId) link = item;
-    });
-    if (!link) return;
+     that shows nothing.
 
-    Array.prototype.forEach.call(link.querySelectorAll('.nav-badge, .nav-badge-sr'), function (old) {
-      link.removeChild(old);
-    });
-    if (!badge || !badge.label) return;
-
-    link.appendChild(h('span', {
-      className: 'nav-badge' + (badge.tone ? ' ' + badge.tone : ''),
-      text: badge.label
-    }));
-    /* A bare number beside a pane name reads as part of the name when it is
-       announced, and what it counts is only obvious on screen. */
-    if (badge.description) {
-      link.appendChild(h('span', { className: 'sr nav-badge-sr', text: ', ' + badge.description }));
-    }
-  }
-
-  /* aria.js writes no id onto a rail item, so the item a badge belongs to is
-     found by the href the registry gave it. Stamped once, right after boot, so
-     setBadge() never has to re-derive it. */
-  function stampRailIds() {
-    var rail = document.getElementById('rail');
-    if (!rail) return;
-    Array.prototype.forEach.call(rail.querySelectorAll('.nav-item'), function (link) {
-      var file = (link.getAttribute('href') || '').split('?')[0];
-      var pane = byFile[file];
-      if (pane && pane.railId) link.setAttribute('data-rail-id', pane.railId);
-    });
-  }
-
-  /* --------------------------------------------------- rail as a drawer */
-
-  /* aria.css hides the rail below 980px, which on a phone leaves a pane page
-     with no navigation at all. Below that width it becomes an overlay, and an
-     overlay is a dialog: it traps focus while it is open, closes on Escape,
-     and hands focus back to the control that opened it. */
-  var RAIL_BREAKPOINT = '(max-width: 980px)';
-
-  function wireRail() {
-    var rail = document.getElementById('rail');
-    var toggle = document.getElementById('railToggle');
-    if (!rail || !toggle) return;
-
-    var scrim = null;
-    var inerted = [];
-
-    /* The live region and the toast host are appended to the body, so they are
-       siblings of the app wrapper and would otherwise be inerted with it — and
-       a live region carrying aria-hidden announces nothing. Neither holds
-       focusable content, so leaving them out costs the drawer's modality
-       nothing. */
-    function isLiveRegion(el) {
-      return el.hasAttribute('aria-live') || el.classList.contains('toast-host');
-    }
-
-    /* A scrim stops a pointer reaching the shell behind the drawer, but a
-       virtual cursor walks straight past a scrim. Everything that is not the
-       rail goes inert as well, so the drawer is modal for a screen reader and
-       not only for a mouse. */
-    function setBackgroundInert(on) {
-      if (!on) {
-        inerted.forEach(function (el) {
-          if ('inert' in el) el.inert = false;
-          el.removeAttribute('aria-hidden');
-        });
-        inerted = [];
-        return;
-      }
-      /* The rail sits inside the app wrapper, so "everything else" is not a
-         list of body children: it is the rail's siblings at every level up to
-         the body. Inerting an ancestor of the rail would inert the rail.
-         Walked through parentNode rather than parentElement: identical for
-         every element the guard can reach -- the two differ only at <html>,
-         which the body check stops short of -- and the walk is then something
-         a test can actually run. */
-      inerted = [];
-      var node = rail;
-      while (node && node !== document.body && node.parentNode && node.parentNode.children) {
-        var parent = node.parentNode;
-        var self = node;
-        Array.prototype.forEach.call(parent.children, function (sib) {
-          if (sib !== self && sib !== scrim && !isLiveRegion(sib)) inerted.push(sib);
-        });
-        node = parent;
-      }
-      inerted.forEach(function (el) {
-        if ('inert' in el) el.inert = true;
-        el.setAttribute('aria-hidden', 'true');
+     The key is a pane id. aria.js files each destination under the id of the
+     pane it opens on, and the row under the title and the avatar menu carry
+     the id of the pane they link to, so one call reaches the rail, the phone
+     bar and the row at once and a pane never has to know which of them wears
+     its count. */
+  function setBadge(paneId, badge) {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-badge-key]'), function (link) {
+      if (link.getAttribute('data-badge-key') !== paneId) return;
+      Array.prototype.forEach.call(link.querySelectorAll('.nav-badge, .nav-badge-sr'), function (old) {
+        link.removeChild(old);
       });
-    }
-
-    function open() {
-      rail.classList.add('is-open');
-      toggle.setAttribute('aria-expanded', 'true');
-      toggle.setAttribute('aria-label', 'Close navigation');
-      scrim = h('div', { className: 'scrim' });
-      scrim.addEventListener('click', function () { close(); });
-      /* Beside the rail, not at the end of <body>. The app wrapper is a
-         stacking context (aria.css gives .app a z-index), so a scrim on the
-         body painted above the whole app, drawer included, however high the
-         drawer's own z-index: every pane link sat under a dim and a blur, and
-         a tap on one landed on the scrim and closed the drawer
-         (Stadiora/Aria#12909). As the rail's sibling the two are stacked
-         against each other, and the drawer's 100 is above the scrim's 90. */
-      rail.parentNode.insertBefore(scrim, rail);
-      setBackgroundInert(true);
-      document.addEventListener('keydown', onKey, true);
-      document.addEventListener('focusin', onFocusIn, true);
-      var first = rail.querySelector('a, button');
-      if (first) first.focus();
-    }
-
-    function close(restore) {
-      rail.classList.remove('is-open');
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Open navigation');
-      setBackgroundInert(false);
-      if (scrim) { scrim.remove(); scrim = null; }
-      document.removeEventListener('keydown', onKey, true);
-      document.removeEventListener('focusin', onFocusIn, true);
-      if (restore !== false) toggle.focus();
-    }
-
-    function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); close(); return; }
-      if (e.key !== 'Tab') return;
-      var items = rail.querySelectorAll('a, button');
-      if (!items.length) return;
-      var first = items[0];
-      var last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-
-    function onFocusIn(e) {
-      if (!rail.contains(e.target)) {
-        var first = rail.querySelector('a, button');
-        if (first) first.focus();
-      }
-    }
-
-    toggle.addEventListener('click', function () {
-      if (rail.classList.contains('is-open')) close();
-      else open();
+      aria.appendBadge(link, badge);
     });
+  }
 
-    /* Growing past the breakpoint turns the overlay back into a permanent
-       column, at which point trapping focus inside it would be a bug. */
-    var mq = global.matchMedia(RAIL_BREAKPOINT);
-    var onBreakpoint = function (e) {
-      if (!e.matches && rail.classList.contains('is-open')) close(false);
-    };
-    if (mq.addEventListener) mq.addEventListener('change', onBreakpoint);
-    else if (mq.addListener) mq.addListener(onBreakpoint);
+  /* The row of sibling panes under the title. A destination is five links in
+     the rail, but Health is three pages (problems, what is running, what
+     happened) and Growth two, and a deep link to any of them has to land
+     somewhere that can reach the others. The destination's own pages are
+     listed with the one on screen marked; a destination with a single page, and
+     a page that belongs to none, has no row. */
+  function renderSubnav(pane) {
+    if (!pane.destination) return null;
+    var ids = registry.panesOf(pane.destination);
+    if (ids.length < 2) return null;
+
+    var destination = null;
+    registry.DESTINATIONS.forEach(function (d) { if (d.id === pane.destination) destination = d; });
+
+    var nav = h('nav', {
+      className: 'subnav', id: 'subnav',
+      'aria-label': (destination ? destination.label : 'Section') + ' pages'
+    });
+    ids.forEach(function (id) {
+      var target = PANES[id];
+      var on = target === pane;
+      var link = h('a', {
+        className: 'subnav-item' + (on ? ' on' : ''),
+        href: hrefFor(target), 'data-badge-key': id, text: target.label
+      });
+      if (on) link.setAttribute('aria-current', 'page');
+      nav.appendChild(link);
+    });
+    return nav;
   }
 
   /* ------------------------------------------------------- pane contents */
@@ -1055,8 +945,9 @@
     return 'session ' + d + 'd left';
   }
 
-  /* The rail footer, from the session rather than from a literal. It is passed
-     to aria.js, which renders nothing at all when it is absent. */
+  /* The rail footer and the avatar menu, from the session rather than from a
+     literal. It is passed to aria.js, which renders nothing at all when it is
+     absent. */
   function accountConfig() {
     var admin = session.state.admin;
     if (!admin) return null;
@@ -1068,15 +959,16 @@
   }
 
   /* The one badge this shell knows without asking a pane: a pane the signed-in
-     role cannot open. The rail still links to it, because the destination says
-     which role it needs and that is a better answer than a dead span. */
+     role cannot open. The navigation still links to it, because the
+     destination says which role it needs and that is a better answer than a
+     dead span. Filed under the pane's own id, which is where aria.js looks. */
   function lockedBadges() {
     var badges = {};
     Object.keys(PANES).forEach(function (id) {
       var pane = PANES[id];
-      if (!pane.roles || !pane.railId) return;
+      if (!pane.roles) return;
       if (session.hasRole(pane.roles)) return;
-      badges[pane.railId] = {
+      badges[id] = {
         label: 'locked', tone: 'soon',
         description: pane.roles.length === 1
           ? pane.roles[0] + ' access only'
@@ -1084,15 +976,6 @@
       };
     });
     return badges;
-  }
-
-  function railToggle() {
-    var toggle = h('button', {
-      className: 'btn btn-icon btn-ghost rail-toggle', type: 'button', id: 'railToggle',
-      'aria-label': 'Open navigation', 'aria-expanded': 'false', 'aria-controls': 'rail'
-    });
-    toggle.appendChild(icon('layers'));
-    return toggle;
   }
 
   /* Boots a pane page. The app markup stays behind the gate until the API has
@@ -1113,31 +996,33 @@
       var app = document.getElementById('app');
       clear(app);
 
-      app.appendChild(h('nav', { className: 'rail', id: 'rail', 'aria-label': 'Panes' }));
+      app.appendChild(h('nav', { className: 'rail', id: 'rail', 'aria-label': 'Main' }));
 
       var main = h('div', { className: 'main' });
       main.appendChild(h('header', { className: 'topbar', id: 'topbar' }));
+      var subnav = renderSubnav(pane);
+      if (subnav) main.appendChild(subnav);
       var bar = renderFilters(pane);
       if (bar) main.appendChild(bar);
 
       var content = h('main', { className: 'content', id: 'content', tabindex: '-1' });
       main.appendChild(content);
       app.appendChild(main);
+      app.appendChild(h('nav', { className: 'bottom-nav', id: 'bottomNav', 'aria-label': 'Main' }));
 
-      /* The rail and the top bar are aria.js's, drawn from the id the registry
-         gave this pane. Everything below is this file's. */
+      /* The navigation and the top bar are aria.js's, drawn from the
+         destination the registry gave this pane. Everything below is this
+         file's. */
       aria.boot({
-        id: pane.railId,
+        id: pane.destination,
         title: pane.label,
-        sub: pane.question,
+        sub: pane.datedHead ? '' : pane.question,
+        subSlot: !!pane.datedHead,
         badges: lockedBadges(),
-        account: accountConfig()
+        account: accountConfig(),
+        lookup: { href: paneHref('users') }
       });
-      stampRailIds();
       refreshNavHrefs();
-
-      var topbar = document.getElementById('topbar');
-      if (topbar) topbar.insertBefore(railToggle(), topbar.firstChild);
 
       if (pane.roles && !session.hasRole(pane.roles)) content.appendChild(renderDenied(pane));
       else if (paneContent[pageId]) paneContent[pageId](content, pane);
@@ -1145,7 +1030,6 @@
 
       setGate('ready');
       dropGates(['.gate-boot', '.gate-failed']);
-      wireRail();
 
       /* Both events fire after the session is confirmed and the shell is in
          the document, so a pane script that adds its listeners while this file

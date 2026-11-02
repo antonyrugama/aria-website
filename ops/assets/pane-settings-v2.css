@@ -402,6 +402,17 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rose) 44%, transparent);
 }
 
+/* ------------------------------------------------------ account-menu links */
+
+/* The avatar menu jumps to a band by its fragment. Above 980px the top bar is
+   sticky, so without a margin the band's heading lands underneath it. The
+   margin clears the bar with some air. At 980px and under the bar scrolls away
+   with the page and the jump should not leave a gap, so it has none. */
+#administrators, #sessions, #audit { scroll-margin-top: 96px; }
+@media (max-width: 980px) {
+  #administrators, #sessions, #audit { scroll-margin-top: 0; }
+}
+
 /* ------------------------------------------------------------ responsive */
 
 /* The scoped `.hero > .hero-chips { grid-column: 1 / -1 }` copy that used to

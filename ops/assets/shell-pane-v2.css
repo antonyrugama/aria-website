@@ -2,10 +2,10 @@
    Aria Operations — v2 pane shell chrome
    Loaded after assets/aria.css on a v2 pane page, and only there.
 
-   aria.css is the design system: tokens, rail, top bar, cards, states. It was
-   ported from a reference page that reads no API, so it carries none of the
-   furniture a real pane needs around that system — the three boot gates, a
-   rail that can be opened on a phone, a confirmation toast. That furniture is
+   aria.css is the design system: tokens, navigation, top bar, cards, states. It
+   was ported from a reference page that reads no API, so it carries none of the
+   furniture a real pane needs around that system — the three boot gates, the
+   row of sibling pages under a title, a confirmation toast. That furniture is
    here, in the pane shell's own file, so the shared stylesheet stays the thing
    four pane remodels can all read without any of them editing it.
 
@@ -66,43 +66,42 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
 .noscript-wrap { display: grid; place-items: center; padding: 40px 24px; }
 .noscript-wrap .card { max-width: 560px; padding: 20px 22px; font-size: 13.5px; color: var(--ink-2); }
 
-/* --------------------------------------------------- the rail on a phone */
+/* ------------------------------------------------- the sibling-page row */
 
-/* aria.css hides the rail below 980px, which on a phone leaves a pane page
-   with no navigation at all. Below that width it becomes an overlay.
-
-   Hidden, not merely moved off screen. A rail that is only translated keeps
-   its ten pane links in the tab order and in the accessibility tree, and
-   because it comes before the main column in the document a keyboard user at
-   this width would walk the whole invisible drawer, with no visible focus
-   anywhere, before reaching the page. visibility takes it out of both. The
-   change to hidden is deferred until the slide has finished so the drawer does
-   not disappear halfway out; the change to visible is immediate, so it is
-   there to be focused the moment it opens. */
-.rail-toggle { flex: none; }
-@media (min-width: 981px) { .rail-toggle { display: none; } }
-
+/* Health is three pages and Growth is two, and the rail shows five places.
+   The pages inside one place sit in a row under the title, text only, the one
+   on screen marked with a cyan underline. The row wraps rather than scrolls
+   when a phone cannot hold it: a sideways scroller needs a keyboard stop of
+   its own, and this row is only ever links, each already one. */
+.subnav {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px;
+  padding: 0 26px;
+  border-bottom: 1px solid var(--line);
+}
+.subnav-item {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 13px; font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.subnav-item:hover { color: var(--ink); }
+.subnav-item.on { color: var(--ink); font-weight: 560; }
+.subnav-item.on::after {
+  content: '';
+  position: absolute; left: 12px; right: 12px; bottom: -1px;
+  height: 2px;
+  background: var(--cyan);
+}
 @media (max-width: 980px) {
-  .rail {
-    display: flex;
-    position: fixed; left: 0; top: 0; bottom: 0;
-    width: 244px; height: 100%;
-    z-index: 100;
-    background: var(--surface);
-    transform: translateX(-100%);
-    visibility: hidden;
-    overflow-y: auto;
-    transition: transform 220ms cubic-bezier(.32, .72, 0, 1), visibility 0s linear 220ms;
-  }
-  .rail.is-open {
-    transform: translateX(0);
-    visibility: visible;
-    transition: transform 220ms cubic-bezier(.32, .72, 0, 1), visibility 0s;
-  }
+  .subnav { padding: 0 4px; }
+  .subnav-item { min-height: 44px; padding: 0 10px; }
+  .subnav-item.on::after { left: 10px; right: 10px; }
 
   /* Touch targets. The dense control scale is a mouse affordance; on a phone
      every control has to be reachable with a thumb. */
-  .nav-item { min-height: 44px; }
   .btn { min-height: 38px; }
   .btn-icon { width: 38px; height: 38px; }
   .seg button { min-height: 34px; }
@@ -154,7 +153,7 @@ body.is-booting .skip, body.is-failed .skip { display: none; }
    the alert is the `--rose` 15% tint with `--rose-ink` on it, which is the
    pair `.pill.down` already uses. */
 
-/* Above the scrim at z-index 90 and above the drawer rail at 100, so the
+/* Above the scrim at z-index 90, so the
    dialog is never the thing underneath. Flex with `margin: auto` on the card
    rather than `place-items: center`, because a centred grid item taller than
    the viewport has its top cropped beyond reach; this one scrolls instead.

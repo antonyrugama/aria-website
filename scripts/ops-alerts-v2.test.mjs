@@ -3154,7 +3154,9 @@ test('every aria-controls on a problem card resolves to that button\'s own regio
     search: '?range=7d',
     closed: { problems: [closedProblem()] },
   });
-  const buttons = findAll(dom.doc.body,
+  /* The shell's own controls (the lookup and the avatar menu) carry
+     aria-controls too, and they are not a problem card's. */
+  const buttons = findAll(dom.doc.getElementById('content'),
     (n) => n.tagName === 'BUTTON' && n.getAttribute('aria-controls'));
   assert.ok(buttons.length >= 4,
     'fewer disclosure buttons than the queue and the closed list should hold: ' +

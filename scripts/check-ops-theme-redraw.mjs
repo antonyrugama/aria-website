@@ -7,7 +7,7 @@
    move with the theme. A chart is therefore correct only for the theme it was
    drawn in, and syncTheme() closes the gap by calling redrawCharts() after the
    toggle. Delete that one call and every chart keeps the previous theme's
-   palette: the strokes stay at the dark #22D3EE on a white surface, nothing
+   palette: the strokes stay at the dark #00E5FF on a white surface, nothing
    throws, no token is missing, no shape is unpainted.
 
    That is not cosmetic. The light palette drops to darker, less saturated
@@ -109,7 +109,7 @@ import vm from 'node:vm';
 import assert from 'node:assert';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { PROOF, stub } from './ops-api-stub.mjs';
+import { PROOF, SUMMARY, stub } from './ops-api-stub.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REGISTRY = 'ops/assets/pane-registry.js';
@@ -149,11 +149,11 @@ const SHOWCASES = [{
    Every entry differs between the themes. Asserted at startup: a token that
    held the same value in both would make its shapes' assertions vacuous. */
 const CHART_TOKENS = {
-  '--cyan': { dark: '#22D3EE', light: '#0891B2' },
-  '--violet': { dark: '#A78BFA', light: '#7C3AED' },
+  '--cyan': { dark: '#00E5FF', light: '#0891B2' },
+  '--violet': { dark: '#8B5CF6', light: '#7C3AED' },
   '--emerald': { dark: '#34D399', light: '#059669' },
   '--amber': { dark: '#FBBF24', light: '#B45309' },
-  '--line-2': { dark: 'rgba(255, 255, 255, .11)', light: 'rgba(11, 18, 32, .15)' },
+  '--line-2': { dark: 'rgba(255, 255, 255, .13)', light: 'rgba(11, 18, 32, .15)' },
 };
 
 /* Both directions. Each entry is one whole experiment: the page is loaded in
@@ -234,6 +234,20 @@ function readRegistry() {
 }
 
 const DECLARED = readRegistry();
+
+/* Today carries the date and when its figures were read under the title, not
+   its registry question. The sub is still asserted to the character, off the
+   stub's own summary stamp. */
+const LIVE_SUB = {
+  overview: () => {
+    const t = new Date(SUMMARY.generatedAt);
+    const two = (n) => String(n).padStart(2, '0');
+    const day = t.toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'
+    });
+    return `${day}Updated ${two(t.getUTCHours())}:${two(t.getUTCMinutes())} UTC`;
+  }
+};
 const PANE_PAGES = Object.keys(DECLARED).map((key) => ({
   key,
   url: '/ops/' + DECLARED[key].file,
@@ -772,10 +786,11 @@ function unmeasurable(page, theme, seen) {
       return `the shell never reached its ready gate — body is "${seen.gate}". Nothing was ` +
         'drawn to compare.';
     }
-    if (seen.title !== page.label || seen.sub !== page.question) {
+    const expectedSub = LIVE_SUB[page.key] ? LIVE_SUB[page.key]() : page.question;
+    if (seen.title !== page.label || seen.sub !== expectedSub) {
       return `the top bar reads ${JSON.stringify(seen.title)} / ${JSON.stringify(seen.sub)}, ` +
         `and ${REGISTRY} declares ${JSON.stringify(page.label)} / ` +
-        JSON.stringify(page.question);
+        JSON.stringify(expectedSub);
     }
   } else if (seen.docTitle !== page.docTitle) {
     return `the page title is ${JSON.stringify(seen.docTitle)}, not ` +
