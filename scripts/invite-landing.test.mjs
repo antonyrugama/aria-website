@@ -51,17 +51,25 @@ test('iOS offers copy + App Store, not a same-site reload, and every language ch
     querySelectorAll: () => [],
   };
   const urls = [];
+  const clipboard = [];
   landing.start({
     document: doc,
     location: { pathname: '/i/rivera-b', search: '?lang=en&o=1', origin: 'https://runwitharia.com', host: 'runwitharia.com', hash: '' },
     history: { replaceState: (_s, _t, url) => urls.push(url) },
-    navigator: { userAgent: 'iPhone', maxTouchPoints: 5 },
+    navigator: { userAgent: 'iPhone', maxTouchPoints: 5, clipboard: { writeText: async (text) => { clipboard.push(text); } } },
   });
   assert.equal(doc.els.open.hidden, true);
   assert.equal(doc.els['ios-hint'].hidden, false);
   assert.equal(doc.els['store-ios'].className, 'btn btn-p');
   assert.equal(doc.els['store-ios-label'].textContent, 'Copy code and open the App Store');
   assert.deepEqual(urls, ['/i/rivera-b?lang=en']);
+
+  doc.els['store-ios'].listeners.click?.();
+  assert.deepEqual(clipboard, ['RIVERA-B'], 'App Store click copies the normalized invite code');
+
+  doc.els.lang.listeners.click({ target: { getAttribute: (name) => name === 'data-lang' ? 'es' : null } });
+  assert.equal(doc.documentElement.lang, 'es');
+  assert.deepEqual(urls, ['/i/rivera-b?lang=en', '/i/rivera-b?lang=es'], 'language toggle persists the choice in the URL');
 });
 
 test('404.html carries every element the landing script drives, and shows not-found by default', () => {
