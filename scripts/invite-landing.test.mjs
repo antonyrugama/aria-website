@@ -34,9 +34,34 @@ test('language defaults to Spanish and follows ?lang=', () => {
 test('Android opens the app through an intent that falls back to the Play listing', () => {
   const play = 'https://play.google.com/store/apps/details?id=com.runwitharia.mobile&pcampaignid=web_share';
   const url = landing.androidIntentUrl('runwitharia.com', 'RIVERA-B', play);
-  assert.ok(url.startsWith('intent://runwitharia.com/invites/RIVERA-B?o=1#Intent;scheme=https;package=com.runwitharia.mobile;'));
+  assert.ok(url.startsWith('intent://runwitharia.com/invites/RIVERA-B#Intent;scheme=https;package=com.runwitharia.mobile;'));
   assert.ok(url.endsWith(`S.browser_fallback_url=${encodeURIComponent(play)};end`));
   assert.equal(landing.androidIntentUrl('runwitharia.com', 'ABC123', 'https://example.test/'), null);
+});
+
+test('iOS offers copy + App Store, not a same-site reload, and every language change keeps ?lang', () => {
+  const script = read('invite-landing.js');
+  assert.ok(!/[?&]o=1/.test(script), 'no ?o=1 reload param');
+  const calls = [];
+  const doc = {
+    els: {}, documentElement: {}, head: { appendChild: (m) => calls.push(m) },
+    getElementById(id) { return this.els[id] ||= { id, hidden: false, className: '', textContent: '', attrs: { href: 'https://play.google.com/store/apps/details?id=com.runwitharia.mobile' }, listeners: {},
+      getAttribute(k) { return this.attrs[k]; }, setAttribute(k, v) { this.attrs[k] = v; }, addEventListener(t, f) { this.listeners[t] = f; } }; },
+    createElement: () => ({}),
+    querySelectorAll: () => [],
+  };
+  const urls = [];
+  landing.start({
+    document: doc,
+    location: { pathname: '/i/rivera-b', search: '?lang=en&o=1', origin: 'https://runwitharia.com', host: 'runwitharia.com', hash: '' },
+    history: { replaceState: (_s, _t, url) => urls.push(url) },
+    navigator: { userAgent: 'iPhone', maxTouchPoints: 5 },
+  });
+  assert.equal(doc.els.open.hidden, true);
+  assert.equal(doc.els['ios-hint'].hidden, false);
+  assert.equal(doc.els['store-ios'].className, 'btn btn-p');
+  assert.equal(doc.els['store-ios-label'].textContent, 'Copy code and open the App Store');
+  assert.deepEqual(urls, ['/i/rivera-b?lang=en']);
 });
 
 test('404.html carries every element the landing script drives, and shows not-found by default', () => {

@@ -20,8 +20,9 @@
       copied: 'Código copiado',
       copyFailed: 'Selecciona el código y cópialo',
       open: 'Abrir en Aria',
-      openHint: '¿No se abrió Aria? Instálala aquí abajo y vuelve a abrir este enlace, o ingresa el código a mano.',
+      iosHint: 'Después de instalar, abre Aria, elige «Entrenar con mi entrenador» e ingresa este código. Si ya tienes Aria, escanea el QR con la Cámara del iPhone: abre la app directamente.',
       ios: 'Descargar en App Store',
+      iosCopy: 'Copiar código y abrir App Store',
       android: 'Descargar en Google Play',
       stepsHeading: 'Cómo unirte',
       steps: [
@@ -39,8 +40,9 @@
       copied: 'Code copied',
       copyFailed: 'Select the code and copy it',
       open: 'Open in Aria',
-      openHint: "Didn't Aria open? Install it below and open this link again, or enter the code by hand.",
+      iosHint: 'After installing, open Aria, choose "Train with my coach" and enter this code. If you already have Aria, scan the QR with the iPhone Camera: it opens the app directly.',
       ios: 'Download on the App Store',
+      iosCopy: 'Copy code and open the App Store',
       android: 'Get it on Google Play',
       stepsHeading: 'How to join',
       steps: [
@@ -84,11 +86,12 @@
   }
 
   // Android Chrome does not hand a same-site https link to the installed app, so name the app in an
-  // intent URL and fall back to the store page when it is missing. iOS gets the plain universal link.
+  // intent URL and fall back to the store page when it is missing. iOS has no equivalent: Safari keeps a
+  // same-domain universal-link tap in the browser, so iOS gets copy-code + App Store instead of an open button.
   function androidIntentUrl(host, code, playUrl) {
     var packageId = /[?&]id=([^&]+)/.exec(playUrl);
     if (!packageId) return null;
-    return 'intent://' + host + '/invites/' + encodeURIComponent(code) + '?o=1#Intent;scheme=https;package=' +
+    return 'intent://' + host + '/invites/' + encodeURIComponent(code) + '#Intent;scheme=https;package=' +
       packageId[1] + ';S.browser_fallback_url=' + encodeURIComponent(playUrl) + ';end';
   }
 
@@ -105,13 +108,16 @@
     var canonical = loc.origin + '/invites/' + encodeURIComponent(code);
 
     q('code').textContent = code;
-    q('open').href = platform === 'android'
-      ? androidIntentUrl(loc.host, code, playUrl) || canonical
-      : canonical + '?o=1';
-    q('open').hidden = platform === 'desktop';
-    q('open-hint').hidden = !(platform === 'ios' && /(?:^|[?&])o=1(?:&|$)/.test(loc.search));
+    q('open').href = androidIntentUrl(loc.host, code, playUrl) || canonical;
+    q('open').hidden = platform !== 'android';
+    q('ios-hint').hidden = platform !== 'ios';
+    if (platform === 'ios') {
+      q('store-ios').className = 'btn btn-p';
+      q('store-android').hidden = true;
+    }
 
     if (platform === 'ios') {
+      // Optional extra: Safari may show a banner that opens Aria, but it is not something this page can trigger.
       var banner = doc.createElement('meta');
       banner.name = 'apple-itunes-app';
       banner.content = 'app-id=6760048203, app-argument=' + canonical;
@@ -121,14 +127,20 @@
     function render(next) {
       var t = COPY[next];
       lang = next;
+      // Keep the chosen language in the URL so a reload or shared link does not fall back to Spanish.
+      try {
+        var params = (loc.search || '').replace(/^\?/, '').split('&').filter(function (kv) { return kv && !/^(?:lang|o)=/.test(kv); });
+        params.push('lang=' + next);
+        win.history.replaceState(null, '', loc.pathname + '?' + params.join('&') + (loc.hash || ''));
+      } catch (e) { /* history unavailable: the page still renders in the chosen language */ }
       doc.documentElement.lang = next;
       doc.title = t.title;
       q('eyebrow').textContent = t.eyebrow;
       q('heading').textContent = t.heading;
       q('copy-label').textContent = t.copy;
       q('open-label').textContent = t.open;
-      q('open-hint').textContent = t.openHint;
-      q('store-ios-label').textContent = t.ios;
+      q('ios-hint').textContent = t.iosHint;
+      q('store-ios-label').textContent = platform === 'ios' ? t.iosCopy : t.ios;
       q('store-android-label').textContent = t.android;
       q('steps-heading').textContent = t.stepsHeading;
       var items = doc.querySelectorAll('#steps li span');
@@ -145,7 +157,7 @@
       q('copy-status').textContent = message;
     }
 
-    q('copy').addEventListener('click', function () {
+    function copyCode() {
       var t = COPY[lang];
       var clip = win.navigator.clipboard;
       if (clip && clip.writeText) {
@@ -158,7 +170,11 @@
       selection.removeAllRanges();
       selection.addRange(range);
       announce(doc.execCommand && doc.execCommand('copy') ? t.copied : t.copyFailed);
-    });
+    }
+
+    q('copy').addEventListener('click', copyCode);
+    // The link still navigates to the App Store; the copy runs inside the same tap.
+    if (platform === 'ios') q('store-ios').addEventListener('click', copyCode);
 
     q('lang').addEventListener('click', function (event) {
       var next = event.target.getAttribute && event.target.getAttribute('data-lang');
