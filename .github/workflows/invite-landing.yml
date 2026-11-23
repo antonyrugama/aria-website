@@ -1,0 +1,33 @@
+name: Invite landing
+
+# GitHub Pages serves 404.html for every missing path. The coach-code QR in Aria for Coaches points at
+# /invites/<code>, so that file is the landing for anyone who scans without the app installed.
+
+on:
+  pull_request:
+    paths:
+      - '404.html'
+      - 'invite-landing.js'
+      - 'scripts/invite-landing.test.mjs'
+      - '.well-known/apple-app-site-association'
+      - '.github/workflows/invite-landing.yml'
+  push:
+    branches: [main]
+    paths:
+      - '404.html'
+      - 'invite-landing.js'
+      - 'scripts/invite-landing.test.mjs'
+      - '.well-known/apple-app-site-association'
+      - '.github/workflows/invite-landing.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test invite landing
+        run: node --test --test-concurrency=1 scripts/invite-landing.test.mjs
